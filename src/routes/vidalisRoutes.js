@@ -24,6 +24,12 @@ router.get('/stats/:agencyId', vidalisController.getDashboardStats);
 // Ruta para obtener firma de Cloudinary
 router.get('/cloudinary-signature', vidalisController.getSignature);
 
+// Programación y edición de videos
+router.patch('/video/:videoId', vidalisController.updateVideo);
+
+// Obtener clips relacionados
+router.get('/clips/:parentId', vidalisController.getClips);
+
 // Publicación en redes sociales via Ayrshare
 router.post('/publish', vidalisController.publishToSocial);
 

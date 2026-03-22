@@ -62,8 +62,17 @@ exports.createArtist = async (artistData) => {
   return data[0];
 };
 
-// --- REGISTRO DE VIDEOS + DISPARO A n8n ---
 exports.registerVideo = async (videoData) => {
+  // 0. Recorte Inteligente 9:16 con IA (Solo para videos de Cloudinary)
+  if (videoData.source_url.includes('cloudinary.com') && videoData.source_url.match(/\.(mp4|mov|webm|ogv)$/i)) {
+    // Inyectamos la transformación de Cloudinary: c_fill (llenar), g_auto (IA para centrar), ar_9:16 (aspect ratio)
+    videoData.processed_url = videoData.source_url.replace('/upload/', '/upload/c_fill,g_auto,ar_9:16/');
+  } else if (videoData.source_url.includes('cloudinary.com')) {
+    // Para imágenes, también podemos asegurar un buen reencuadre si fuera necesario
+    // videoData.processed_url = videoData.source_url.replace('/upload/', '/upload/c_fill,g_auto/');
+    videoData.processed_url = videoData.source_url;
+  }
+
   // 1. Guardar en Supabase
   const { data, error } = await supabase
     .from('videos')
@@ -161,4 +170,28 @@ exports.analyzeViralPotential = async (videoUrl) => {
   }
   // Fallback si n8n no está configurado
   return { score: 0, feedback: "n8n no configurado aún." };
+};
+
+// --- ACTUALIZAR CONFIGURACIÓN DE VIDEO (Programación, Hashtags, etc.) ---
+exports.updateVideoSettings = async (videoId, updateData) => {
+  const { data, error } = await supabase
+    .from('videos')
+    .update(updateData)
+    .eq('id', videoId)
+    .select();
+
+  if (error) throw error;
+  return data[0];
+};
+
+// --- OBTENER CLIPS DE UN VIDEO PADRE ---
+exports.getClipsByParent = async (parentId) => {
+  const { data, error } = await supabase
+    .from('videos')
+    .select('*')
+    .eq('parent_video_id', parentId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
 };

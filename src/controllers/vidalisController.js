@@ -154,3 +154,23 @@ exports.publishToSocial = async (req, res) => {
     res.status(status).json({ error: message });
   }
 };
+exports.updateVideo = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const updateData = req.body;
+    const result = await vidalisService.updateVideoSettings(videoId, updateData);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getClips = async (req, res) => {
+  try {
+    const { parentId } = req.params;
+    const clips = await vidalisService.getClipsByParent(parentId);
+    res.status(200).json(clips);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
