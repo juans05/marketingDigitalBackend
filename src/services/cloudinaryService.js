@@ -10,10 +10,16 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-exports.generateUploadSignature = () => {
+exports.generateUploadSignature = (folder = null) => {
   const timestamp = Math.round(new Date().getTime() / 1000);
+  const params = { timestamp, upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET };
+  
+  if (folder) {
+    params.folder = folder;
+  }
+
   const signature = cloudinary.utils.api_sign_request(
-    { timestamp, upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET },
+    params,
     process.env.CLOUDINARY_API_SECRET
   );
 
@@ -22,6 +28,7 @@ exports.generateUploadSignature = () => {
     signature,
     apiKey: process.env.CLOUDINARY_API_KEY,
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-    uploadPreset: process.env.CLOUDINARY_UPLOAD_PRESET
+    uploadPreset: process.env.CLOUDINARY_UPLOAD_PRESET,
+    folder: folder
   };
 };

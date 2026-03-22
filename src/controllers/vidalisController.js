@@ -40,7 +40,8 @@ exports.createArtist = async (req, res) => {
 
 exports.getSignature = (req, res) => {
   try {
-    const signatureData = cloudinaryService.generateUploadSignature();
+    const { folder } = req.query; // Leemos la carpeta de la query param
+    const signatureData = cloudinaryService.generateUploadSignature(folder);
     res.status(200).json(signatureData);
   } catch (error) {
     res.status(500).json({ error: error.message });
