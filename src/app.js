@@ -6,13 +6,18 @@ const vidalisRoutes = require('./routes/vidalisRoutes');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configuración de CORS flexible para producción
-app.use(cors({
-  origin: true, // Refleja el origen de la petición (permite vercel.app, localhost, etc.)
+// Configuración de CORS — responde a todos los orígenes con sus propios headers
+const corsOptions = {
+  origin: (origin, callback) => callback(null, origin || '*'),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+// Responder preflight OPTIONS explícitamente en todas las rutas
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 
