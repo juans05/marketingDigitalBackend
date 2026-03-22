@@ -1,6 +1,11 @@
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+  console.error("❌ ERROR: Faltan SUPABASE_URL o SUPABASE_ANON_KEY en las variables de entorno.");
+  throw new Error("supabaseUrl is required. Por favor, configura las variables de entorno en tu panel de hosting.");
+}
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
