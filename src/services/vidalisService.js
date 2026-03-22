@@ -81,36 +81,48 @@ exports.registerVideo = async (videoData) => {
 
   if (error) throw error;
   const video = data[0];
+  console.log(`✅ Video registrado en DB: ${video.id}`);
 
   // 2. Obtener datos de la agencia para el profileKey y plataformas
+  console.log(`🔍 Buscando artista: ${videoData.artist_id}`);
   const { data: artist } = await supabase
     .from('artists')
     .select('agency_id')
     .eq('id', videoData.artist_id)
     .single();
 
+  let agency = null;
   if (artist) {
-    const { data: agency } = await supabase
+    console.log(`🔍 Artista encontrado. Buscando agencia: ${artist.agency_id}`);
+    const { data: agencyData } = await supabase
       .from('agencies')
       .select('ayrshare_profile_key, active_platforms')
       .eq('id', artist.agency_id)
       .single();
+    agency = agencyData;
+  } else {
+    console.log(`⚠️ No se encontró artista con ID ${videoData.artist_id}. Se enviarán datos por defecto a n8n.`);
+  }
 
-    // 3. Disparar flujo de n8n (Procesamiento IA + Distribución)
-    if (process.env.N8N_WEBHOOK_URL) {
-      try {
-        await axios.post(process.env.N8N_WEBHOOK_URL, {
-          videoUrl: videoData.source_url,
-          videoId: video.id,
-          title: videoData.title,
-          profileKey: agency?.ayrshare_profile_key,
-          platforms: agency?.active_platforms || ['tiktok', 'instagram', 'youtube']
-        });
-        console.log(`🚀 n8n disparado para video: ${video.id} con perfil: ${agency?.ayrshare_profile_key}`);
-      } catch (err) {
-        console.error('⚠️ Error al disparar n8n:', err.message);
-      }
+  // 3. Disparar flujo de n8n (Procesamiento IA + Distribución)
+  if (process.env.N8N_WEBHOOK_URL) {
+    try {
+      console.log(`🚀 Intentando disparar n8n: ${process.env.N8N_WEBHOOK_URL}`);
+      const payload = {
+        videoUrl: videoData.source_url,
+        videoId: video.id,
+        title: videoData.title,
+        profileKey: agency?.ayrshare_profile_key || null,
+        platforms: videoData.platforms || agency?.active_platforms || ['tiktok', 'instagram', 'youtube']
+      };
+      
+      await axios.post(process.env.N8N_WEBHOOK_URL, payload);
+      console.log(`✅ n8n disparado con éxito para video: ${video.id}`);
+    } catch (err) {
+      console.error('❌ Error al disparar n8n:', err.response?.data || err.message);
     }
+  } else {
+    console.warn('⚠️ N8N_WEBHOOK_URL no está configurado en el .env');
   }
 
   return video;
