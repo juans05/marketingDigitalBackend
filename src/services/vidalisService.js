@@ -84,16 +84,19 @@ exports.registerVideo = async (videoData) => {
   console.log(`✅ Video registrado en DB: ${video.id}`);
 
   // 2. Obtener datos de la agencia para el profileKey y plataformas
-  console.log(`🔍 Buscando artista: ${videoData.artist_id}`);
+  console.log(`🔍 Buscando datos vinculados al ID: ${videoData.artist_id}`);
+  
+  let agency = null;
+
+  // Primero intentamos buscar como artista
   const { data: artist } = await supabase
     .from('artists')
     .select('agency_id')
     .eq('id', videoData.artist_id)
     .single();
 
-  let agency = null;
   if (artist) {
-    console.log(`🔍 Artista encontrado. Buscando agencia: ${artist.agency_id}`);
+    console.log(`🔍 Artista encontrado. Buscando su agencia: ${artist.agency_id}`);
     const { data: agencyData } = await supabase
       .from('agencies')
       .select('ayrshare_profile_key, active_platforms')
@@ -101,7 +104,18 @@ exports.registerVideo = async (videoData) => {
       .single();
     agency = agencyData;
   } else {
-    console.log(`⚠️ No se encontró artista con ID ${videoData.artist_id}. Se enviarán datos por defecto a n8n.`);
+    // Si no es artista, quizás sea el ID de la agencia directamente (MVP Login)
+    console.log(`🔍 No es artista. Buscando como agencia directa: ${videoData.artist_id}`);
+    const { data: agencyData } = await supabase
+      .from('agencies')
+      .select('ayrshare_profile_key, active_platforms')
+      .eq('id', videoData.artist_id)
+      .single();
+    agency = agencyData;
+  }
+
+  if (!agency) {
+    console.log(`⚠️ No se pudo vincular con ninguna agencia. Se usarán datos por defecto.`);
   }
 
   // 3. Disparar flujo de n8n (Procesamiento IA + Distribución)
@@ -109,11 +123,11 @@ exports.registerVideo = async (videoData) => {
     try {
       console.log(`🚀 Intentando disparar n8n: ${process.env.N8N_WEBHOOK_URL}`);
       const payload = {
-        videoUrl: videoData.source_url,
+        videoUrl: video.processed_url || video.source_url,
         videoId: video.id,
-        title: videoData.title,
+        title: video.title,
         profileKey: agency?.ayrshare_profile_key || null,
-        platforms: videoData.platforms || agency?.active_platforms || ['tiktok', 'instagram', 'youtube']
+        platforms: video.platforms || agency?.active_platforms || ['tiktok', 'instagram', 'youtube']
       };
       
       await axios.post(process.env.N8N_WEBHOOK_URL, payload);
