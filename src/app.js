@@ -1,23 +1,21 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
 const vidalisRoutes = require('./routes/vidalisRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configuración de CORS — responde a todos los orígenes con sus propios headers
-const corsOptions = {
-  origin: (origin, callback) => callback(null, origin || '*'),
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  optionsSuccessStatus: 200
-};
-
-app.use(cors(corsOptions));
-// Responder preflight OPTIONS explícitamente en todas las rutas
-app.options('*', cors(corsOptions));
+// CORS manual — primer middleware, antes de todo, incluso si hay errores posteriores
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Vary', 'Origin');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
 
 app.use(express.json());
 
