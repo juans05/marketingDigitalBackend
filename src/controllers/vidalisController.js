@@ -5,11 +5,11 @@ const ayrshareService = require('../services/ayrshareService');
 // --- LOGIN ---
 exports.login = async (req, res) => {
   try {
-    const { email, password, account_type } = req.body;
+    const { email, password, account_type, name } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Se requiere email y contraseña' });
     }
-    const userData = await vidalisService.loginUser(email, password, account_type || 'agency');
+    const userData = await vidalisService.loginUser(email, password, account_type || null, name || null);
     res.status(200).json(userData);
   } catch (error) {
     res.status(401).json({ error: error.message });
@@ -121,7 +121,8 @@ exports.connectSocial = async (req, res) => {
 exports.getSocialStatus = async (req, res) => {
   try {
     const { artistId } = req.params;
-    const result = await vidalisService.getSocialStatus(artistId);
+    const refresh = req.query.refresh === 'true';
+    const result = await vidalisService.getSocialStatus(artistId, refresh);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });

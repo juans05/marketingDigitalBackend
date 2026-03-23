@@ -11,8 +11,9 @@ const supabase = createClient(
 );
 
 // --- AUTENTICACIÓN ---
-// accountType: 'agency' | 'artist'
-exports.loginUser = async (email, password, accountType = 'agency') => {
+// accountType: 'agency' | 'artist' | null (login existente)
+// displayName: nombre para el registro (opcional)
+exports.loginUser = async (email, password, accountType = null, displayName = null) => {
   // Buscar cuenta existente por email o por nombre (compatibilidad hacia atrás)
   const { data: existing } = await supabase
     .from('agencies')
@@ -45,10 +46,10 @@ exports.loginUser = async (email, password, accountType = 'agency') => {
   }
 
   // Crear nueva cuenta
-  const name = email.split('@')[0];
+  const name = displayName || email.split('@')[0];
   const { data: newAgency, error: agencyErr } = await supabase
     .from('agencies')
-    .insert([{ name, email, plan_type: 'Pro', account_type: accountType }])
+    .insert([{ name, email, plan_type: 'Pro', account_type: accountType || 'agency' }])
     .select();
 
   if (agencyErr) throw new Error('Error al crear cuenta');
@@ -114,10 +115,18 @@ exports.getArtistsByAgency = async (agencyId) => {
 
 // --- SUBIR VIDEO ---
 exports.registerVideo = async (videoData) => {
-  // Recorte inteligente 9:16 en Cloudinary (solo videos)
-  if (videoData.source_url.includes('cloudinary.com') && videoData.source_url.match(/\.(mp4|mov|webm|ogv)$/i)) {
+  // Recorte inteligente 9:16 en Cloudinary
+  const isCloudinary = videoData.source_url.includes('cloudinary.com');
+  // Mejor detección: si es video o si tiene extensión de video
+  const looksLikeVideo = videoData.source_url.includes('/video/') || videoData.source_url.match(/\.(mp4|mov|webm|ogv)$/i);
+
+  if (isCloudinary && looksLikeVideo) {
+    // Aplicamos transformación 9:16 y forzamos que sea un .mp4 si es video
     videoData.processed_url = videoData.source_url.replace('/upload/', '/upload/c_fill,g_auto,ar_9:16/');
-  } else if (videoData.source_url.includes('cloudinary.com')) {
+    if (!videoData.processed_url.match(/\.(mp4|mov|webm|ogv)$/i)) {
+      videoData.processed_url += '.mp4';
+    }
+  } else if (isCloudinary) {
     videoData.processed_url = videoData.source_url;
   }
 
@@ -143,12 +152,22 @@ exports.registerVideo = async (videoData) => {
   // Disparar n8n para procesamiento IA
   if (process.env.N8N_WEBHOOK_URL) {
     try {
+      // Filtrar plataformas si es imagen (TikTok y YouTube requieren video)
+      let targetPlatforms = (video.platforms?.length ? video.platforms : null) || 
+                          (artist.active_platforms?.length ? artist.active_platforms : null) || 
+                          ['tiktok', 'instagram', 'facebook', 'youtube'];
+
+      if (!looksLikeVideo) {
+        targetPlatforms = targetPlatforms.filter(p => !['tiktok', 'youtube'].includes(p.toLowerCase()));
+      }
+
       await axios.post(process.env.N8N_WEBHOOK_URL, {
         videoUrl: video.processed_url || video.source_url,
         videoId: video.id,
         title: video.title,
+        mediaType: looksLikeVideo ? 'video' : 'image',
         profileKey: artist.ayrshare_profile_key || null,
-        platforms: video.platforms || artist.active_platforms || ['tiktok', 'instagram', 'youtube'],
+        platforms: targetPlatforms,
       });
       console.log(`✅ n8n disparado para video: ${video.id}`);
     } catch (err) {
@@ -238,20 +257,27 @@ exports.connectSocialAccounts = async (artistId) => {
 };
 
 // --- VERIFICAR PLATAFORMAS CONECTADAS (por ARTISTA) ---
-exports.getSocialStatus = async (artistId) => {
-  const ayrshareService = require('./ayrshareService');
-
+// refresh=false → lee de DB (carga rápida)
+// refresh=true  → consulta Ayrshare API y actualiza DB
+exports.getSocialStatus = async (artistId, refresh = false) => {
   const { data: artist, error } = await supabase
     .from('artists')
-    .select('id, ayrshare_profile_key')
+    .select('id, ayrshare_profile_key, active_platforms')
     .eq('id', artistId)
     .single();
 
   if (error || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
 
+  // Sin refresh: devolver lo que ya está guardado en DB
+  if (!refresh) {
+    return { platforms: artist.active_platforms || [] };
+  }
+
+  // Con refresh: consultar Ayrshare y actualizar DB
   const profileKey = artist.ayrshare_profile_key;
   if (!profileKey) return { platforms: [] };
 
+  const ayrshareService = require('./ayrshareService');
   const platforms = await ayrshareService.getActivePlatforms(profileKey);
 
   await supabase
