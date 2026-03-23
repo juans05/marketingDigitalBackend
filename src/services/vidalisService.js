@@ -188,13 +188,15 @@ exports.getDashboardStats = async (agencyId) => {
 exports.connectSocialAccounts = async (agencyId) => {
   const ayrshareService = require('./ayrshareService');
 
-  const { data: agency, error } = await supabase
+  const { data: agencies, error } = await supabase
     .from('agencies')
     .select('id, name, ayrshare_profile_key')
     .eq('id', agencyId)
-    .single();
+    .limit(1);
 
-  if (error || !agency) throw new Error('Agencia no encontrada');
+  if (error) throw new Error(`Error Supabase: ${error.message}`);
+  if (!agencies || agencies.length === 0) throw new Error(`Agencia no encontrada para id: ${agencyId}`);
+  const agency = agencies[0];
 
   let profileKey = agency.ayrshare_profile_key;
 
