@@ -105,7 +105,9 @@ exports.connectSocial = async (req, res) => {
     const result = await vidalisService.connectSocialAccounts(agencyId);
     res.status(200).json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const ayrshareError = error.response?.data;
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message, details: ayrshareError });
   }
 };
 

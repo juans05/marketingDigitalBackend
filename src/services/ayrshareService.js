@@ -104,10 +104,11 @@ exports.deleteProfile = async (profileKey) => {
  * directamente desde nuestra web (SSO - Single Sign On).
  */
 exports.generateJWT = async (profileKey) => {
-  const response = await axios.post(`${AYRSHARE_BASE}/profiles/generateJWT`, {
-    profileKey: profileKey,
-    domain: process.env.AYRSHARE_DOMAIN || 'id-GCfu1'
-  }, {
+  const body = { profileKey };
+  if (process.env.AYRSHARE_DOMAIN) {
+    body.domain = process.env.AYRSHARE_DOMAIN;
+  }
+  const response = await axios.post(`${AYRSHARE_BASE}/profiles/generateJWT`, body, {
     headers: buildHeaders()
   });
   return response.data; // { url: "https://..." } ← URL para vincular redes
