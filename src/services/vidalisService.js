@@ -276,7 +276,53 @@ exports.analyzeViralPotential = async (videoUrl) => {
 };
 
 // --- ACTUALIZAR CONFIGURACIÓN DE VIDEO ---
+// Si viene scheduled_at, programa el post en Ayrshare y guarda el post_id
 exports.updateVideoSettings = async (videoId, updateData) => {
+  // 1. Obtener datos actuales del video y del artista
+  const { data: video, error: videoErr } = await supabase
+    .from('videos')
+    .select('id, title, source_url, processed_url, artist_id')
+    .eq('id', videoId)
+    .single();
+
+  if (videoErr || !video) throw new Error('Video no encontrado');
+
+  const { data: artist, error: artistErr } = await supabase
+    .from('artists')
+    .select('ayrshare_profile_key')
+    .eq('id', video.artist_id)
+    .single();
+
+  // 2. Si hay fecha programada y el artista tiene Ayrshare conectado → programar
+  if (updateData.scheduled_at && artist?.ayrshare_profile_key) {
+    try {
+      const ayrshareService = require('./ayrshareService');
+      const mediaUrl = video.processed_url || video.source_url;
+      const postText = updateData.hashtags || video.title || 'Nuevo contenido';
+      const platforms = updateData.platforms || ['tiktok', 'instagram', 'youtube'];
+
+      const result = await ayrshareService.schedulePost(
+        postText,
+        platforms,
+        [mediaUrl],
+        new Date(updateData.scheduled_at).toISOString(),
+        artist.ayrshare_profile_key
+      );
+
+      // Guardar el post_id de Ayrshare para poder rastrearlo
+      if (result.id || result.postIds) {
+        updateData.ayrshare_post_id = result.id || result.postIds?.[0] || null;
+      }
+      console.log(`✅ Post programado en Ayrshare para video: ${videoId}`);
+    } catch (err) {
+      console.error('❌ Error al programar en Ayrshare:', err.response?.data || err.message);
+      // No lanzamos el error — guardamos en DB igual para no perder la configuración
+    }
+  } else if (updateData.scheduled_at && !artist?.ayrshare_profile_key) {
+    console.warn(`⚠️ Video ${videoId} programado en DB pero artista sin Ayrshare conectado`);
+  }
+
+  // 3. Guardar en DB
   const { data, error } = await supabase
     .from('videos')
     .update(updateData)
@@ -284,6 +330,49 @@ exports.updateVideoSettings = async (videoId, updateData) => {
     .select();
   if (error) throw error;
   return data[0];
+};
+
+// --- PUBLICAR VIDEO AHORA ---
+exports.publishVideoNow = async (videoId) => {
+  const ayrshareService = require('./ayrshareService');
+
+  const { data: video, error: videoErr } = await supabase
+    .from('videos')
+    .select('id, title, source_url, processed_url, hashtags, platforms, artist_id')
+    .eq('id', videoId)
+    .single();
+
+  if (videoErr || !video) throw new Error('Video no encontrado');
+
+  const { data: artist, error: artistErr } = await supabase
+    .from('artists')
+    .select('ayrshare_profile_key, active_platforms')
+    .eq('id', video.artist_id)
+    .single();
+
+  if (artistErr || !artist) throw new Error('Artista no encontrado');
+  if (!artist.ayrshare_profile_key) throw new Error('El artista no tiene redes sociales conectadas. Conéctalas primero.');
+
+  const mediaUrl = video.processed_url || video.source_url;
+  const postText = video.hashtags || video.title || 'Nuevo contenido';
+  const platforms = video.platforms?.length ? video.platforms
+    : artist.active_platforms?.length ? artist.active_platforms
+    : ['tiktok', 'instagram'];
+
+  const result = await ayrshareService.publishPost(
+    postText, platforms, [mediaUrl], artist.ayrshare_profile_key
+  );
+
+  const postId = result.id || result.postIds?.[0] || null;
+  const { data: updated, error: updateErr } = await supabase
+    .from('videos')
+    .update({ status: 'published', ayrshare_post_id: postId, published_at: new Date().toISOString() })
+    .eq('id', videoId)
+    .select();
+
+  if (updateErr) throw updateErr;
+  console.log(`✅ Video ${videoId} publicado ahora. Post ID: ${postId}`);
+  return updated[0];
 };
 
 // --- OBTENER CLIPS DE UN VIDEO PADRE ---

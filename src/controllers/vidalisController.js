@@ -159,6 +159,17 @@ exports.updateVideo = async (req, res) => {
   }
 };
 
+exports.publishNow = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const result = await vidalisService.publishVideoNow(videoId);
+    res.status(200).json(result);
+  } catch (error) {
+    const status = error.response?.status || 500;
+    res.status(status).json({ error: error.message });
+  }
+};
+
 exports.getClips = async (req, res) => {
   try {
     const { parentId } = req.params;
