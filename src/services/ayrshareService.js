@@ -75,7 +75,7 @@ exports.createProfile = async (title) => {
 
       // "Transaction already closed" — esperar y reintentar
       const isTransactionError = msg.toLowerCase().includes('transaction') ||
-                                 msg.toLowerCase().includes('prisma');
+        msg.toLowerCase().includes('prisma');
       if (isTransactionError && attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, attempt * 500)); // 500ms, 1000ms
         continue;
@@ -111,6 +111,7 @@ exports.generateJWT = async (profileKey) => {
   if (process.env.AYRSHARE_DOMAIN) {
     body.domain = process.env.AYRSHARE_DOMAIN;
   }
+  console.error("profileKey", profileKey);
   const response = await axios.post(`${AYRSHARE_BASE}/profiles/generateJWT`, body, {
     headers: buildHeaders()
   });
@@ -187,12 +188,12 @@ exports.publishPost = async (text, platforms, mediaUrls = [], profileKey = null,
   }
 
   // Opciones específicas por plataforma
-  if (options.facebookOptions)   body.facebookOptions   = options.facebookOptions;
-  if (options.instagramOptions)  body.instagramOptions  = options.instagramOptions;
-  if (options.tiktokOptions)     body.tiktokOptions     = options.tiktokOptions;
-  if (options.youtubeOptions)    body.youtubeOptions    = options.youtubeOptions;
-  if (options.linkedinOptions)   body.linkedinOptions   = options.linkedinOptions;
-  if (options.twitterOptions)    body.twitterOptions    = options.twitterOptions;
+  if (options.facebookOptions) body.facebookOptions = options.facebookOptions;
+  if (options.instagramOptions) body.instagramOptions = options.instagramOptions;
+  if (options.tiktokOptions) body.tiktokOptions = options.tiktokOptions;
+  if (options.youtubeOptions) body.youtubeOptions = options.youtubeOptions;
+  if (options.linkedinOptions) body.linkedinOptions = options.linkedinOptions;
+  if (options.twitterOptions) body.twitterOptions = options.twitterOptions;
 
   const response = await axios.post(`${AYRSHARE_BASE}/post`, body, {
     headers: buildHeaders(profileKey)
