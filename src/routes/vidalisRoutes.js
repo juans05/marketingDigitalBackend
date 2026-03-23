@@ -5,35 +5,28 @@ const vidalisController = require('../controllers/vidalisController');
 // Autenticación
 router.post('/login', vidalisController.login);
 
-// Rutas para procesar videos
-router.post('/upload', vidalisController.processVideo);
-
-// Rutas para Gestión Multi-tenant
+// Agencias y Artistas
 router.post('/agencies', vidalisController.createAgency);
 router.post('/artists', vidalisController.createArtist);
+router.get('/artists/:agencyId', vidalisController.getArtists);
 
-// Ruta para obtener galería de un artista
+// Videos
+router.post('/upload', vidalisController.processVideo);
 router.get('/gallery/:artistId', vidalisController.getGallery);
-
-// Analytics de un video específico
-router.get('/analytics/:videoId', vidalisController.getVideoAnalytics);
-
-// Estadísticas globales del dashboard
-router.get('/stats/:agencyId', vidalisController.getDashboardStats);
-
-// Ruta para obtener firma de Cloudinary
-router.get('/cloudinary-signature', vidalisController.getSignature);
-
-// Programación y edición de videos
 router.patch('/video/:videoId', vidalisController.updateVideo);
-
-// Obtener clips relacionados
 router.get('/clips/:parentId', vidalisController.getClips);
 
-// Conectar redes sociales de una agencia via Ayrshare
-router.get('/connect-social/:agencyId', vidalisController.connectSocial);
+// Analytics
+router.get('/analytics/:videoId', vidalisController.getVideoAnalytics);
+router.get('/stats/:agencyId', vidalisController.getDashboardStats);
+router.post('/viral-score', vidalisController.getViralScore);
 
-// Publicación en redes sociales via Ayrshare
+// Cloudinary
+router.get('/cloudinary-signature', vidalisController.getSignature);
+
+// Redes Sociales (por artista)
+router.get('/connect-social/:artistId', vidalisController.connectSocial);
+router.get('/social-status/:artistId', vidalisController.getSocialStatus);
 router.post('/publish', vidalisController.publishToSocial);
 
 module.exports = router;

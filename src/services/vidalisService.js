@@ -10,35 +10,75 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
 
-// --- AUTENTICACIÓN (MVP) ---
-exports.loginUser = async (email, password) => {
-  const { data, error } = await supabase
+// --- AUTENTICACIÓN ---
+// accountType: 'agency' | 'artist'
+exports.loginUser = async (email, password, accountType = 'agency') => {
+  // Buscar cuenta existente por email o por nombre (compatibilidad hacia atrás)
+  const { data: existing } = await supabase
     .from('agencies')
     .select('*')
-    .ilike('name', `%${email.split('@')[0]}%`)
+    .or(`email.eq.${email},name.ilike.%${email.split('@')[0]}%`)
     .limit(1);
 
-  if (!data || data.length === 0) {
-    const { data: newAgency, error: createErr } = await supabase
-      .from('agencies')
-      .insert([{ name: email, plan_type: 'Pro' }])
-      .select();
+  if (existing && existing.length > 0) {
+    const agency = existing[0];
+    const resolvedType = agency.account_type || 'agency';
 
-    if (createErr) throw new Error('Error al crear cuenta');
+    let artist_id = null;
+    if (resolvedType === 'artist') {
+      const { data: artists } = await supabase
+        .from('artists')
+        .select('id')
+        .eq('agency_id', agency.id)
+        .limit(1);
+      if (artists?.[0]) artist_id = artists[0].id;
+    }
 
     return {
-      id: newAgency[0].id,
-      email: email,
-      agency: newAgency[0].name,
-      plan: newAgency[0].plan_type
+      id: agency.id,
+      email: agency.email || email,
+      name: agency.name,
+      plan: agency.plan_type,
+      account_type: resolvedType,
+      artist_id,
+    };
+  }
+
+  // Crear nueva cuenta
+  const name = email.split('@')[0];
+  const { data: newAgency, error: agencyErr } = await supabase
+    .from('agencies')
+    .insert([{ name, email, plan_type: 'Pro', account_type: accountType }])
+    .select();
+
+  if (agencyErr) throw new Error('Error al crear cuenta');
+  const agency = newAgency[0];
+
+  if (accountType === 'artist') {
+    // Artista solo: crear su perfil de artista automáticamente
+    const { data: newArtist, error: artistErr } = await supabase
+      .from('artists')
+      .insert([{ agency_id: agency.id, name }])
+      .select();
+    if (artistErr) throw new Error('Error al crear perfil de artista');
+
+    return {
+      id: agency.id,
+      email,
+      name,
+      plan: agency.plan_type,
+      account_type: 'artist',
+      artist_id: newArtist[0].id,
     };
   }
 
   return {
-    id: data[0].id,
-    email: email,
-    agency: data[0].name,
-    plan: data[0].plan_type
+    id: agency.id,
+    email,
+    name,
+    plan: agency.plan_type,
+    account_type: 'agency',
+    artist_id: null,
   };
 };
 
@@ -62,18 +102,35 @@ exports.createArtist = async (artistData) => {
   return data[0];
 };
 
+exports.getArtistsByAgency = async (agencyId) => {
+  const { data, error } = await supabase
+    .from('artists')
+    .select('id, name, active_platforms, ayrshare_profile_key, created_at')
+    .eq('agency_id', agencyId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
+};
+
+// --- SUBIR VIDEO ---
 exports.registerVideo = async (videoData) => {
-  // 0. Recorte Inteligente 9:16 con IA (Solo para videos de Cloudinary)
+  // Recorte inteligente 9:16 en Cloudinary (solo videos)
   if (videoData.source_url.includes('cloudinary.com') && videoData.source_url.match(/\.(mp4|mov|webm|ogv)$/i)) {
-    // Inyectamos la transformación de Cloudinary: c_fill (llenar), g_auto (IA para centrar), ar_9:16 (aspect ratio)
     videoData.processed_url = videoData.source_url.replace('/upload/', '/upload/c_fill,g_auto,ar_9:16/');
   } else if (videoData.source_url.includes('cloudinary.com')) {
-    // Para imágenes, también podemos asegurar un buen reencuadre si fuera necesario
-    // videoData.processed_url = videoData.source_url.replace('/upload/', '/upload/c_fill,g_auto/');
     videoData.processed_url = videoData.source_url;
   }
 
-  // 1. Guardar en Supabase
+  // Verificar que el artist_id es válido
+  const { data: artist, error: artistErr } = await supabase
+    .from('artists')
+    .select('id, ayrshare_profile_key, active_platforms')
+    .eq('id', videoData.artist_id)
+    .single();
+
+  if (artistErr || !artist) throw new Error(`Artista no encontrado: ${videoData.artist_id}`);
+
+  // Guardar en Supabase
   const { data, error } = await supabase
     .from('videos')
     .insert([videoData])
@@ -81,62 +138,22 @@ exports.registerVideo = async (videoData) => {
 
   if (error) throw error;
   const video = data[0];
-  console.log(`✅ Video registrado en DB: ${video.id}`);
+  console.log(`✅ Video registrado: ${video.id}`);
 
-  // 2. Obtener datos de la agencia para el profileKey y plataformas
-  console.log(`🔍 Buscando datos vinculados al ID: ${videoData.artist_id}`);
-  
-  let agency = null;
-
-  // Primero intentamos buscar como artista
-  const { data: artist } = await supabase
-    .from('artists')
-    .select('agency_id')
-    .eq('id', videoData.artist_id)
-    .single();
-
-  if (artist) {
-    console.log(`🔍 Artista encontrado. Buscando su agencia: ${artist.agency_id}`);
-    const { data: agencyData } = await supabase
-      .from('agencies')
-      .select('ayrshare_profile_key, active_platforms')
-      .eq('id', artist.agency_id)
-      .single();
-    agency = agencyData;
-  } else {
-    // Si no es artista, quizás sea el ID de la agencia directamente (MVP Login)
-    console.log(`🔍 No es artista. Buscando como agencia directa: ${videoData.artist_id}`);
-    const { data: agencyData } = await supabase
-      .from('agencies')
-      .select('ayrshare_profile_key, active_platforms')
-      .eq('id', videoData.artist_id)
-      .single();
-    agency = agencyData;
-  }
-
-  if (!agency) {
-    console.log(`⚠️ No se pudo vincular con ninguna agencia. Se usarán datos por defecto.`);
-  }
-
-  // 3. Disparar flujo de n8n (Procesamiento IA + Distribución)
+  // Disparar n8n para procesamiento IA
   if (process.env.N8N_WEBHOOK_URL) {
     try {
-      console.log(`🚀 Intentando disparar n8n: ${process.env.N8N_WEBHOOK_URL}`);
-      const payload = {
+      await axios.post(process.env.N8N_WEBHOOK_URL, {
         videoUrl: video.processed_url || video.source_url,
         videoId: video.id,
         title: video.title,
-        profileKey: agency?.ayrshare_profile_key || null,
-        platforms: video.platforms || agency?.active_platforms || ['tiktok', 'instagram', 'youtube']
-      };
-      
-      await axios.post(process.env.N8N_WEBHOOK_URL, payload);
-      console.log(`✅ n8n disparado con éxito para video: ${video.id}`);
+        profileKey: artist.ayrshare_profile_key || null,
+        platforms: video.platforms || artist.active_platforms || ['tiktok', 'instagram', 'youtube'],
+      });
+      console.log(`✅ n8n disparado para video: ${video.id}`);
     } catch (err) {
       console.error('❌ Error al disparar n8n:', err.response?.data || err.message);
     }
-  } else {
-    console.warn('⚠️ N8N_WEBHOOK_URL no está configurado en el .env');
   }
 
   return video;
@@ -149,7 +166,6 @@ exports.fetchArtistGallery = async (artistId) => {
     .select('*')
     .eq('artist_id', artistId)
     .order('created_at', { ascending: false });
-
   if (error) throw error;
   return data;
 };
@@ -165,12 +181,25 @@ exports.getVideoAnalytics = async (videoId) => {
   return data;
 };
 
-// --- ESTADÍSTICAS GLOBALES DEL DASHBOARD ---
+// --- ESTADÍSTICAS DEL DASHBOARD ---
+// Funciona tanto para agencias (todos sus artistas) como para artistas solos
 exports.getDashboardStats = async (agencyId) => {
+  // Obtener todos los artistas de la agencia
+  const { data: artists } = await supabase
+    .from('artists')
+    .select('id')
+    .eq('agency_id', agencyId);
+
+  if (!artists || artists.length === 0) {
+    return { total: 0, published: 0, avgScore: 0 };
+  }
+
+  const artistIds = artists.map(a => a.id);
+
   const { data: videos, error } = await supabase
     .from('videos')
-    .select('viral_score, status, created_at')
-    .eq('agency_id', agencyId);
+    .select('viral_score, status')
+    .in('artist_id', artistIds);
 
   if (error) throw error;
 
@@ -184,30 +213,53 @@ exports.getDashboardStats = async (agencyId) => {
   return { total, published, avgScore };
 };
 
-// --- CONECTAR REDES SOCIALES (Ayrshare) ---
-exports.connectSocialAccounts = async (agencyId) => {
+// --- CONECTAR REDES SOCIALES (por ARTISTA) ---
+exports.connectSocialAccounts = async (artistId) => {
   const ayrshareService = require('./ayrshareService');
 
-  const { data: agencies, error } = await supabase
-    .from('agencies')
+  const { data: artist, error } = await supabase
+    .from('artists')
     .select('id, name, ayrshare_profile_key')
-    .eq('id', agencyId)
-    .limit(1);
+    .eq('id', artistId)
+    .single();
 
-  if (error) throw new Error(`Error Supabase: ${error.message}`);
-  if (!agencies || agencies.length === 0) throw new Error(`Agencia no encontrada para id: ${agencyId}`);
-  const agency = agencies[0];
+  if (error || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
 
-  let profileKey = agency.ayrshare_profile_key;
+  let profileKey = artist.ayrshare_profile_key;
 
   if (!profileKey) {
-    const profile = await ayrshareService.createProfile(agency.name);
+    const profile = await ayrshareService.createProfile(artist.name);
     profileKey = profile.profileKey;
-    await supabase.from('agencies').update({ ayrshare_profile_key: profileKey }).eq('id', agencyId);
+    await supabase.from('artists').update({ ayrshare_profile_key: profileKey }).eq('id', artistId);
   }
 
   const jwt = await ayrshareService.generateJWT(profileKey);
   return { url: jwt.url, profileKey };
+};
+
+// --- VERIFICAR PLATAFORMAS CONECTADAS (por ARTISTA) ---
+exports.getSocialStatus = async (artistId) => {
+  const ayrshareService = require('./ayrshareService');
+
+  const { data: artist, error } = await supabase
+    .from('artists')
+    .select('id, ayrshare_profile_key')
+    .eq('id', artistId)
+    .single();
+
+  if (error || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
+
+  const profileKey = artist.ayrshare_profile_key;
+  if (!profileKey) return { platforms: [] };
+
+  const platforms = await ayrshareService.getActivePlatforms(profileKey);
+
+  await supabase
+    .from('artists')
+    .update({ active_platforms: platforms })
+    .eq('id', artistId);
+
+  return { platforms };
 };
 
 // --- VIRAL SCORE (n8n) ---
@@ -220,18 +272,16 @@ exports.analyzeViralPotential = async (videoUrl) => {
       console.error('⚠️ Error en Viral Score n8n:', err.message);
     }
   }
-  // Fallback si n8n no está configurado
   return { score: 0, feedback: "n8n no configurado aún." };
 };
 
-// --- ACTUALIZAR CONFIGURACIÓN DE VIDEO (Programación, Hashtags, etc.) ---
+// --- ACTUALIZAR CONFIGURACIÓN DE VIDEO ---
 exports.updateVideoSettings = async (videoId, updateData) => {
   const { data, error } = await supabase
     .from('videos')
     .update(updateData)
     .eq('id', videoId)
     .select();
-
   if (error) throw error;
   return data[0];
 };
@@ -243,7 +293,6 @@ exports.getClipsByParent = async (parentId) => {
     .select('*')
     .eq('parent_video_id', parentId)
     .order('created_at', { ascending: false });
-
   if (error) throw error;
   return data;
 };

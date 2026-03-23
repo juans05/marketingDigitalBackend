@@ -5,13 +5,11 @@ const ayrshareService = require('../services/ayrshareService');
 // --- LOGIN ---
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-
+    const { email, password, account_type } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Se requiere email y contraseña' });
     }
-
-    const userData = await vidalisService.loginUser(email, password);
+    const userData = await vidalisService.loginUser(email, password, account_type || 'agency');
     res.status(200).json(userData);
   } catch (error) {
     res.status(401).json({ error: error.message });
@@ -20,8 +18,7 @@ exports.login = async (req, res) => {
 
 exports.createAgency = async (req, res) => {
   try {
-    const agencyData = req.body;
-    const result = await vidalisService.createAgency(agencyData);
+    const result = await vidalisService.createAgency(req.body);
     res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -30,9 +27,19 @@ exports.createAgency = async (req, res) => {
 
 exports.createArtist = async (req, res) => {
   try {
-    const artistData = req.body;
-    const result = await vidalisService.createArtist(artistData);
+    const result = await vidalisService.createArtist(req.body);
     res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Listar artistas de una agencia
+exports.getArtists = async (req, res) => {
+  try {
+    const { agencyId } = req.params;
+    const artists = await vidalisService.getArtistsByAgency(agencyId);
+    res.status(200).json(artists);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -40,7 +47,7 @@ exports.createArtist = async (req, res) => {
 
 exports.getSignature = (req, res) => {
   try {
-    const { folder } = req.query; // Leemos la carpeta de la query param
+    const { folder } = req.query;
     const signatureData = cloudinaryService.generateUploadSignature(folder);
     res.status(200).json(signatureData);
   } catch (error) {
@@ -51,7 +58,6 @@ exports.getSignature = (req, res) => {
 exports.processVideo = async (req, res) => {
   try {
     const { videoData } = req.body;
-    // Validaciones de negocio adicionales aquí
     const result = await vidalisService.registerVideo(videoData);
     res.status(201).json(result);
   } catch (error) {
@@ -99,49 +105,35 @@ exports.getViralScore = async (req, res) => {
   }
 };
 
+// Conectar redes sociales de un ARTISTA
 exports.connectSocial = async (req, res) => {
   try {
-    const { agencyId } = req.params;
-    const result = await vidalisService.connectSocialAccounts(agencyId);
+    const { artistId } = req.params;
+    const result = await vidalisService.connectSocialAccounts(artistId);
     res.status(200).json(result);
   } catch (error) {
-    const ayrshareError = error.response?.data;
     const status = error.response?.status || 500;
-    res.status(status).json({ error: error.message, details: ayrshareError });
+    res.status(status).json({ error: error.message, details: error.response?.data });
   }
 };
 
-/**
- * POST /api/publish
- * Publica un video con hashtags en las redes sociales via Ayrshare.
- *
- * Body esperado:
- * {
- *   "text": "Nuevo video de Juan 🎵 #música #viral #latino",
- *   "platforms": ["facebook", "instagram", "tiktok"],
- *   "mediaUrls": ["https://res.cloudinary.com/.../video.mp4"],
- *   "profileKey": "ak-xxxx",   ← opcional, de la agencia
- *   "isPreview": false,        ← opcional, true para simular sin publicar
- *   "facebookOptions": { "title": "Título del video" },
- *   "instagramOptions": { "reels": true },
- *   "tiktokOptions": { "videoTitle": "Título TikTok" },
- *   "youtubeOptions": { "title": "Título YouTube", "visibility": "public", "youtubeShortsPost": true }
- * }
- */
+// Verificar plataformas conectadas de un ARTISTA
+exports.getSocialStatus = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const result = await vidalisService.getSocialStatus(artistId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.publishToSocial = async (req, res) => {
   try {
     const {
-      text,
-      platforms,
-      mediaUrls,
-      profileKey,
-      isPreview,
-      facebookOptions,
-      instagramOptions,
-      tiktokOptions,
-      youtubeOptions,
-      linkedinOptions,
-      twitterOptions
+      text, platforms, mediaUrls, profileKey, isPreview,
+      facebookOptions, instagramOptions, tiktokOptions, youtubeOptions,
+      linkedinOptions, twitterOptions
     } = req.body;
 
     if (!text || !platforms || platforms.length === 0) {
@@ -149,28 +141,18 @@ exports.publishToSocial = async (req, res) => {
     }
 
     const options = { facebookOptions, instagramOptions, tiktokOptions, youtubeOptions, linkedinOptions, twitterOptions };
-
-    const result = await ayrshareService.publishPost(
-      text,
-      platforms,
-      mediaUrls || [],
-      profileKey || null,
-      options,
-      isPreview || false
-    );
-
+    const result = await ayrshareService.publishPost(text, platforms, mediaUrls || [], profileKey || null, options, isPreview || false);
     res.status(200).json(result);
   } catch (error) {
     const status = error.response?.status || 500;
-    const message = error.response?.data?.message || error.message;
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: error.response?.data?.message || error.message });
   }
 };
+
 exports.updateVideo = async (req, res) => {
   try {
     const { videoId } = req.params;
-    const updateData = req.body;
-    const result = await vidalisService.updateVideoSettings(videoId, updateData);
+    const result = await vidalisService.updateVideoSettings(videoId, req.body);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
