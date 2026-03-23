@@ -1,6 +1,6 @@
 const cloudinary = require('cloudinary').v2;
 
-if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET || !process.env.CLOUDINARY_UPLOAD_PRESET) {
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
   console.error("❌ ERROR: Faltan variables de configuración de Cloudinary en el entorno.");
 }
 
