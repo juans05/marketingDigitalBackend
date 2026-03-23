@@ -105,6 +105,9 @@ exports.deleteProfile = async (profileKey) => {
  */
 exports.generateJWT = async (profileKey) => {
   const body = { profileKey };
+  if (process.env.AYRSHARE_PRIVATE_KEY) {
+    body.privateKey = process.env.AYRSHARE_PRIVATE_KEY;
+  }
   if (process.env.AYRSHARE_DOMAIN) {
     body.domain = process.env.AYRSHARE_DOMAIN;
   }
