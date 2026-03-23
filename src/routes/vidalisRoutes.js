@@ -30,6 +30,9 @@ router.patch('/video/:videoId', vidalisController.updateVideo);
 // Obtener clips relacionados
 router.get('/clips/:parentId', vidalisController.getClips);
 
+// Conectar redes sociales de una agencia via Ayrshare
+router.get('/connect-social/:agencyId', vidalisController.connectSocial);
+
 // Publicación en redes sociales via Ayrshare
 router.post('/publish', vidalisController.publishToSocial);
 

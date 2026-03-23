@@ -99,6 +99,16 @@ exports.getViralScore = async (req, res) => {
   }
 };
 
+exports.connectSocial = async (req, res) => {
+  try {
+    const { agencyId } = req.params;
+    const result = await vidalisService.connectSocialAccounts(agencyId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 /**
  * POST /api/publish
  * Publica un video con hashtags en las redes sociales via Ayrshare.

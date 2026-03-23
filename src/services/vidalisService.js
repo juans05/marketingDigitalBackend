@@ -184,6 +184,30 @@ exports.getDashboardStats = async (agencyId) => {
   return { total, published, avgScore };
 };
 
+// --- CONECTAR REDES SOCIALES (Ayrshare) ---
+exports.connectSocialAccounts = async (agencyId) => {
+  const ayrshareService = require('./ayrshareService');
+
+  const { data: agency, error } = await supabase
+    .from('agencies')
+    .select('id, name, ayrshare_profile_key')
+    .eq('id', agencyId)
+    .single();
+
+  if (error || !agency) throw new Error('Agencia no encontrada');
+
+  let profileKey = agency.ayrshare_profile_key;
+
+  if (!profileKey) {
+    const profile = await ayrshareService.createProfile(agency.name);
+    profileKey = profile.profileKey;
+    await supabase.from('agencies').update({ ayrshare_profile_key: profileKey }).eq('id', agencyId);
+  }
+
+  const jwt = await ayrshareService.generateJWT(profileKey);
+  return { url: jwt.url, profileKey };
+};
+
 // --- VIRAL SCORE (n8n) ---
 exports.analyzeViralPotential = async (videoUrl) => {
   if (process.env.N8N_VIRAL_SCORE_URL) {
