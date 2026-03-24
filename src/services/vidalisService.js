@@ -153,9 +153,9 @@ exports.registerVideo = async (videoData) => {
   if (process.env.N8N_WEBHOOK_URL) {
     try {
       // Filtrar plataformas si es imagen (TikTok y YouTube requieren video)
-      let targetPlatforms = (video.platforms?.length ? video.platforms : null) || 
-                          (artist.active_platforms?.length ? artist.active_platforms : null) || 
-                          ['tiktok', 'instagram', 'facebook', 'youtube'];
+      let targetPlatforms = (video.platforms?.length ? video.platforms : null) ||
+        (artist.active_platforms?.length ? artist.active_platforms : null) ||
+        ['tiktok', 'instagram', 'facebook', 'youtube'];
 
       if (!looksLikeVideo) {
         targetPlatforms = targetPlatforms.filter(p => !['tiktok', 'youtube'].includes(p.toLowerCase()));
@@ -305,6 +305,7 @@ exports.analyzeViralPotential = async (videoUrl) => {
 // Si viene scheduled_at, programa el post en Ayrshare y guarda el post_id
 exports.updateVideoSettings = async (videoId, updateData) => {
   // 1. Obtener datos actuales del video y del artista
+  console.log("updateData.data", updateData);
   const { data: video, error: videoErr } = await supabase
     .from('videos')
     .select('id, title, source_url, processed_url, artist_id')
@@ -318,38 +319,45 @@ exports.updateVideoSettings = async (videoId, updateData) => {
     .select('ayrshare_profile_key')
     .eq('id', video.artist_id)
     .single();
+  // Leer fecha programada — puede venir como scheduled_at (frontend) o scheduled_for (DB)
+  const scheduledAt = updateData.scheduled_at || updateData.scheduled_for || null;
+  console.log('📅 scheduledAt recibido:', scheduledAt, '| profileKey:', artist?.ayrshare_profile_key ? 'OK' : 'NO');
 
   // 2. Si hay fecha programada y el artista tiene Ayrshare conectado → programar
-  if (updateData.scheduled_at && artist?.ayrshare_profile_key) {
+  if (scheduledAt && artist?.ayrshare_profile_key) {
     try {
       const ayrshareService = require('./ayrshareService');
       const postText = updateData.hashtags || video.title || 'Nuevo contenido';
       const platforms = updateData.platforms || ['tiktok', 'instagram', 'youtube'];
 
-      const mediaUrl = buildCloudinaryUrl(video.source_url);
+      const cloudinaryUrl = buildCloudinaryUrl(video.source_url);
+      const mediaUrl = await uploadToAyrshare(cloudinaryUrl, artist.ayrshare_profile_key);
       const options = buildPlatformOptions(video.source_url, platforms, postText);
-      await warmupCloudinaryUrl(mediaUrl);
 
       const result = await ayrshareService.schedulePost(
         postText,
         platforms,
         [mediaUrl],
-        new Date(updateData.scheduled_at).toISOString(),
+        new Date(scheduledAt).toISOString(),
         artist.ayrshare_profile_key,
         options
       );
 
-      // Guardar el post_id de Ayrshare para poder rastrearlo
       if (result.id || result.postIds) {
         updateData.ayrshare_post_id = result.id || result.postIds?.[0] || null;
       }
       console.log(`✅ Post programado en Ayrshare para video: ${videoId}`);
     } catch (err) {
       console.error('❌ Error al programar en Ayrshare:', err.response?.data || err.message);
-      // No lanzamos el error — guardamos en DB igual para no perder la configuración
     }
-  } else if (updateData.scheduled_at && !artist?.ayrshare_profile_key) {
+  } else if (scheduledAt && !artist?.ayrshare_profile_key) {
     console.warn(`⚠️ Video ${videoId} programado en DB pero artista sin Ayrshare conectado`);
+  }
+
+  // Mapear scheduled_at → scheduled_for (nombre real de la columna en Supabase)
+  if ('scheduled_at' in updateData) {
+    updateData.scheduled_for = updateData.scheduled_at || null;
+    delete updateData.scheduled_at;
   }
 
   // 3. Guardar en DB
@@ -390,20 +398,26 @@ function buildCloudinaryUrl(sourceUrl) {
   }
 }
 
-// --- HELPER: Pre-calienta la URL de Cloudinary para que la transformación esté lista ---
-// Cloudinary genera transformaciones de video de forma LAZY (primera solicitud puede tardar 30s+).
-// Instagram intenta obtener el video y, si no está listo, rechaza con error 170.
-// Hacemos un GET con timeout largo para que Cloudinary genere la transformación antes de publicar.
-async function warmupCloudinaryUrl(url) {
-  if (!url || !url.includes('cloudinary.com')) return;
+// --- HELPER: Sube el media a Ayrshare CDN antes de publicar ---
+// Esto elimina el problema de URLs de Cloudinary (lazy transforms, timeouts de Instagram).
+// Ayrshare re-hospeda el media en su CDN, garantizando compatibilidad con cada red social.
+// Si falla (plan no soporta, error de red), se devuelve la URL original como fallback.
+async function uploadToAyrshare(cloudinaryUrl, profileKey) {
+  const ayrshareService = require('./ayrshareService');
   try {
-    console.log('⏳ Pre-calentando transformación de Cloudinary:', url.slice(-60));
-    await axios.get(url, { timeout: 60000, responseType: 'stream' })
-      .then(res => { res.data.destroy(); }); // descartar body, solo necesitamos que responda
-    console.log('✅ Cloudinary listo para publicar');
+    console.log('⬆️ Subiendo media a Ayrshare CDN:', cloudinaryUrl.slice(-60));
+    const result = await ayrshareService.uploadMedia(cloudinaryUrl, profileKey);
+    // Ayrshare puede devolver { url, mediaUrl, location, ... } según el plan
+    const hostedUrl = result.url || result.mediaUrl || result.location || null;
+    if (hostedUrl) {
+      console.log('✅ Media en Ayrshare CDN:', hostedUrl.slice(-60));
+      return hostedUrl;
+    }
+    console.warn('⚠️ Ayrshare no devolvió URL, usando Cloudinary directamente');
+    return cloudinaryUrl;
   } catch (err) {
-    // Si falla el warmup (timeout, 4xx), continuamos igual — Ayrshare reintentará
-    console.warn('⚠️ Warmup Cloudinary falló (continuando):', err.message);
+    console.warn('⚠️ Upload a Ayrshare falló, usando Cloudinary directamente:', err.response?.data?.message || err.message);
+    return cloudinaryUrl; // fallback: intentar con URL de Cloudinary igual
   }
 }
 
@@ -452,11 +466,11 @@ exports.publishVideoNow = async (videoId) => {
   const postText = video.hashtags || video.title || 'Nuevo contenido';
   const platforms = video.platforms?.length ? video.platforms
     : artist.active_platforms?.length ? artist.active_platforms
-    : ['tiktok', 'instagram'];
+      : ['tiktok', 'instagram'];
 
-  const mediaUrl = buildCloudinaryUrl(video.source_url);
+  const cloudinaryUrl = buildCloudinaryUrl(video.source_url);
+  const mediaUrl = await uploadToAyrshare(cloudinaryUrl, artist.ayrshare_profile_key);
   const options = buildPlatformOptions(video.source_url, platforms, postText);
-  await warmupCloudinaryUrl(mediaUrl);
 
   const result = await ayrshareService.publishPost(
     postText, platforms, [mediaUrl], artist.ayrshare_profile_key, options

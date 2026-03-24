@@ -212,7 +212,7 @@ exports.schedulePost = async (text, platforms, mediaUrls, scheduleDate, profileK
     mediaUrls: mediaUrls,
     scheduleDate: scheduleDate // Formato ISO: "2026-03-20T15:00:00Z"
   };
-
+  console.log("schedulePost", body);
   if (options.instagramOptions) body.instagramOptions = options.instagramOptions;
   if (options.tiktokOptions) body.tiktokOptions = options.tiktokOptions;
   if (options.youtubeOptions) body.youtubeOptions = options.youtubeOptions;
@@ -221,7 +221,7 @@ exports.schedulePost = async (text, platforms, mediaUrls, scheduleDate, profileK
   const response = await axios.post(`${AYRSHARE_BASE}/post`, body, {
     headers: buildHeaders(profileKey)
   });
-
+  console.log("response", response);
   return response.data;
 };
 
