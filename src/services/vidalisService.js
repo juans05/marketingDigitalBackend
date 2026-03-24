@@ -326,7 +326,9 @@ exports.updateVideoSettings = async (videoId, updateData) => {
       const postText = updateData.hashtags || video.title || 'Nuevo contenido';
       const platforms = updateData.platforms || ['tiktok', 'instagram', 'youtube'];
 
-      const { mediaUrl, options } = buildMediaPayload(video.source_url, platforms, postText);
+      const mediaUrl = buildCloudinaryUrl(video.source_url);
+      const options = buildPlatformOptions(video.source_url, platforms, postText);
+      await warmupCloudinaryUrl(mediaUrl);
 
       const result = await ayrshareService.schedulePost(
         postText,
@@ -360,66 +362,70 @@ exports.updateVideoSettings = async (videoId, updateData) => {
   return data[0];
 };
 
-// --- HELPER: Prepara URL y opciones de plataforma para Ayrshare ---
-// Siempre recibe source_url (sin transformaciones previas) para evitar transformaciones duplicadas.
-//
-// Especificaciones aplicadas (Ayrshare Media Guidelines):
-//   VIDEOS → MP4, H.264 (vc_h264), 9:16, c_fill — válido para Instagram Reels, TikTok, YT Shorts, Facebook Reels
-//   IMÁGENES → JPEG (f_jpg), 9:16 — TikTok no acepta PNG; Instagram acepta 9:16 portrait
-//
-// Opciones por plataforma:
-//   instagram + video  → instagramOptions: { reels: true }    (requerido por API para Reels)
-//   youtube + video    → youtubeOptions: { youtubeShortsPost: true, visibility: 'public' }
-//   tiktok + video     → tiktokOptions: { videoTitle: ... }   (opcional, mejora visibilidad)
-function buildMediaPayload(sourceUrl, platforms, postText = '') {
-  if (!sourceUrl) return { mediaUrl: sourceUrl, options: {} };
-
-  // Detectar tipo usando la URL original (antes de transformaciones)
-  const isVideo = sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i);
-  const isCloudinary = sourceUrl.includes('cloudinary.com') && sourceUrl.includes('/upload/');
-
-  let mediaUrl = sourceUrl;
-
-  if (isCloudinary) {
-    // Insertar transformaciones justo después de /upload/ sobre la URL limpia
-    const uploadIdx = sourceUrl.indexOf('/upload/');
-    const base = sourceUrl.slice(0, uploadIdx + 8);   // "https://…/upload/"
-    const rest = sourceUrl.slice(uploadIdx + 8);       // "public_id" (sin transforms previos)
-
-    if (isVideo) {
-      // H.264, 9:16 portrait, fill crop — universal cross-platform
-      // vc_h264: codec requerido por Instagram y Twitter/X
-      // ar_9:16: requerido por TikTok, Instagram Reels, YT Shorts
-      mediaUrl = `${base}c_fill,g_auto,ar_9:16,vc_h264/${rest}`;
-      if (!mediaUrl.match(/\.(mp4|mov)(\?|$)/i)) mediaUrl += '.mp4';
-    } else {
-      // JPEG obligatorio: TikTok rechaza PNG; Instagram y Facebook prefieren JPEG
-      // 9:16 portrait para TikTok (1080×1920) e Instagram portrait/Stories
-      mediaUrl = `${base}c_fill,g_auto,ar_9:16,f_jpg,q_auto/${rest}`;
-      if (!mediaUrl.match(/\.(jpg|jpeg)(\?|$)/i)) mediaUrl += '.jpg';
-    }
+// --- HELPER: Construye URL de Cloudinary con transformaciones limpias ---
+// Especificaciones (Ayrshare Media Guidelines):
+//   VIDEOS → MP4, H.264 (vc_h264), fl_faststart (moov atom al inicio, req. Instagram), 9:16
+//   IMÁGENES → JPEG (f_jpg, TikTok no acepta PNG), 9:16 portrait
+function buildCloudinaryUrl(sourceUrl) {
+  if (!sourceUrl || !sourceUrl.includes('cloudinary.com') || !sourceUrl.includes('/upload/')) {
+    return sourceUrl;
   }
 
+  const isVideo = sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i);
+  const uploadIdx = sourceUrl.indexOf('/upload/');
+  const base = sourceUrl.slice(0, uploadIdx + 8); // "https://…/upload/"
+  const rest = sourceUrl.slice(uploadIdx + 8);     // "v123/public_id" sin transforms
+
+  if (isVideo) {
+    // fl_faststart: mueve el moov atom al inicio del MP4 (requerido por Instagram explícitamente)
+    // vc_h264: codec H.264 requerido por Instagram, Twitter/X y Facebook
+    // ar_9:16: requerido por TikTok, Instagram Reels, YouTube Shorts, Facebook Reels
+    const url = `${base}c_fill,g_auto,ar_9:16,vc_h264,fl_faststart/${rest}`;
+    return url.match(/\.(mp4|mov)(\?|$)/i) ? url : url + '.mp4';
+  } else {
+    // f_jpg: TikTok rechaza PNG; JPEG universal para Instagram/Facebook/Twitter
+    // ar_9:16: formato portrait para TikTok (1080×1920) e Instagram portrait/Stories
+    const url = `${base}c_fill,g_auto,ar_9:16,f_jpg,q_auto/${rest}`;
+    return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
+  }
+}
+
+// --- HELPER: Pre-calienta la URL de Cloudinary para que la transformación esté lista ---
+// Cloudinary genera transformaciones de video de forma LAZY (primera solicitud puede tardar 30s+).
+// Instagram intenta obtener el video y, si no está listo, rechaza con error 170.
+// Hacemos un GET con timeout largo para que Cloudinary genere la transformación antes de publicar.
+async function warmupCloudinaryUrl(url) {
+  if (!url || !url.includes('cloudinary.com')) return;
+  try {
+    console.log('⏳ Pre-calentando transformación de Cloudinary:', url.slice(-60));
+    await axios.get(url, { timeout: 60000, responseType: 'stream' })
+      .then(res => { res.data.destroy(); }); // descartar body, solo necesitamos que responda
+    console.log('✅ Cloudinary listo para publicar');
+  } catch (err) {
+    // Si falla el warmup (timeout, 4xx), continuamos igual — Ayrshare reintentará
+    console.warn('⚠️ Warmup Cloudinary falló (continuando):', err.message);
+  }
+}
+
+// --- HELPER: Opciones por plataforma según tipo de contenido ---
+function buildPlatformOptions(sourceUrl, platforms, postText = '') {
+  const isVideo = sourceUrl && (sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i));
   const options = {};
 
   if (isVideo) {
-    // Instagram Reels — obligatorio para que el video no falle (error 170)
     if (platforms.includes('instagram')) {
+      // Obligatorio para video en Instagram — sin esto da error 170
       options.instagramOptions = { reels: true };
     }
-
-    // YouTube Shorts — requiere 9:16 y duración ≤ 3 min
     if (platforms.includes('youtube')) {
       options.youtubeOptions = { youtubeShortsPost: true, visibility: 'public' };
     }
-
-    // TikTok — videoTitle mejora el algoritmo de descubrimiento
     if (platforms.includes('tiktok') && postText) {
       options.tiktokOptions = { videoTitle: postText.slice(0, 100) };
     }
   }
 
-  return { mediaUrl, options };
+  return options;
 }
 
 // --- PUBLICAR VIDEO AHORA ---
@@ -448,8 +454,9 @@ exports.publishVideoNow = async (videoId) => {
     : artist.active_platforms?.length ? artist.active_platforms
     : ['tiktok', 'instagram'];
 
-  // Siempre usamos source_url como base para que buildMediaPayload aplique transformaciones limpias
-  const { mediaUrl, options } = buildMediaPayload(video.source_url, platforms, postText);
+  const mediaUrl = buildCloudinaryUrl(video.source_url);
+  const options = buildPlatformOptions(video.source_url, platforms, postText);
+  await warmupCloudinaryUrl(mediaUrl);
 
   const result = await ayrshareService.publishPost(
     postText, platforms, [mediaUrl], artist.ayrshare_profile_key, options
