@@ -13,7 +13,7 @@ cloudinary.config({
 exports.generateUploadSignature = (folder = null) => {
   const timestamp = Math.round(new Date().getTime() / 1000);
   // Signed upload directo sin preset — evita conflictos con presets Signed de Cloudinary
-  const params = { timestamp, folder: folder || 'vidalis_uploads' };
+  const params = { access_mode: 'public', folder: folder || 'vidalis_uploads', timestamp };
 
   const signature = cloudinary.utils.api_sign_request(
     params,
