@@ -172,7 +172,8 @@ exports.registerVideo = async (videoData) => {
 
       if (targetPlatforms.length > 0) {
         await axios.post(process.env.N8N_WEBHOOK_URL, {
-          videoUrl: video.processed_url || video.source_url,
+          videoUrl: video.processed_url || video.source_url, // URL con transforms (para Gemini)
+          sourceUrl: video.source_url,                       // URL limpia (para guardar en DB)
           videoId: video.id,
           title: video.title,
           mediaType: looksLikeVideo ? 'video' : 'image',
