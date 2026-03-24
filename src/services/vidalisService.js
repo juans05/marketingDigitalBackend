@@ -374,8 +374,11 @@ exports.updateVideoSettings = async (videoId, updateData) => {
       console.log(`✅ Post programado en Ayrshare para video: ${videoId}`);
     } catch (err) {
       scheduleStatus = 'error';
-      scheduleErrorMsg = err.response?.data?.message || err.message;
-      console.error('❌ Error al programar en Ayrshare:', scheduleErrorMsg);
+      const ayrData = err.response?.data;
+      scheduleErrorMsg = ayrData?.message || ayrData?.error
+        || (typeof ayrData === 'object' ? JSON.stringify(ayrData) : null)
+        || err.message;
+      console.error('❌ Error Ayrshare schedulePost:', ayrData || err.message);
     }
   } else if (scheduledAt) {
     console.warn(`⚠️ Video ${videoId} programado en DB pero artista sin Ayrshare conectado`);
