@@ -205,13 +205,18 @@ exports.publishPost = async (text, platforms, mediaUrls = [], profileKey = null,
 /**
  * Programar una publicación para una fecha futura.
  */
-exports.schedulePost = async (text, platforms, mediaUrls, scheduleDate, profileKey = null) => {
+exports.schedulePost = async (text, platforms, mediaUrls, scheduleDate, profileKey = null, options = {}) => {
   const body = {
     post: text,
     platforms: platforms,
     mediaUrls: mediaUrls,
     scheduleDate: scheduleDate // Formato ISO: "2026-03-20T15:00:00Z"
   };
+
+  if (options.instagramOptions) body.instagramOptions = options.instagramOptions;
+  if (options.tiktokOptions) body.tiktokOptions = options.tiktokOptions;
+  if (options.youtubeOptions) body.youtubeOptions = options.youtubeOptions;
+  if (options.facebookOptions) body.facebookOptions = options.facebookOptions;
 
   const response = await axios.post(`${AYRSHARE_BASE}/post`, body, {
     headers: buildHeaders(profileKey)

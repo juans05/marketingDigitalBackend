@@ -323,16 +323,18 @@ exports.updateVideoSettings = async (videoId, updateData) => {
   if (updateData.scheduled_at && artist?.ayrshare_profile_key) {
     try {
       const ayrshareService = require('./ayrshareService');
-      const mediaUrl = video.processed_url || video.source_url;
       const postText = updateData.hashtags || video.title || 'Nuevo contenido';
       const platforms = updateData.platforms || ['tiktok', 'instagram', 'youtube'];
+
+      const { mediaUrl, options } = buildMediaPayload(video.source_url, platforms, postText);
 
       const result = await ayrshareService.schedulePost(
         postText,
         platforms,
         [mediaUrl],
         new Date(updateData.scheduled_at).toISOString(),
-        artist.ayrshare_profile_key
+        artist.ayrshare_profile_key,
+        options
       );
 
       // Guardar el post_id de Ayrshare para poder rastrearlo
@@ -358,6 +360,68 @@ exports.updateVideoSettings = async (videoId, updateData) => {
   return data[0];
 };
 
+// --- HELPER: Prepara URL y opciones de plataforma para Ayrshare ---
+// Siempre recibe source_url (sin transformaciones previas) para evitar transformaciones duplicadas.
+//
+// Especificaciones aplicadas (Ayrshare Media Guidelines):
+//   VIDEOS → MP4, H.264 (vc_h264), 9:16, c_fill — válido para Instagram Reels, TikTok, YT Shorts, Facebook Reels
+//   IMÁGENES → JPEG (f_jpg), 9:16 — TikTok no acepta PNG; Instagram acepta 9:16 portrait
+//
+// Opciones por plataforma:
+//   instagram + video  → instagramOptions: { reels: true }    (requerido por API para Reels)
+//   youtube + video    → youtubeOptions: { youtubeShortsPost: true, visibility: 'public' }
+//   tiktok + video     → tiktokOptions: { videoTitle: ... }   (opcional, mejora visibilidad)
+function buildMediaPayload(sourceUrl, platforms, postText = '') {
+  if (!sourceUrl) return { mediaUrl: sourceUrl, options: {} };
+
+  // Detectar tipo usando la URL original (antes de transformaciones)
+  const isVideo = sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i);
+  const isCloudinary = sourceUrl.includes('cloudinary.com') && sourceUrl.includes('/upload/');
+
+  let mediaUrl = sourceUrl;
+
+  if (isCloudinary) {
+    // Insertar transformaciones justo después de /upload/ sobre la URL limpia
+    const uploadIdx = sourceUrl.indexOf('/upload/');
+    const base = sourceUrl.slice(0, uploadIdx + 8);   // "https://…/upload/"
+    const rest = sourceUrl.slice(uploadIdx + 8);       // "public_id" (sin transforms previos)
+
+    if (isVideo) {
+      // H.264, 9:16 portrait, fill crop — universal cross-platform
+      // vc_h264: codec requerido por Instagram y Twitter/X
+      // ar_9:16: requerido por TikTok, Instagram Reels, YT Shorts
+      mediaUrl = `${base}c_fill,g_auto,ar_9:16,vc_h264/${rest}`;
+      if (!mediaUrl.match(/\.(mp4|mov)(\?|$)/i)) mediaUrl += '.mp4';
+    } else {
+      // JPEG obligatorio: TikTok rechaza PNG; Instagram y Facebook prefieren JPEG
+      // 9:16 portrait para TikTok (1080×1920) e Instagram portrait/Stories
+      mediaUrl = `${base}c_fill,g_auto,ar_9:16,f_jpg,q_auto/${rest}`;
+      if (!mediaUrl.match(/\.(jpg|jpeg)(\?|$)/i)) mediaUrl += '.jpg';
+    }
+  }
+
+  const options = {};
+
+  if (isVideo) {
+    // Instagram Reels — obligatorio para que el video no falle (error 170)
+    if (platforms.includes('instagram')) {
+      options.instagramOptions = { reels: true };
+    }
+
+    // YouTube Shorts — requiere 9:16 y duración ≤ 3 min
+    if (platforms.includes('youtube')) {
+      options.youtubeOptions = { youtubeShortsPost: true, visibility: 'public' };
+    }
+
+    // TikTok — videoTitle mejora el algoritmo de descubrimiento
+    if (platforms.includes('tiktok') && postText) {
+      options.tiktokOptions = { videoTitle: postText.slice(0, 100) };
+    }
+  }
+
+  return { mediaUrl, options };
+}
+
 // --- PUBLICAR VIDEO AHORA ---
 exports.publishVideoNow = async (videoId) => {
   const ayrshareService = require('./ayrshareService');
@@ -379,14 +443,16 @@ exports.publishVideoNow = async (videoId) => {
   if (artistErr || !artist) throw new Error('Artista no encontrado');
   if (!artist.ayrshare_profile_key) throw new Error('El artista no tiene redes sociales conectadas. Conéctalas primero.');
 
-  const mediaUrl = video.processed_url || video.source_url;
   const postText = video.hashtags || video.title || 'Nuevo contenido';
   const platforms = video.platforms?.length ? video.platforms
     : artist.active_platforms?.length ? artist.active_platforms
     : ['tiktok', 'instagram'];
 
+  // Siempre usamos source_url como base para que buildMediaPayload aplique transformaciones limpias
+  const { mediaUrl, options } = buildMediaPayload(video.source_url, platforms, postText);
+
   const result = await ayrshareService.publishPost(
-    postText, platforms, [mediaUrl], artist.ayrshare_profile_key
+    postText, platforms, [mediaUrl], artist.ayrshare_profile_key, options
   );
 
   const postId = result.id || result.postIds?.[0] || null;
