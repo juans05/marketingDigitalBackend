@@ -120,19 +120,14 @@ exports.registerVideo = async (videoData) => {
     videoData.source_url = videoData.source_url.replace(/\s+/g, '');
   }
 
-  // Recorte inteligente 9:16 en Cloudinary
-  const isCloudinary = videoData.source_url.includes('cloudinary.com');
-  // Mejor detección: si es video o si tiene extensión de video
-  const looksLikeVideo = videoData.source_url.includes('/video/') || videoData.source_url.match(/\.(mp4|mov|webm|ogv)$/i);
+  const isCloudinary = videoData.source_url?.includes('cloudinary.com');
+  const looksLikeVideo = videoData.source_url?.includes('/video/') || videoData.source_url?.match(/\.(mp4|mov|webm|ogv)$/i);
 
-  if (isCloudinary && looksLikeVideo) {
-    // Aplicamos transformación 9:16 y forzamos que sea un .mp4 si es video
-    videoData.processed_url = videoData.source_url.replace('/upload/', '/upload/c_fill,g_auto,ar_9:16/');
-    if (!videoData.processed_url.match(/\.(mp4|mov|webm|ogv)$/i)) {
-      videoData.processed_url += '.mp4';
-    }
-  } else if (isCloudinary) {
-    videoData.processed_url = videoData.source_url;
+  if (isCloudinary) {
+    // Generar URLs optimizadas para cada plataforma
+    videoData.platform_urls = getPlatformUrls(videoData.source_url);
+    // processed_url sirve como el valor "por defecto" (9:16 vertical)
+    videoData.processed_url = buildCloudinaryUrl(videoData.source_url);
   }
 
   // Verificar que el artist_id es válido
@@ -357,9 +352,12 @@ exports.updateVideoSettings = async (videoId, updateData) => {
     try {
       const ayrshareService = require('./ayrshareService');
       const postText = updateData.hashtags || video.title || 'Nuevo contenido';
-      const platforms = updateData.platforms || ['tiktok', 'instagram', 'youtube'];
+      const platforms = updateData.platforms || video.platforms || ['tiktok', 'instagram', 'youtube'];
 
-      const cloudinaryUrl = buildCloudinaryUrl(video.source_url);
+      const targetPlatform = platforms[0];
+      const cloudinaryUrl = video.platform_urls?.[targetPlatform]
+        || buildCloudinaryUrl(video.source_url, targetPlatform);
+
       const mediaUrl = await uploadToAyrshare(cloudinaryUrl, artist.ayrshare_profile_key);
       const options = buildPlatformOptions(video.source_url, platforms, postText);
 
@@ -407,29 +405,24 @@ exports.updateVideoSettings = async (videoId, updateData) => {
 
 /**
  * HELPER: Construye URL de Cloudinary con transformaciones limpias.
- * Usa una expresión regular para eliminar cualquier transformación previa
- * y asegurar que el resultado cumpla con las reglas de Instagram/TikTok.
+ * @param {string} sourceUrl - URL original de Cloudinary.
+ * @param {string} targetPlatform - 'instagram', 'tiktok', 'youtube', 'facebook', o null (general).
  */
-function buildCloudinaryUrl(sourceUrl) {
+function buildCloudinaryUrl(sourceUrl, targetPlatform = null) {
   if (!sourceUrl || !sourceUrl.includes('cloudinary.com') || !sourceUrl.includes('/upload/')) {
     return sourceUrl;
   }
   // Eliminar espacios en blanco que rompen la URL
   sourceUrl = sourceUrl.replace(/\s+/g, '');
 
-  // Regex: 
-  // $1: Protocolo hasta /upload/
-  // [^/]+/ : cualquier bloque intermedio de transformaciones (opcional)
-  // $2: Versión y Public ID (v12345/...)
   const regex = /^(.*\/upload\/)(?:[^\/]+\/)*(v\d+\/.*)$/;
   const match = sourceUrl.match(regex);
-  
+
   let cleanBase, publicPart;
   if (match) {
     cleanBase = match[1];
     publicPart = match[2];
   } else {
-    // Fallback simple si no hay versión (v123)
     const uploadIdx = sourceUrl.indexOf('/upload/');
     cleanBase = sourceUrl.slice(0, uploadIdx + 8);
     publicPart = sourceUrl.slice(uploadIdx + 8);
@@ -438,16 +431,33 @@ function buildCloudinaryUrl(sourceUrl) {
   const isVideo = sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i);
 
   if (isVideo) {
-    // VIDEOS: vc_h264 + fl_faststart (Instagram req) + 9:16 fill
-    const url = `${cleanBase}c_fill,g_auto,ar_9:16,vc_h264,fl_faststart/${publicPart}`;
+    // REELS / TIKTOK / SHORTS: 1080x1920 (9:16), H.264, moov atom al principio
+    const url = `${cleanBase}w_1080,h_1920,c_fill,g_auto,ar_9:16,vc_h264,fl_faststart/${publicPart}`;
     return url.match(/\.(mp4|mov)(\?|$)/i) ? url : url + '.mp4';
   } else {
-    // IMÁGENES: c_pad + w_1080 + h_1080 (Forzar 1:1 real) + b_black
-    // Esto evita el error de aspect ratio (1600/411 = 3.89) de Instagram
-    const url = `${cleanBase}c_pad,w_1080,h_1080,ar_1:1,b_black,f_jpg,q_auto/${publicPart}`;
-    console.log('🖼️ Cloudinary Image URL (forced 1:1):', url);
-    return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
+    // IMÁGENES:
+    if (targetPlatform === 'instagram' || targetPlatform === 'facebook') {
+      // Instagram Feed: 1080x1080 (1:1) con barras negras para asegurar aspecto válido (0.56 a 1.91)
+      const url = `${cleanBase}w_1080,h_1080,c_pad,ar_1:1,b_black,f_jpg,q_auto/${publicPart}`;
+      return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
+    } else {
+      // General Portrait: 1080x1920 (9:16) para Stories/TikTok
+      const url = `${cleanBase}w_1080,h_1920,c_pad,ar_9:16,b_black,f_jpg,q_auto/${publicPart}`;
+      return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
+    }
   }
+}
+
+/**
+ * HELPER: Genera un objeto con las URLs optimizadas para cada plataforma.
+ */
+function getPlatformUrls(sourceUrl) {
+  return {
+    instagram: buildCloudinaryUrl(sourceUrl, 'instagram'),
+    facebook: buildCloudinaryUrl(sourceUrl, 'facebook'),
+    tiktok: buildCloudinaryUrl(sourceUrl, 'tiktok'),
+    youtube: buildCloudinaryUrl(sourceUrl, 'youtube')
+  };
 }
 
 // --- HELPER: Sube el media a Ayrshare CDN antes de publicar ---
@@ -458,6 +468,8 @@ async function uploadToAyrshare(cloudinaryUrl, profileKey) {
   const ayrshareService = require('./ayrshareService');
   try {
     console.log('⬆️ Subiendo media a Ayrshare CDN:', cloudinaryUrl.slice(-60));
+    console.log('profileKey', profileKey);
+    console.log('cloudinaryUrl', cloudinaryUrl);
     const result = await ayrshareService.uploadMedia(cloudinaryUrl, profileKey);
     // Ayrshare puede devolver { url, mediaUrl, location, ... } según el plan
     const hostedUrl = result.url || result.mediaUrl || result.location || null;
@@ -520,10 +532,16 @@ exports.publishVideoNow = async (videoId) => {
     : artist.active_platforms?.length ? artist.active_platforms
       : ['tiktok', 'instagram'];
 
-  const cloudinaryUrl = buildCloudinaryUrl(video.source_url);
+  // Intentar usar la URL específica de la plataforma si existe, sino usar el default
+  const targetPlatform = platforms[0]; // Simplificación: usamos la primera de la lista
+  const cloudinaryUrl = video.platform_urls?.[targetPlatform]
+    || video.processed_url
+    || buildCloudinaryUrl(video.source_url, targetPlatform);
+  console.log('cloudinaryUrl', cloudinaryUrl);
   const mediaUrl = await uploadToAyrshare(cloudinaryUrl, artist.ayrshare_profile_key);
+  console.log('mediaUrl', mediaUrl);
   const options = buildPlatformOptions(video.source_url, platforms, postText);
-
+  console.log('options', options);
   const result = await ayrshareService.publishPost(
     postText, platforms, [mediaUrl], artist.ayrshare_profile_key, options
   );

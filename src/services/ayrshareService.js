@@ -313,6 +313,8 @@ exports.replyToComment = async (commentId, text, platforms, profileKey = null) =
  * Subir media a la librería de Ayrshare.
  */
 exports.uploadMedia = async (mediaUrl, profileKey = null) => {
+  console.log('mediaUrl', `${AYRSHARE_BASE}/media/upload`);
+
   const response = await axios.post(`${AYRSHARE_BASE}/media/upload`, {
     mediaUrl: mediaUrl
   }, {
