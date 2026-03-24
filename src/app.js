@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const { jsonrepair } = require('jsonrepair');
 const vidalisRoutes = require('./routes/vidalisRoutes');
 
 const app = express();
@@ -17,7 +18,27 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+// Body parser con auto-reparación para JSON malformado (ej: n8n con newlines o comillas sin escapar)
+app.use((req, res, next) => {
+  if (!req.headers['content-type']?.includes('application/json')) return next();
+  let raw = '';
+  req.on('data', chunk => { raw += chunk.toString('utf8'); });
+  req.on('end', () => {
+    if (!raw) { req.body = {}; return next(); }
+    try {
+      req.body = JSON.parse(raw);
+    } catch {
+      try {
+        req.body = JSON.parse(jsonrepair(raw));
+        console.warn('⚠️  JSON reparado automáticamente en body parser');
+      } catch {
+        return res.status(400).json({ error: 'Invalid JSON body' });
+      }
+    }
+    next();
+  });
+  req.on('error', () => res.status(400).json({ error: 'Body read error' }));
+});
 
 // Rutas de la API
 console.log("🛠️ Registrando rutas en /api/vidalis...");

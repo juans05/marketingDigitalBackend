@@ -115,6 +115,11 @@ exports.getArtistsByAgency = async (agencyId) => {
 
 // --- SUBIR VIDEO ---
 exports.registerVideo = async (videoData) => {
+  // Sanitizar URL — eliminar espacios que rompen Cloudinary
+  if (videoData.source_url) {
+    videoData.source_url = videoData.source_url.replace(/\s+/g, '');
+  }
+
   // Recorte inteligente 9:16 en Cloudinary
   const isCloudinary = videoData.source_url.includes('cloudinary.com');
   // Mejor detección: si es video o si tiene extensión de video
@@ -409,6 +414,8 @@ function buildCloudinaryUrl(sourceUrl) {
   if (!sourceUrl || !sourceUrl.includes('cloudinary.com') || !sourceUrl.includes('/upload/')) {
     return sourceUrl;
   }
+  // Eliminar espacios en blanco que rompen la URL
+  sourceUrl = sourceUrl.replace(/\s+/g, '');
 
   // Regex: 
   // $1: Protocolo hasta /upload/
