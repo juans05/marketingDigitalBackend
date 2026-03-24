@@ -400,30 +400,45 @@ exports.updateVideoSettings = async (videoId, updateData) => {
   return { ...data[0], _scheduleStatus: scheduleStatus, _scheduleError: scheduleErrorMsg };
 };
 
-// --- HELPER: Construye URL de Cloudinary con transformaciones limpias ---
-// Especificaciones (Ayrshare Media Guidelines):
-//   VIDEOS → MP4, H.264 (vc_h264), fl_faststart (moov atom al inicio, req. Instagram), 9:16
-//   IMÁGENES → JPEG (f_jpg, TikTok no acepta PNG), 9:16 portrait
+/**
+ * HELPER: Construye URL de Cloudinary con transformaciones limpias.
+ * Usa una expresión regular para eliminar cualquier transformación previa
+ * y asegurar que el resultado cumpla con las reglas de Instagram/TikTok.
+ */
 function buildCloudinaryUrl(sourceUrl) {
   if (!sourceUrl || !sourceUrl.includes('cloudinary.com') || !sourceUrl.includes('/upload/')) {
     return sourceUrl;
   }
 
+  // Regex: 
+  // $1: Protocolo hasta /upload/
+  // [^/]+/ : cualquier bloque intermedio de transformaciones (opcional)
+  // $2: Versión y Public ID (v12345/...)
+  const regex = /^(.*\/upload\/)(?:[^\/]+\/)*(v\d+\/.*)$/;
+  const match = sourceUrl.match(regex);
+  
+  let cleanBase, publicPart;
+  if (match) {
+    cleanBase = match[1];
+    publicPart = match[2];
+  } else {
+    // Fallback simple si no hay versión (v123)
+    const uploadIdx = sourceUrl.indexOf('/upload/');
+    cleanBase = sourceUrl.slice(0, uploadIdx + 8);
+    publicPart = sourceUrl.slice(uploadIdx + 8);
+  }
+
   const isVideo = sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i);
-  const uploadIdx = sourceUrl.indexOf('/upload/');
-  const base = sourceUrl.slice(0, uploadIdx + 8); // "https://…/upload/"
-  const rest = sourceUrl.slice(uploadIdx + 8);     // "v123/public_id" sin transforms
 
   if (isVideo) {
-    // fl_faststart: mueve el moov atom al inicio del MP4 (requerido por Instagram explícitamente)
-    // vc_h264: codec H.264 requerido por Instagram, Twitter/X y Facebook
-    // ar_9:16: requerido por TikTok, Instagram Reels, YouTube Shorts, Facebook Reels
-    const url = `${base}c_fill,g_auto,ar_9:16,vc_h264,fl_faststart/${rest}`;
+    // VIDEOS: vc_h264 + fl_faststart (Instagram req) + 9:16 fill
+    const url = `${cleanBase}c_fill,g_auto,ar_9:16,vc_h264,fl_faststart/${publicPart}`;
     return url.match(/\.(mp4|mov)(\?|$)/i) ? url : url + '.mp4';
   } else {
-    // f_jpg: TikTok rechaza PNG; JPEG universal para Instagram/Facebook/Twitter
-    // ar_9:16: formato portrait para TikTok (1080×1920) e Instagram portrait/Stories
-    const url = `${base}c_fill,g_auto,ar_9:16,f_jpg,q_auto/${rest}`;
+    // IMÁGENES: c_pad + w_1080 + h_1080 (Forzar 1:1 real) + b_black
+    // Esto evita el error de aspect ratio (1600/411 = 3.89) de Instagram
+    const url = `${cleanBase}c_pad,w_1080,h_1080,ar_1:1,b_black,f_jpg,q_auto/${publicPart}`;
+    console.log('🖼️ Cloudinary Image URL (forced 1:1):', url);
     return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
   }
 }
