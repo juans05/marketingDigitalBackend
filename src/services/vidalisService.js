@@ -152,24 +152,39 @@ exports.registerVideo = async (videoData) => {
   // Disparar n8n para procesamiento IA
   if (process.env.N8N_WEBHOOK_URL) {
     try {
-      // Filtrar plataformas si es imagen (TikTok y YouTube requieren video)
+      const hasActivePlatforms = artist.active_platforms?.length > 0;
       let targetPlatforms = (video.platforms?.length ? video.platforms : null) ||
-        (artist.active_platforms?.length ? artist.active_platforms : null) ||
+        (hasActivePlatforms ? artist.active_platforms : null) ||
         ['tiktok', 'instagram', 'facebook', 'youtube'];
 
+      let platformWarning = null;
+
       if (!looksLikeVideo) {
-        targetPlatforms = targetPlatforms.filter(p => !['tiktok', 'youtube'].includes(p.toLowerCase()));
+        const imageCompatible = targetPlatforms.filter(p => !['tiktok', 'youtube'].includes(p.toLowerCase()));
+        if (imageCompatible.length === 0 && hasActivePlatforms) {
+          // El artista tiene redes conectadas pero ninguna acepta imágenes
+          platformWarning = 'Tu cuenta solo tiene conectadas TikTok y/o YouTube, que no aceptan imágenes. Conecta Instagram o Facebook para publicar imágenes.';
+          targetPlatforms = []; // no disparar publicación
+        } else {
+          targetPlatforms = imageCompatible.length > 0 ? imageCompatible : ['instagram', 'facebook'];
+        }
       }
 
-      await axios.post(process.env.N8N_WEBHOOK_URL, {
-        videoUrl: video.processed_url || video.source_url,
-        videoId: video.id,
-        title: video.title,
-        mediaType: looksLikeVideo ? 'video' : 'image',
-        profileKey: artist.ayrshare_profile_key || null,
-        platforms: targetPlatforms,
-      });
-      console.log(`✅ n8n disparado para video: ${video.id}`);
+      if (targetPlatforms.length > 0) {
+        await axios.post(process.env.N8N_WEBHOOK_URL, {
+          videoUrl: video.processed_url || video.source_url,
+          videoId: video.id,
+          title: video.title,
+          mediaType: looksLikeVideo ? 'video' : 'image',
+          profileKey: artist.ayrshare_profile_key || null,
+          platforms: targetPlatforms,
+        });
+        console.log(`✅ n8n disparado para video: ${video.id}`);
+      } else {
+        console.warn(`⚠️ Video ${video.id} no disparado a n8n: ${platformWarning}`);
+      }
+
+      if (platformWarning) video._platformWarning = platformWarning;
     } catch (err) {
       console.error('❌ Error al disparar n8n:', err.response?.data || err.message);
     }

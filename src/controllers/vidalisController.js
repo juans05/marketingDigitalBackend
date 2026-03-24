@@ -59,7 +59,9 @@ exports.processVideo = async (req, res) => {
   try {
     const { videoData } = req.body;
     const result = await vidalisService.registerVideo(videoData);
-    res.status(201).json(result);
+    const platformWarning = result._platformWarning || null;
+    delete result._platformWarning;
+    res.status(201).json({ ...result, platformWarning });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
