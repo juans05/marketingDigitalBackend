@@ -303,6 +303,12 @@ exports.getSocialStatus = async (artistId, refresh = false) => {
   return { platforms };
 };
 
+// --- ACTUALIZACIÓN DIRECTA (para callbacks de n8n) ---
+exports.updateVideoRaw = async (videoId, updates) => {
+  const { error } = await supabase.from('videos').update(updates).eq('id', videoId);
+  if (error) throw new Error(error.message);
+};
+
 // --- VIRAL SCORE (n8n) ---
 exports.analyzeViralPotential = async (videoUrl) => {
   if (process.env.N8N_VIRAL_SCORE_URL) {
@@ -339,6 +345,9 @@ exports.updateVideoSettings = async (videoId, updateData) => {
   console.log('📅 scheduledAt recibido:', scheduledAt, '| profileKey:', artist?.ayrshare_profile_key ? 'OK' : 'NO');
 
   // 2. Si hay fecha programada y el artista tiene Ayrshare conectado → programar
+  let scheduleStatus = 'no_profile'; // 'success' | 'no_profile' | 'error'
+  let scheduleErrorMsg = null;
+
   if (scheduledAt && artist?.ayrshare_profile_key) {
     try {
       const ayrshareService = require('./ayrshareService');
@@ -360,12 +369,15 @@ exports.updateVideoSettings = async (videoId, updateData) => {
 
       if (result.id || result.postIds) {
         updateData.ayrshare_post_id = result.id || result.postIds?.[0] || null;
+        scheduleStatus = 'success';
       }
       console.log(`✅ Post programado en Ayrshare para video: ${videoId}`);
     } catch (err) {
-      console.error('❌ Error al programar en Ayrshare:', err.response?.data || err.message);
+      scheduleStatus = 'error';
+      scheduleErrorMsg = err.response?.data?.message || err.message;
+      console.error('❌ Error al programar en Ayrshare:', scheduleErrorMsg);
     }
-  } else if (scheduledAt && !artist?.ayrshare_profile_key) {
+  } else if (scheduledAt) {
     console.warn(`⚠️ Video ${videoId} programado en DB pero artista sin Ayrshare conectado`);
   }
 
@@ -382,7 +394,7 @@ exports.updateVideoSettings = async (videoId, updateData) => {
     .eq('id', videoId)
     .select();
   if (error) throw error;
-  return data[0];
+  return { ...data[0], _scheduleStatus: scheduleStatus, _scheduleError: scheduleErrorMsg };
 };
 
 // --- HELPER: Construye URL de Cloudinary con transformaciones limpias ---

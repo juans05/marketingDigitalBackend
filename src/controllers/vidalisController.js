@@ -163,6 +163,27 @@ exports.updateVideo = async (req, res) => {
   }
 };
 
+// Endpoint para que n8n actualice el status + datos de análisis IA
+exports.n8nCallback = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const { status, viral_score, ai_copy_short, ai_copy_long, hashtags } = req.body;
+
+    const updates = {};
+    if (status) updates.status = status;
+    if (viral_score !== undefined) updates.viral_score = viral_score;
+    if (ai_copy_short) updates.ai_copy_short = ai_copy_short;
+    if (ai_copy_long) updates.ai_copy_long = ai_copy_long;
+    if (hashtags) updates.hashtags = hashtags;
+
+    await vidalisService.updateVideoRaw(videoId, updates);
+    console.log(`✅ n8n callback: video ${videoId} → status: ${status}`);
+    res.status(200).json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.publishNow = async (req, res) => {
   try {
     const { videoId } = req.params;
