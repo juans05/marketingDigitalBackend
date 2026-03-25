@@ -435,17 +435,17 @@ function buildCloudinaryUrl(sourceUrl, targetPlatform = null) {
 
   if (isVideo) {
     // REELS / TIKTOK / SHORTS: 1080x1920 (9:16), H.264, AAC Audio, moov atom al principio
-    const url = `${cleanBase}w_1080,h_1920,c_fill,g_auto,vc_h264,ac_aac,f_mp4/${publicPart}`;
+    const url = `${cleanBase}w_1080,h_1920,c_fill,vc_h264,ac_aac,f_mp4/${publicPart}`;
     return url.match(/\.(mp4|mov)(\?|$)/i) ? url : url + '.mp4';
   } else {
     // IMÁGENES:
     if (targetPlatform === 'instagram' || targetPlatform === 'facebook') {
       // Instagram Feed: 1080x1080 (1:1) con barras negras para asegurar aspecto válido (0.56 a 1.91)
-      const url = `${cleanBase}w_1080,h_1080,c_pad,ar_1:1,b_black,f_jpg,q_auto/${publicPart}`;
+      const url = `${cleanBase}w_1080,h_1080,c_pad,ar_1:1,b_black,f_jpg/${publicPart}`;
       return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
     } else {
       // General Portrait: 1080x1920 (9:16) para Stories/TikTok
-      const url = `${cleanBase}w_1080,h_1920,c_pad,ar_9:16,b_black,f_jpg,q_auto/${publicPart}`;
+      const url = `${cleanBase}w_1080,h_1920,c_pad,ar_9:16,b_black,f_jpg/${publicPart}`;
       return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
     }
   }
@@ -471,7 +471,7 @@ function buildPlatformOptions(sourceUrl, platforms, postText = '', postType = nu
   // 1. INSTAGRAM (Reels, Story, Feed)
   if (platforms.includes('instagram')) {
     options.instagramOptions = {};
-    
+
     // Si no se especifica postType, inferimos según el medio
     const finalType = postType || (isVideo ? 'reel' : 'feed');
 
@@ -480,7 +480,7 @@ function buildPlatformOptions(sourceUrl, platforms, postText = '', postType = nu
     } else if (finalType === 'reel') {
       options.instagramOptions.reels = true;
       options.instagramOptions.shareReelsFeed = true;
-    } 
+    }
     // Si es 'feed', no se añaden flags especiales (estándar).
   }
 
