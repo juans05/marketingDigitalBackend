@@ -435,7 +435,7 @@ function buildCloudinaryUrl(sourceUrl, targetPlatform = null) {
 
   if (isVideo) {
     // REELS / TIKTOK / SHORTS: 1080x1920 (9:16), H.264, AAC Audio, moov atom al principio
-    const url = `${cleanBase}w_1080,h_1920,c_fill,g_auto,vc_h264,ac_aac,fl_faststart,f_mp4/${publicPart}`;
+    const url = `${cleanBase}w_1080,h_1920,c_fill,g_auto,vc_h264,ac_aac,f_mp4/${publicPart}`;
     return url.match(/\.(mp4|mov)(\?|$)/i) ? url : url + '.mp4';
   } else {
     // IMÁGENES:

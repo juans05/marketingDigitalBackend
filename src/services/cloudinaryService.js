@@ -12,7 +12,7 @@ cloudinary.config({
 
 exports.generateUploadSignature = (folder = null) => {
   const timestamp = Math.round(new Date().getTime() / 1000);
-  const eager = 'w_1080,h_1920,c_fill,g_auto,vc_h264,ac_aac,fl_faststart,f_mp4';
+  const eager = 'w_1080,h_1920,c_fill,g_auto,vc_h264,ac_aac,f_mp4';
   // Signed upload directo sin preset — evita conflictos con presets Signed de Cloudinary
   const params = { 
     access_mode: 'public', 
