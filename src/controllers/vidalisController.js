@@ -190,8 +190,12 @@ exports.publishNow = async (req, res) => {
     const result = await vidalisService.publishVideoNow(videoId);
     res.status(200).json(result);
   } catch (error) {
-    const status = error.response?.status || 500;
-    res.status(status).json({ error: error.message });
+    console.error('❌ Error en publishNow:', error.message);
+    const status = error.response?.status || 400;
+    res.status(status).json({ 
+      error: error.message,
+      details: error.response?.data || null
+    });
   }
 };
 
