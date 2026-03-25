@@ -194,12 +194,18 @@ exports.publishPost = async (text, platforms, mediaUrls = [], profileKey = null,
   if (options.youtubeOptions) body.youtubeOptions = options.youtubeOptions;
   if (options.linkedinOptions) body.linkedinOptions = options.linkedinOptions;
   if (options.twitterOptions) body.twitterOptions = options.twitterOptions;
-
-  const response = await axios.post(`${AYRSHARE_BASE}/post`, body, {
-    headers: buildHeaders(profileKey)
-  });
-
-  return response.data;
+  console.log('⚙️ Opciones de body:', JSON.stringify(body, null, 2));
+  
+  try {
+    const response = await axios.post(`${AYRSHARE_BASE}/post`, body, {
+      headers: buildHeaders(profileKey)
+    });
+    console.log('✅ Ayrshare Response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Ayrshare Error (Detailed):', JSON.stringify(error.response?.data || error.message, null, 2));
+    throw error;
+  }
 };
 
 /**
