@@ -184,7 +184,7 @@ exports.publishPost = async (text, platforms, mediaUrls = [], profileKey = null,
   }
 
   if (isPreview) {
-    body.isPreview = true;
+    body.validate = true;
   }
 
   // Opciones específicas por plataforma

@@ -12,8 +12,14 @@ cloudinary.config({
 
 exports.generateUploadSignature = (folder = null) => {
   const timestamp = Math.round(new Date().getTime() / 1000);
+  const eager = 'w_1080,h_1920,c_fill,g_auto,vc_h264,ac_aac,fl_faststart,f_mp4';
   // Signed upload directo sin preset — evita conflictos con presets Signed de Cloudinary
-  const params = { access_mode: 'public', folder: folder || 'vidalis_uploads', timestamp };
+  const params = { 
+    access_mode: 'public', 
+    folder: folder || 'vidalis_uploads', 
+    timestamp,
+    eager
+  };
 
   const signature = cloudinary.utils.api_sign_request(
     params,
@@ -25,6 +31,7 @@ exports.generateUploadSignature = (folder = null) => {
     signature,
     apiKey: process.env.CLOUDINARY_API_KEY,
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-    folder: folder || 'vidalis_uploads'
+    folder: folder || 'vidalis_uploads',
+    eager
   };
 };
