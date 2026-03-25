@@ -128,6 +128,8 @@ exports.registerVideo = async (videoData) => {
     videoData.platform_urls = getPlatformUrls(videoData.source_url);
     // processed_url sirve como el valor "por defecto" (9:16 vertical)
     videoData.processed_url = buildCloudinaryUrl(videoData.source_url);
+    // Inicializar post_type por defecto
+    videoData.post_type = looksLikeVideo ? 'reel' : 'feed';
   }
 
   // Verificar que el artist_id es válido
@@ -359,13 +361,13 @@ exports.updateVideoSettings = async (videoId, updateData) => {
       const cloudinaryUrl = video.platform_urls?.[targetPlatform]
         || buildCloudinaryUrl(video.source_url, targetPlatform);
 
-      const mediaUrl = await uploadToAyrshare(cloudinaryUrl, artist.ayrshare_profile_key);
-      const options = buildPlatformOptions(video.source_url, platforms, postText);
+      const postType = updateData.post_type || video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
+      const options = buildPlatformOptions(video.source_url, platforms, postText, postType);
 
       const result = await ayrshareService.schedulePost(
         postText,
         platforms,
-        [mediaUrl],
+        [cloudinaryUrl],
         new Date(scheduledAt).toISOString(),
         artist.ayrshare_profile_key,
         options
@@ -432,8 +434,8 @@ function buildCloudinaryUrl(sourceUrl, targetPlatform = null) {
   const isVideo = sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i);
 
   if (isVideo) {
-    // REELS / TIKTOK / SHORTS: 1080x1920 (9:16), H.264, moov atom al principio
-    const url = `${cleanBase}w_1080,h_1920,c_fill,g_auto,ar_9:16,vc_h264,fl_faststart/${publicPart}`;
+    // REELS / TIKTOK / SHORTS: 1080x1920 (9:16), H.264, AAC Audio, moov atom al principio
+    const url = `${cleanBase}w_1080,h_1920,c_fill,g_auto,ar_9:16,vc_h264,ac_aac,fl_faststart/${publicPart}`;
     return url.match(/\.(mp4|mov)(\?|$)/i) ? url : url + '.mp4';
   } else {
     // IMÁGENES:
@@ -461,47 +463,38 @@ function getPlatformUrls(sourceUrl) {
   };
 }
 
-// --- HELPER: Sube el media a Ayrshare CDN antes de publicar ---
-// Esto elimina el problema de URLs de Cloudinary (lazy transforms, timeouts de Instagram).
-// Ayrshare re-hospeda el media en su CDN, garantizando compatibilidad con cada red social.
-// Si falla (plan no soporta, error de red), se devuelve la URL original como fallback.
-async function uploadToAyrshare(cloudinaryUrl, profileKey) {
-  const ayrshareService = require('./ayrshareService');
-  try {
-    console.log('⬆️ Subiendo media a Ayrshare CDN:', cloudinaryUrl.slice(-60));
-    console.log('profileKey', profileKey);
-    console.log('cloudinaryUrl', cloudinaryUrl);
-    const result = await ayrshareService.uploadMedia(cloudinaryUrl, profileKey);
-    // Ayrshare puede devolver { url, mediaUrl, location, ... } según el plan
-    const hostedUrl = result.url || result.mediaUrl || result.location || null;
-    if (hostedUrl) {
-      console.log('✅ Media en Ayrshare CDN:', hostedUrl.slice(-60));
-      return hostedUrl;
-    }
-    console.warn('⚠️ Ayrshare no devolvió URL, usando Cloudinary directamente');
-    return cloudinaryUrl;
-  } catch (err) {
-    console.warn('⚠️ Upload a Ayrshare falló, usando Cloudinary directamente:', err.response?.data?.message || err.message);
-    return cloudinaryUrl; // fallback: intentar con URL de Cloudinary igual
-  }
-}
-
 // --- HELPER: Opciones por plataforma según tipo de contenido ---
-function buildPlatformOptions(sourceUrl, platforms, postText = '') {
+function buildPlatformOptions(sourceUrl, platforms, postText = '', postType = null) {
   const isVideo = sourceUrl && (sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i));
   const options = {};
 
-  if (isVideo) {
-    if (platforms.includes('instagram')) {
-      // Obligatorio para video en Instagram — sin esto da error 170
-      options.instagramOptions = { reels: true };
+  // 1. INSTAGRAM (Reels, Story, Feed)
+  if (platforms.includes('instagram')) {
+    options.instagramOptions = {};
+    
+    // Si no se especifica postType, inferimos según el medio
+    const finalType = postType || (isVideo ? 'reel' : 'feed');
+
+    if (finalType === 'story') {
+      options.instagramOptions.stories = true;
+    } else if (finalType === 'reel') {
+      options.instagramOptions.reels = true;
+      options.instagramOptions.shareReelsFeed = true;
+    } 
+    // Si es 'feed', no se añaden flags especiales (estándar).
+  }
+
+  // 2. YOUTUBE (Shorts vs Normal)
+  if (platforms.includes('youtube')) {
+    options.youtubeOptions = { visibility: 'public' };
+    if (isVideo) {
+      options.youtubeOptions.youtubeShortsPost = true;
     }
-    if (platforms.includes('youtube')) {
-      options.youtubeOptions = { youtubeShortsPost: true, visibility: 'public' };
-    }
-    if (platforms.includes('tiktok') && postText) {
-      options.tiktokOptions = { videoTitle: postText.slice(0, 100) };
-    }
+  }
+
+  // 3. TIKTOK (Video title)
+  if (platforms.includes('tiktok') && postText) {
+    options.tiktokOptions = { videoTitle: postText.slice(0, 100) };
   }
 
   return options;
@@ -538,13 +531,14 @@ exports.publishVideoNow = async (videoId) => {
   const cloudinaryUrl = video.platform_urls?.[targetPlatform]
     || video.processed_url
     || buildCloudinaryUrl(video.source_url, targetPlatform);
-  console.log('cloudinaryUrl', cloudinaryUrl);
-  const mediaUrl = await uploadToAyrshare(cloudinaryUrl, artist.ayrshare_profile_key);
-  console.log('mediaUrl', mediaUrl);
-  const options = buildPlatformOptions(video.source_url, platforms, postText);
-  console.log('options', options);
+  console.log('🔗 Usando Cloudinary URL:', cloudinaryUrl);
+
+  const postType = video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
+  const options = buildPlatformOptions(video.source_url, platforms, postText, postType);
+  console.log('⚙️ Opciones de plataforma:', options);
+
   const result = await ayrshareService.publishPost(
-    postText, platforms, [mediaUrl], artist.ayrshare_profile_key, options
+    postText, platforms, [cloudinaryUrl], artist.ayrshare_profile_key, options
   );
 
   const postId = result.id || result.postIds?.[0] || null;
