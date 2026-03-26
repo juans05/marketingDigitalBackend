@@ -304,11 +304,18 @@ exports.connectSocialAccounts = async (artistId) => {
 
   const { data: artist, error } = await supabase
     .from('artists')
-    .select('id, name, publish_mode, ayrshare_profile_key, instagram_user_id, instagram_access_token')
+    .select('*') // Usar * para ser más resiliente a cambios de esquema
     .eq('id', artistId)
     .single();
 
-  if (error || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
+  if (error) {
+    console.error('🎯 Supabase Error (connectSocialAccounts):', error);
+    throw new Error('Error al buscar artista en BD: ' + error.message);
+  }
+  
+  if (!artist) {
+    throw new Error(`Artista no existe en la base de datos: ${artistId}`);
+  }
 
   return socialPublisher.getConnectUrl(artist, supabase);
 };
