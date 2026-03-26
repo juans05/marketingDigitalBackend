@@ -1,5 +1,28 @@
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
+const PQueue = require('p-queue').default;
+
+// Cola para llamadas a n8n — evita saturar el workflow con uploads simultáneos
+const n8nQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis en paralelo
+
+// Cola interna para procesamiento con Gemini+Claude
+const internalQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis simultáneos internos
+
+/**
+ * Routing de IA:
+ * - AI_MODE=internal  → siempre usa Gemini+Claude directamente
+ * - AI_MODE=n8n       → siempre usa n8n (comportamiento anterior)
+ * - AI_MODE=hybrid    → usa interno si la cola está libre; si está llena → n8n como overflow
+ */
+const AI_MODE = process.env.AI_MODE || 'hybrid';
+const N8N_QUEUE_THRESHOLD = parseInt(process.env.N8N_QUEUE_THRESHOLD || '3', 10);
+
+function shouldUseInternal() {
+  if (AI_MODE === 'internal') return true;
+  if (AI_MODE === 'n8n') return false;
+  // hybrid: usar interno si la cola interna tiene menos trabajos que el umbral
+  return internalQueue.size < N8N_QUEUE_THRESHOLD;
+}
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
   console.error("❌ ERROR: Faltan SUPABASE_URL o SUPABASE_ANON_KEY en las variables de entorno.");
@@ -135,7 +158,7 @@ exports.registerVideo = async (videoData) => {
   // Verificar que el artist_id es válido
   const { data: artist, error: artistErr } = await supabase
     .from('artists')
-    .select('id, ayrshare_profile_key, active_platforms')
+    .select('id, ayrshare_profile_key, active_platforms, name, ai_genre, ai_audience, ai_tone')
     .eq('id', videoData.artist_id)
     .single();
 
@@ -151,46 +174,71 @@ exports.registerVideo = async (videoData) => {
   const video = data[0];
   console.log(`✅ Video registrado: ${video.id}`);
 
-  // Disparar n8n para procesamiento IA
-  if (process.env.N8N_WEBHOOK_URL) {
-    try {
-      const hasActivePlatforms = artist.active_platforms?.length > 0;
-      let targetPlatforms = (video.platforms?.length ? video.platforms : null) ||
-        (hasActivePlatforms ? artist.active_platforms : null) ||
-        ['tiktok', 'instagram', 'facebook', 'youtube'];
+  // Disparar procesamiento IA (interno o n8n según AI_MODE)
+  try {
+    const hasActivePlatforms = artist.active_platforms?.length > 0;
+    let targetPlatforms = (video.platforms?.length ? video.platforms : null) ||
+      (hasActivePlatforms ? artist.active_platforms : null) ||
+      ['tiktok', 'instagram', 'facebook', 'youtube'];
 
-      let platformWarning = null;
+    let platformWarning = null;
 
-      if (!looksLikeVideo) {
-        const imageCompatible = targetPlatforms.filter(p => !['tiktok', 'youtube'].includes(p.toLowerCase()));
-        if (imageCompatible.length === 0 && hasActivePlatforms) {
-          // El artista tiene redes conectadas pero ninguna acepta imágenes
-          platformWarning = 'Tu cuenta solo tiene conectadas TikTok y/o YouTube, que no aceptan imágenes. Conecta Instagram o Facebook para publicar imágenes.';
-          targetPlatforms = []; // no disparar publicación
-        } else {
-          targetPlatforms = imageCompatible.length > 0 ? imageCompatible : ['instagram', 'facebook'];
-        }
+    if (!looksLikeVideo) {
+      const imageCompatible = targetPlatforms.filter(p => !['tiktok', 'youtube'].includes(p.toLowerCase()));
+      if (imageCompatible.length === 0 && hasActivePlatforms) {
+        platformWarning = 'Tu cuenta solo tiene conectadas TikTok y/o YouTube, que no aceptan imágenes. Conecta Instagram o Facebook para publicar imágenes.';
+        targetPlatforms = [];
+      } else {
+        targetPlatforms = imageCompatible.length > 0 ? imageCompatible : ['instagram', 'facebook'];
       }
+    }
 
-      if (targetPlatforms.length > 0) {
-        await axios.post(process.env.N8N_WEBHOOK_URL, {
-          videoUrl: video.processed_url || video.source_url, // URL con transforms (para Gemini)
-          sourceUrl: video.source_url,                       // URL limpia (para guardar en DB)
+    if (targetPlatforms.length > 0) {
+      const useInternal = shouldUseInternal();
+      const mediaType = looksLikeVideo ? 'video' : 'image';
+
+      if (useInternal) {
+        // --- Procesamiento interno: Gemini + Claude ---
+        const aiService = require('./aiService');
+        const artistContext = (artist.ai_genre || artist.ai_audience || artist.ai_tone) ? {
+          nombre: artist.name,
+          genero: artist.ai_genre || null,
+          audiencia: artist.ai_audience || null,
+          tono: artist.ai_tone || null,
+        } : null;
+
+        internalQueue.add(() => aiService.processVideoAI(
+          video.id,
+          video.processed_url || video.source_url,
+          video.source_url,
+          mediaType,
+          targetPlatforms,
+          video.title || '',
+          artistContext
+        )).catch(err => console.error(`❌ [AI interno] Cola error video ${video.id}:`, err.message));
+        console.log(`🤖 [AI interno] Encolado video ${video.id} (cola: ${internalQueue.size + 1})`);
+      } else if (process.env.N8N_WEBHOOK_URL) {
+        // --- Fallback: n8n ---
+        n8nQueue.add(() => axios.post(process.env.N8N_WEBHOOK_URL, {
+          videoUrl: video.processed_url || video.source_url,
+          sourceUrl: video.source_url,
           videoId: video.id,
           title: video.title,
-          mediaType: looksLikeVideo ? 'video' : 'image',
+          mediaType,
           profileKey: artist.ayrshare_profile_key || null,
           platforms: targetPlatforms,
-        });
-        console.log(`✅ n8n disparado para video: ${video.id}`);
+        })).catch(err => console.error(`❌ [n8n] Error video ${video.id}:`, err.response?.data || err.message));
+        console.log(`📤 [n8n] Encolado video ${video.id} (cola interna llena: ${internalQueue.size})`);
       } else {
-        console.warn(`⚠️ Video ${video.id} no disparado a n8n: ${platformWarning}`);
+        console.warn(`⚠️ Video ${video.id}: sin AI_MODE interno ni N8N_WEBHOOK_URL configurado`);
       }
-
-      if (platformWarning) video._platformWarning = platformWarning;
-    } catch (err) {
-      console.error('❌ Error al disparar n8n:', err.response?.data || err.message);
+    } else {
+      console.warn(`⚠️ Video ${video.id} no procesado: ${platformWarning}`);
     }
+
+    if (platformWarning) video._platformWarning = platformWarning;
+  } catch (err) {
+    console.error('❌ Error al disparar procesamiento IA:', err.message);
   }
 
   return video;
@@ -252,26 +300,17 @@ exports.getDashboardStats = async (agencyId) => {
 
 // --- CONECTAR REDES SOCIALES (por ARTISTA) ---
 exports.connectSocialAccounts = async (artistId) => {
-  const ayrshareService = require('./ayrshareService');
+  const socialPublisher = require('./socialPublisher');
 
   const { data: artist, error } = await supabase
     .from('artists')
-    .select('id, name, ayrshare_profile_key')
+    .select('id, name, publish_mode, ayrshare_profile_key, instagram_user_id, instagram_access_token')
     .eq('id', artistId)
     .single();
 
   if (error || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
 
-  let profileKey = artist.ayrshare_profile_key;
-
-  if (!profileKey) {
-    const profile = await ayrshareService.createProfile(artist.name);
-    profileKey = profile.profileKey;
-    await supabase.from('artists').update({ ayrshare_profile_key: profileKey }).eq('id', artistId);
-  }
-
-  const jwt = await ayrshareService.generateJWT(profileKey);
-  return { url: jwt.url, profileKey };
+  return socialPublisher.getConnectUrl(artist, supabase);
 };
 
 // --- VERIFICAR PLATAFORMAS CONECTADAS (por ARTISTA) ---
@@ -291,12 +330,14 @@ exports.getSocialStatus = async (artistId, refresh = false) => {
     return { platforms: artist.active_platforms || [] };
   }
 
-  // Con refresh: consultar Ayrshare y actualizar DB
-  const profileKey = artist.ayrshare_profile_key;
-  if (!profileKey) return { platforms: [] };
-
-  const ayrshareService = require('./ayrshareService');
-  const platforms = await ayrshareService.getActivePlatforms(profileKey);
+  // Con refresh: consultar según publish_mode y actualizar DB
+  const socialPublisher = require('./socialPublisher');
+  const { data: artistFull } = await supabase
+    .from('artists')
+    .select('id, publish_mode, ayrshare_profile_key, instagram_user_id, instagram_access_token, facebook_page_id, facebook_access_token')
+    .eq('id', artistId)
+    .single();
+  const platforms = await socialPublisher.getActivePlatforms(artistFull || artist);
 
   await supabase
     .from('artists')
@@ -340,20 +381,22 @@ exports.updateVideoSettings = async (videoId, updateData) => {
 
   const { data: artist, error: artistErr } = await supabase
     .from('artists')
-    .select('ayrshare_profile_key')
+    .select('id, publish_mode, ayrshare_profile_key, instagram_user_id, instagram_access_token, facebook_page_id, facebook_access_token, active_platforms')
     .eq('id', video.artist_id)
     .single();
+
   // Leer fecha programada — puede venir como scheduled_at (frontend) o scheduled_for (DB)
   const scheduledAt = updateData.scheduled_at || updateData.scheduled_for || null;
-  console.log('📅 scheduledAt recibido:', scheduledAt, '| profileKey:', artist?.ayrshare_profile_key ? 'OK' : 'NO');
+  const hasConnection = artist?.ayrshare_profile_key || artist?.instagram_user_id;
+  console.log('📅 scheduledAt recibido:', scheduledAt, '| modo:', artist?.publish_mode, '| conectado:', !!hasConnection);
 
-  // 2. Si hay fecha programada y el artista tiene Ayrshare conectado → programar
-  let scheduleStatus = 'no_profile'; // 'success' | 'no_profile' | 'error'
+  // 2. Si hay fecha programada y el artista tiene redes conectadas → programar
+  let scheduleStatus = 'no_profile';
   let scheduleErrorMsg = null;
 
-  if (scheduledAt && artist?.ayrshare_profile_key) {
+  if (scheduledAt && hasConnection) {
     try {
-      const ayrshareService = require('./ayrshareService');
+      const socialPublisher = require('./socialPublisher');
       const postText = updateData.hashtags || video.title || 'Nuevo contenido';
       const platforms = updateData.platforms || video.platforms || ['tiktok', 'instagram', 'youtube'];
 
@@ -364,12 +407,12 @@ exports.updateVideoSettings = async (videoId, updateData) => {
       const postType = updateData.post_type || video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
       const options = buildPlatformOptions(video.source_url, platforms, postText, postType);
 
-      const result = await ayrshareService.schedulePost(
+      const result = await socialPublisher.schedulePost(
+        artist,
         postText,
         platforms,
         [cloudinaryUrl],
         new Date(scheduledAt).toISOString(),
-        artist.ayrshare_profile_key,
         options
       );
 
@@ -377,17 +420,17 @@ exports.updateVideoSettings = async (videoId, updateData) => {
         updateData.ayrshare_post_id = result.id || result.postIds?.[0] || null;
         scheduleStatus = 'success';
       }
-      console.log(`✅ Post programado en Ayrshare para video: ${videoId}`);
+      console.log(`✅ Post programado (modo: ${artist.publish_mode}) para video: ${videoId}`);
     } catch (err) {
       scheduleStatus = 'error';
-      const ayrData = err.response?.data;
-      scheduleErrorMsg = ayrData?.message || ayrData?.error
-        || (typeof ayrData === 'object' ? JSON.stringify(ayrData) : null)
+      const errData = err.response?.data;
+      scheduleErrorMsg = errData?.message || errData?.error
+        || (typeof errData === 'object' ? JSON.stringify(errData) : null)
         || err.message;
-      console.error('❌ Error Ayrshare schedulePost:', ayrData || err.message);
+      console.error('❌ Error schedulePost:', errData || err.message);
     }
   } else if (scheduledAt) {
-    console.warn(`⚠️ Video ${videoId} programado en DB pero artista sin Ayrshare conectado`);
+    console.warn(`⚠️ Video ${videoId} programado pero artista sin redes conectadas`);
   }
 
   // Mapear scheduled_at → scheduled_for (nombre real de la columna en Supabase)
@@ -502,7 +545,7 @@ function buildPlatformOptions(sourceUrl, platforms, postText = '', postType = nu
 
 // --- PUBLICAR VIDEO AHORA ---
 exports.publishVideoNow = async (videoId) => {
-  const ayrshareService = require('./ayrshareService');
+  const socialPublisher = require('./socialPublisher');
 
   const { data: video, error: videoErr } = await supabase
     .from('videos')
@@ -514,31 +557,30 @@ exports.publishVideoNow = async (videoId) => {
 
   const { data: artist, error: artistErr } = await supabase
     .from('artists')
-    .select('ayrshare_profile_key, active_platforms')
+    .select('id, publish_mode, ayrshare_profile_key, instagram_user_id, instagram_access_token, facebook_page_id, facebook_access_token, active_platforms')
     .eq('id', video.artist_id)
     .single();
 
   if (artistErr || !artist) throw new Error('Artista no encontrado');
-  if (!artist.ayrshare_profile_key) throw new Error('El artista no tiene redes sociales conectadas. Conéctalas primero.');
+  const hasConnection = artist.ayrshare_profile_key || artist.instagram_user_id;
+  if (!hasConnection) throw new Error('El artista no tiene redes sociales conectadas. Conéctalas primero.');
 
   const postText = video.hashtags || video.title || 'Nuevo contenido';
   const platforms = video.platforms?.length ? video.platforms
     : artist.active_platforms?.length ? artist.active_platforms
-      : ['tiktok', 'instagram'];
+      : ['instagram'];
 
-  // Intentar usar la URL específica de la plataforma si existe, sino usar el default
-  const targetPlatform = platforms[0]; // Simplificación: usamos la primera de la lista
+  const targetPlatform = platforms[0];
   const cloudinaryUrl = video.platform_urls?.[targetPlatform]
     || video.processed_url
     || buildCloudinaryUrl(video.source_url, targetPlatform);
-  console.log('🔗 Usando Cloudinary URL:', cloudinaryUrl);
+  console.log('🔗 Usando Cloudinary URL:', cloudinaryUrl, '| modo:', artist.publish_mode);
 
   const postType = video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
   const options = buildPlatformOptions(video.source_url, platforms, postText, postType);
-  console.log('⚙️ Opciones de plataforma:', options);
 
-  const result = await ayrshareService.publishPost(
-    postText, platforms, [cloudinaryUrl], artist.ayrshare_profile_key, options
+  const result = await socialPublisher.publishPost(
+    artist, postText, platforms, [cloudinaryUrl], options
   );
 
   const postId = result.id || result.postIds?.[0] || null;

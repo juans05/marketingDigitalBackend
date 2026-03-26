@@ -31,4 +31,8 @@ router.get('/connect-social/:artistId', vidalisController.connectSocial);
 router.get('/social-status/:artistId', vidalisController.getSocialStatus);
 router.post('/publish', vidalisController.publishToSocial);
 
+// Meta OAuth (modo directo — sin Ayrshare)
+router.get('/instagram/callback', vidalisController.instagramCallback);
+router.patch('/artist-publish-mode/:artistId', vidalisController.setPublishMode);
+
 module.exports = router;

@@ -1,6 +1,12 @@
 const vidalisService = require('../services/vidalisService');
 const cloudinaryService = require('../services/cloudinaryService');
 const ayrshareService = require('../services/ayrshareService');
+const instagramService = require('../services/instagramService');
+const { createClient } = require('@supabase/supabase-js');
+const supabase = createClient(
+  process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_ANON_KEY || 'placeholder'
+);
 
 // --- LOGIN ---
 exports.login = async (req, res) => {
@@ -136,7 +142,7 @@ exports.publishToSocial = async (req, res) => {
     const {
       text, platforms, mediaUrls, profileKey, isPreview,
       facebookOptions, instagramOptions, tiktokOptions, youtubeOptions,
-      linkedinOptions, twitterOptions
+      linkedinOptions, twitterOptions, publish_mode
     } = req.body;
 
     if (!text || !platforms || platforms.length === 0) {
@@ -144,7 +150,15 @@ exports.publishToSocial = async (req, res) => {
     }
 
     const options = { facebookOptions, instagramOptions, tiktokOptions, youtubeOptions, linkedinOptions, twitterOptions };
-    const result = await ayrshareService.publishPost(text, platforms, mediaUrls || [], profileKey || null, options, isPreview || false);
+    
+    let result;
+    if (publish_mode === 'upload-post') {
+      const uploadPostService = require('../services/uploadPostService');
+      result = await uploadPostService.publishPost(text, platforms, mediaUrls || [], profileKey || null, options);
+    } else {
+      result = await ayrshareService.publishPost(text, platforms, mediaUrls || [], profileKey || null, options, isPreview || false);
+    }
+
     res.status(200).json(result);
   } catch (error) {
     const status = error.response?.status || 500;
@@ -179,6 +193,41 @@ exports.n8nCallback = async (req, res) => {
     await vidalisService.updateVideoRaw(videoId, updates);
     console.log(`✅ n8n callback: video ${videoId} → status: ${status}`);
     res.status(200).json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// --- META OAUTH CALLBACK (modo directo) ---
+exports.instagramCallback = async (req, res) => {
+  try {
+    const { code, state, error: oauthError } = req.query;
+    if (oauthError) return res.status(400).json({ error: `Meta OAuth rechazado: ${oauthError}` });
+    if (!code || !state) return res.status(400).json({ error: 'Faltan code o state' });
+
+    const { artistId } = JSON.parse(Buffer.from(state, 'base64').toString());
+    await instagramService.handleCallback(code, artistId, supabase);
+
+    // Redirigir al dashboard con mensaje de éxito
+    const frontendUrl = process.env.FRONTEND_URL || 'https://vidalis-frontend-production.up.railway.app';
+    res.redirect(`${frontendUrl}/dashboard?instagram=connected`);
+  } catch (error) {
+    console.error('❌ Error Instagram callback:', error.message);
+    res.status(500).json({ error: error.message, details: error.response?.data });
+  }
+};
+
+// --- CAMBIAR MODO DE PUBLICACIÓN DEL ARTISTA ---
+exports.setPublishMode = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const { publish_mode } = req.body; // 'ayrshare' | 'direct' | 'upload-post'
+    if (!['ayrshare', 'direct', 'upload-post'].includes(publish_mode)) {
+      return res.status(400).json({ error: "publish_mode debe ser 'ayrshare', 'direct' o 'upload-post'" });
+    }
+    const { error } = await supabase.from('artists').update({ publish_mode }).eq('id', artistId);
+    if (error) throw error;
+    res.status(200).json({ artistId, publish_mode });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
