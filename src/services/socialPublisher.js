@@ -32,11 +32,8 @@ exports.publishPost = async (artist, text, platforms, mediaUrls = [], options = 
   if (artist.publish_mode === 'direct') {
     return publishDirect(artist, text, platforms, mediaUrls, null);
   }
-  if (artist.publish_mode === 'upload-post') {
-    return uploadPostService.publishPost(text, platforms, mediaUrls, artist.ayrshare_profile_key, options);
-  }
-  // Default: Ayrshare
-  return ayrshareService.publishPost(text, platforms, mediaUrls, artist.ayrshare_profile_key, options);
+  // Default: Upload-Post (Replacing Ayrshare)
+  return uploadPostService.publishPost(text, platforms, mediaUrls, artist.ayrshare_profile_key, options);
 };
 
 // ============================================================
@@ -57,11 +54,8 @@ exports.schedulePost = async (artist, text, platforms, mediaUrls = [], scheduleD
   if (artist.publish_mode === 'direct') {
     return publishDirect(artist, text, platforms, mediaUrls, scheduleDate);
   }
-  if (artist.publish_mode === 'upload-post') {
-    return uploadPostService.schedulePost(text, platforms, mediaUrls, scheduleDate, artist.ayrshare_profile_key, options);
-  }
-  // Default: Ayrshare
-  return ayrshareService.schedulePost(text, platforms, mediaUrls, scheduleDate, artist.ayrshare_profile_key, options);
+  // Default: Upload-Post (Replacing Ayrshare)
+  return uploadPostService.schedulePost(text, platforms, mediaUrls, scheduleDate, artist.ayrshare_profile_key, options);
 };
 
 // ============================================================
@@ -80,25 +74,24 @@ exports.getConnectUrl = async (artist, supabase) => {
     return { url, mode: 'direct' };
   }
   
-  if (artist.publish_mode === 'upload-post') {
-    let profileId = artist.ayrshare_profile_key;
-    if (!profileId) {
-      profileId = await uploadPostService.createProfile(artist.name);
-      await supabase.from('artists').update({ ayrshare_profile_key: profileId, publish_mode: 'upload-post' }).eq('id', artist.id);
-    }
-    const connectUrl = await uploadPostService.generateConnectUrl(profileId);
-    return { url: connectUrl, mode: 'upload-post', profileKey: profileId };
+  // Default to Upload-Post (Replacing Ayrshare)
+  let profileId = artist.ayrshare_profile_key;
+
+  // Si tiene un profileId de Ayrshare (ID alfanumérico largo), forzamos creación en Upload-Post
+  // El ID de Ayrshare suele ser 'profile-XYZ...' o similar.
+  // El ID de Upload-Post suele ser un ID de usuario numérico o UUID.
+  // Si no estamos seguros, es mejor intentar crear uno nuevo si el modo cambia.
+  
+  if (!profileId || artist.publish_mode === 'ayrshare') {
+    profileId = await uploadPostService.createProfile(artist.name);
+    await supabase.from('artists').update({ 
+      ayrshare_profile_key: profileId, 
+      publish_mode: 'upload-post' 
+    }).eq('id', artist.id);
   }
 
-  // Default: Ayrshare JWT
-  let profileKey = artist.ayrshare_profile_key;
-  if (!profileKey) {
-    const profile = await ayrshareService.createProfile(artist.name);
-    profileKey    = profile.profileKey;
-    await supabase.from('artists').update({ ayrshare_profile_key: profileKey }).eq('id', artist.id);
-  }
-  const jwt = await ayrshareService.generateJWT(profileKey);
-  return { url: jwt.url, mode: 'ayrshare', profileKey };
+  const connectUrl = await uploadPostService.generateConnectUrl(profileId);
+  return { url: connectUrl, mode: 'upload-post', profileKey: profileId };
 };
 
 // ============================================================
@@ -109,15 +102,13 @@ exports.getConnectUrl = async (artist, supabase) => {
  * Devuelve las plataformas conectadas del artista (según su publish_mode).
  */
 exports.getActivePlatforms = async (artist) => {
-  if (artist.publish_mode === 'direct') {
-    return instagramService.getActivePlatforms(artist);
-  }
-  if (artist.publish_mode === 'upload-post') {
+  if (artist.publish_mode === 'upload-post' || !artist.publish_mode || artist.publish_mode === 'ayrshare') {
     if (!artist.ayrshare_profile_key) return [];
     return uploadPostService.getActivePlatforms(artist.ayrshare_profile_key);
   }
-  if (!artist.ayrshare_profile_key) return [];
-  return ayrshareService.getActivePlatforms(artist.ayrshare_profile_key);
+  // Fallback for legacy Ayrshare if needed (Optional)
+  // return ayrshareService.getActivePlatforms(artist.ayrshare_profile_key);
+  return [];
 };
 
 // ============================================================
