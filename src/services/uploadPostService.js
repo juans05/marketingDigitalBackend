@@ -35,13 +35,13 @@ exports.createProfile = async (name) => {
   try {
     const sanitizedUsername = name.trim().replace(/[^a-zA-Z0-9@_-]/g, '_');
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users`, {
-      username: sanitizedUsername
+      profile_username: sanitizedUsername
     }, {
       headers: buildHeaders()
     });
 
     // Según docs, retorna el ID del usuario creado
-    return response.data.user_id || response.data.id;
+    return response.data.user_id || response.data.id || sanitizedUsername;
   } catch (err) {
     console.error('❌ Error al crear perfil en Upload-Post:', err.response?.data || err.message);
     throw err;
@@ -56,7 +56,7 @@ exports.createProfile = async (name) => {
 exports.generateConnectUrl = async (userId) => {
   try {
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users/generate-jwt`, {
-      user: userId
+      profile_username: userId
     }, {
       headers: buildHeaders()
     });
