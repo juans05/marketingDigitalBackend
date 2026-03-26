@@ -33,7 +33,7 @@ function buildHeaders() {
  */
 exports.createProfile = async (name) => {
   try {
-    const sanitizedUsername = name.trim().replace(/[^a-zA-Z0-9@_-]/g, '_');
+    const sanitizedUsername = (name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '') || `artista_${Date.now()}`;
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users`, {
       profile_username: sanitizedUsername
     }, {
