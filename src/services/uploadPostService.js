@@ -33,7 +33,7 @@ function buildHeaders() {
  */
 exports.createProfile = async (name) => {
   try {
-    const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users/`, {
+    const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users`, {
       name: name
     }, {
       headers: buildHeaders()
