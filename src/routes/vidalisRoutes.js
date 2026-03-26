@@ -9,6 +9,7 @@ router.post('/login', vidalisController.login);
 router.post('/agencies', vidalisController.createAgency);
 router.post('/artists', vidalisController.createArtist);
 router.get('/artists/:agencyId', vidalisController.getArtists);
+router.delete('/artists/:artistId', vidalisController.deleteArtist);
 
 // Videos
 router.post('/upload', vidalisController.processVideo);

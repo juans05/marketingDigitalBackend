@@ -605,3 +605,23 @@ exports.getClipsByParent = async (parentId) => {
   if (error) throw error;
   return data;
 };
+// --- ELIMINAR ARTISTA Y SUS VIDEOS ---
+exports.deleteArtist = async (artistId) => {
+  // 1. Eliminar todos los videos del artista (por seguridad, aunque haya cascade)
+  const { error: videosError } = await supabase
+    .from('videos')
+    .delete()
+    .eq('artist_id', artistId);
+  
+  if (videosError) throw videosError;
+
+  // 2. Eliminar el artista
+  const { error: artistError } = await supabase
+    .from('artists')
+    .delete()
+    .eq('id', artistId);
+
+  if (artistError) throw artistError;
+
+  return { ok: true, message: 'Artista y videos eliminados correctamente' };
+};

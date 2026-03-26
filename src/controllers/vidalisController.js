@@ -257,3 +257,13 @@ exports.getClips = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+exports.deleteArtist = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const result = await vidalisService.deleteArtist(artistId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
