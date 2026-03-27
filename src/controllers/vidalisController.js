@@ -267,3 +267,74 @@ exports.deleteArtist = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+/**
+ * Sincroniza las plataformas activas desde Upload-Post a la base de datos local.
+ */
+exports.syncSocialAccounts = async (req, res) => {
+  const { artistId } = req.params;
+  try {
+    // 1. Obtener el artista
+    const { data: artist, error: artistError } = await supabase
+      .from('artists')
+      .select('*')
+      .eq('id', artistId)
+      .single();
+
+    if (artistError || !artist) {
+      return res.status(404).json({ error: 'Artista no encontrado' });
+    }
+
+    const profileKey = artist.ayrshare_profile_key;
+    if (!profileKey) {
+      return res.status(400).json({ error: 'El artista no tiene un perfil vinculado (ayrshare_profile_key está vacío)' });
+    }
+
+    console.log(`🔄 Sincronizando plataformas para: ${artist.name} (${profileKey})`);
+    
+    let activePlatforms = [];
+    let socialKeys = {};
+
+    // 2. Consultar Upload-Post
+    const profileData = await uploadPostService.getProfile(profileKey);
+    
+    if (profileData.success && profileData.profile.social_accounts) {
+      const accounts = profileData.profile.social_accounts;
+      Object.keys(accounts).forEach(platform => {
+        // Si hay al menos una cuenta vinculada para esa plataforma
+        if (Array.isArray(accounts[platform]) && accounts[platform].length > 0) {
+          activePlatforms.push(platform);
+          socialKeys[platform] = 'linked';
+        }
+      });
+    }
+
+    console.log(`📡 Plataformas detectadas: ${activePlatforms.join(', ')}`);
+
+    // 3. Actualizar la base de datos (con lógica resiliente por si falta la columna)
+    const updatePayload = {
+      social_keys: socialKeys
+    };
+
+    // Solo incluimos active_platforms si sabemos que la columna existe o confiamos en la migración
+    updatePayload.active_platforms = activePlatforms;
+
+    const { error: updateError } = await supabase
+      .from('artists')
+      .update(updatePayload)
+      .eq('id', artistId);
+
+    if (updateError) {
+      console.warn("⚠️ Error parcial al actualizar DB (posiblemente falta la columna active_platforms):", updateError.message);
+    }
+
+    res.json({ 
+      success: true, 
+      active_platforms: activePlatforms,
+      social_keys: socialKeys 
+    });
+  } catch (error) {
+    console.error('❌ Error en syncSocialAccounts:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+};

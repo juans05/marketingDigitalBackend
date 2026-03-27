@@ -179,3 +179,18 @@ exports.getAnalytics = async (username, platforms) => {
     throw err;
   }
 };
+
+/**
+ * Obtener perfil completo (incluyendo redes sociales vinculadas).
+ */
+exports.getProfile = async (username) => {
+  try {
+    const response = await axios.get(`${UPLOAD_POST_BASE}/uploadposts/users/${username}`, {
+      headers: buildHeaders()
+    });
+    return response.data;
+  } catch (error) {
+    console.error('❌ Error al obtener perfil en Upload-Post:', error.response?.data || error.message);
+    throw error;
+  }
+};
