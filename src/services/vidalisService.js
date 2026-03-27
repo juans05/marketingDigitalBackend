@@ -14,7 +14,7 @@ const internalQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis simult
  * - AI_MODE=n8n       → siempre usa n8n (comportamiento anterior)
  * - AI_MODE=hybrid    → usa interno si la cola está libre; si está llena → n8n como overflow
  */
-const AI_MODE = process.env.AI_MODE || 'hybrid';
+const AI_MODE = process.env.AI_MODE || 'n8n';
 const N8N_QUEUE_THRESHOLD = parseInt(process.env.N8N_QUEUE_THRESHOLD || '3', 10);
 
 function shouldUseInternal() {

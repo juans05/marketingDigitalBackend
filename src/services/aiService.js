@@ -18,6 +18,7 @@ let anthropic = null;
 
 function getGemini() {
   if (!gemini) {
+    console.log('🧪 [Gemini] Verificando API Key:', process.env.GEMINI_API_KEY ? 'Presente' : '⚠️ FALTANTE');
     if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurado');
     gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   }
@@ -26,6 +27,7 @@ function getGemini() {
 
 function getAnthropic() {
   if (!anthropic) {
+    console.log('🧪 [Anthropic] Verificando API Key:', process.env.ANTHROPIC_API_KEY ? 'Presente' : '⚠️ FALTANTE');
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY no configurado');
     anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
@@ -230,7 +232,7 @@ viral_score: número del 1 al 10 basado en el potencial viral del contenido.
 Respondé SOLO con el JSON, sin texto adicional.`;
 
   const message = await getAnthropic().messages.create({
-    model: 'claude-opus-4-6',
+    model: 'claude-3-5-sonnet-20241022',
     max_tokens: 1024,
     system: systemPrompt,
     messages: [{ role: 'user', content: userContent }]
@@ -289,11 +291,14 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
     };
 
     await supabase.from('videos').update(updates).eq('id', videoId);
-    console.log(`✅ [AI interno] Video ${videoId} procesado y guardado`);
+    console.log(`✅ [AI interno] Video ${videoId} procesado y guardado con éxito.`);
 
     return updates;
   } catch (err) {
-    console.error(`❌ [AI interno] Error procesando video ${videoId}:`, err.message);
+    console.error(`❌ [AI interno] Error crítico procesando video ${videoId}:`);
+    console.error(`   - Mensaje: ${err.message}`);
+    console.error(`   - Detalles:`, err.response?.data || 'No hay detalles adicionales');
+    
     await supabase.from('videos').update({ status: 'error' }).eq('id', videoId);
     throw err;
   }

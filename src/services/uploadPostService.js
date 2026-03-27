@@ -194,3 +194,23 @@ exports.getProfile = async (username) => {
     throw error;
   }
 };
+
+/**
+ * Devuelve un array con los nombres de las plataformas vinculadas.
+ */
+exports.getActivePlatforms = async (username) => {
+  try {
+    const profileData = await exports.getProfile(username);
+    const activePlatforms = [];
+    if (profileData.success && profileData.profile.social_accounts) {
+      const accounts = profileData.profile.social_accounts;
+      Object.keys(accounts).forEach(p => {
+        if (Array.isArray(accounts[p]) && accounts[p].length > 0) activePlatforms.push(p);
+      });
+    }
+    return activePlatforms;
+  } catch (err) {
+    console.error('❌ Error getActivePlatforms:', err.message);
+    return [];
+  }
+};
