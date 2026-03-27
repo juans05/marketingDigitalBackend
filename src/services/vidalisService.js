@@ -312,7 +312,7 @@ exports.connectSocialAccounts = async (artistId) => {
     console.error('🎯 Supabase Error (connectSocialAccounts):', error);
     throw new Error('Error al buscar artista en BD: ' + error.message);
   }
-  
+
   if (!artist) {
     throw new Error(`Artista no existe en la base de datos: ${artistId}`);
   }
@@ -619,7 +619,7 @@ exports.deleteArtist = async (artistId) => {
     .from('videos')
     .delete()
     .eq('artist_id', artistId);
-  
+
   if (videosError) throw videosError;
 
   // 2. Eliminar el artista

@@ -11,7 +11,7 @@
  * deben pasar por aquí para soportar ambos modos de forma transparente.
  */
 
-const ayrshareService  = require('./ayrshareService');
+const ayrshareService = require('./ayrshareService');
 const uploadPostService = require('./uploadPostService');
 const instagramService = require('./instagramService');
 
@@ -69,28 +69,40 @@ exports.schedulePost = async (artist, text, platforms, mediaUrls = [], scheduleD
  * Direct:    devuelve { url } — abre el OAuth de Meta
  */
 exports.getConnectUrl = async (artist, supabase) => {
+  console.log("artist mode", artist.publish_mode);
   if (artist.publish_mode === 'direct') {
     const url = instagramService.getAuthUrl(artist.id);
     return { url, mode: 'direct' };
   }
-  
+
   // Default to Upload-Post (Replacing Ayrshare)
   let profileId = artist.ayrshare_profile_key;
 
   // Si tiene un profileId de Ayrshare (ID alfanumérico largo), forzamos creación en Upload-Post
   // El ID de Ayrshare suele ser 'profile-XYZ...' o similar.
   // El ID de Upload-Post suele ser un ID de usuario numérico o UUID.
-  // Si no estamos seguros, es mejor intentar crear uno nuevo si el modo cambia.
+  // Si no estamos seguros o detectamos prefijo de Ayrshare, migramos.
+  const isAyrshareKey = profileId && (profileId.startsWith('profile-') || profileId.length > 50); // Ayrshare keys are usually long
   
-  if (!profileId || artist.publish_mode === 'ayrshare') {
+  if (!profileId || artist.publish_mode === 'ayrshare' || isAyrshareKey) {
+    console.log("🚀 Migrando/Creando perfil en Upload-Post para:", artist.name);
     profileId = await uploadPostService.createProfile(artist.name);
-    await supabase.from('artists').update({ 
-      ayrshare_profile_key: profileId, 
-      publish_mode: 'upload-post' 
-    }).eq('id', artist.id);
+    
+    // Intentar actualizar la DB (esto fallará silenciosamente si la columna publish_mode no existe, 
+    // pero al menos tenemos el profileId en memoria para esta sesión)
+    try {
+      await supabase.from('artists').update({
+        ayrshare_profile_key: profileId,
+        publish_mode: 'upload-post'
+      }).eq('id', artist.id);
+      console.log("✅ DB actualizada con nuevo profileId:", profileId);
+    } catch (e) {
+      console.warn("⚠️ No se pudo actualizar la DB (¿falta la columna publish_mode?):", e.message);
+    }
   }
 
   const connectUrl = await uploadPostService.generateConnectUrl(profileId);
+  console.log("🔗 Portal Connection URL:", connectUrl);
   return { url: connectUrl, mode: 'upload-post', profileKey: profileId };
 };
 

@@ -16,6 +16,7 @@ const UPLOAD_POST_BASE = 'https://api.upload-post.com/api';
  * Helper: Construye los headers de Upload-Post.
  */
 function buildHeaders() {
+  console.log("buildHeaders", process.env.UPLOAD_POST_API_KEY);
   return {
     'Content-Type': 'application/json',
     'Authorization': `Apikey ${process.env.UPLOAD_POST_API_KEY}`
@@ -33,9 +34,11 @@ function buildHeaders() {
  */
 exports.createProfile = async (name) => {
   try {
+    console.log("Creating new profile", name);
     const sanitizedUsername = (name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '') || `artista_${Date.now()}`;
+    console.log("Creating new profile", sanitizedUsername);
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users`, {
-      profile_username: sanitizedUsername
+      username: sanitizedUsername
     }, {
       headers: buildHeaders()
     });
@@ -56,7 +59,8 @@ exports.createProfile = async (name) => {
 exports.generateConnectUrl = async (userId) => {
   try {
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users/generate-jwt`, {
-      profile_username: userId
+      username: userId,
+      profile_username: userId // Cubrimos ambos nombres por inconsistencia en la API
     }, {
       headers: buildHeaders()
     });
@@ -82,7 +86,7 @@ exports.getActivePlatforms = async (userId) => {
     const response = await axios.get(`${UPLOAD_POST_BASE}/uploadposts/users/${userId}`, {
       headers: buildHeaders()
     });
-    
+
     return response.data.platforms || response.data.activeSocialAccounts || [];
   } catch (err) {
     console.warn('⚠️ No se pudo obtener plataformas activas de Upload-Post:', err.message);
@@ -123,9 +127,9 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
     const response = await axios.post(`${UPLOAD_POST_BASE}${endpoint}`, payload, {
       headers: buildHeaders()
     });
-    
+
     console.log('✅ Upload-Post Response:', response.data);
-    
+
     // Retornamos un formato compatible con lo que espera el resto del sistema
     return {
       id: response.data.request_id || response.data.id,
@@ -147,7 +151,7 @@ exports.schedulePost = async (text, platforms, mediaUrls, scheduleDate, userId, 
     ...options,
     scheduleDate: scheduleDate // Formato ISO
   };
-  
+
   return exports.publishPost(text, platforms, mediaUrls, userId, enhancedOptions);
 };
 
@@ -168,7 +172,7 @@ exports.getAnalytics = async (username, platforms) => {
         platforms: platforms.join(',')
       }
     });
-    
+
     return response.data;
   } catch (err) {
     console.error('❌ Error al obtener analíticas en Upload-Post:', err.response?.data || err.message);
