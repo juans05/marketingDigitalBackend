@@ -259,7 +259,7 @@ exports.fetchArtistGallery = async (artistId) => {
 exports.getVideoAnalytics = async (videoId) => {
   const { data, error } = await supabase
     .from('videos')
-    .select('id, title, status, viral_score, ai_copy_short, ai_copy_long, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, created_at')
+    .select('id, title, status, viral_score, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at, updated_at')
     .eq('id', videoId)
     .single();
   if (error) throw error;
