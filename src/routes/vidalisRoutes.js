@@ -17,6 +17,7 @@ router.post('/upload', vidalisController.processVideo);
 router.get('/gallery/:artistId', vidalisController.getGallery);
 router.patch('/video/:videoId', vidalisController.updateVideo);
 router.post('/n8n-callback/:videoId', vidalisController.n8nCallback);
+router.patch('/n8n-callback/:videoId', vidalisController.n8nCallback);
 router.post('/publish-now/:videoId', vidalisController.publishNow);
 router.get('/clips/:parentId', vidalisController.getClips);
 

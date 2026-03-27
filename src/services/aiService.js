@@ -277,24 +277,38 @@ Respondé SOLO con el JSON, sin texto adicional.`;
 async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms, title, artistContext = null) {
   logDebug(`🤖 [AI interno] Iniciando análisis para video ${videoId}`);
 
-  try {
-    await supabase.from('videos').update({ status: 'analyzing' }).eq('id', videoId);
+  // Helper: actualizar progreso en DB para que el frontend pueda mostrarlo
+  async function updateProgress(step, message) {
+    logDebug(`   [Paso ${step}] ${message}`);
+    await supabase.from('videos').update({
+      status: 'analyzing',
+      ai_copy_short: `[Paso ${step}/4] ${message}`,
+      updated_at: new Date().toISOString()
+    }).eq('id', videoId);
+  }
 
-    // Paso 0 (solo videos): transcripción de audio con Groq Whisper
+  try {
+    await updateProgress(1, '🎙️ Transcribiendo audio...');
+
+    // Paso 1 (solo videos): transcripción de audio con Groq Whisper
     let transcript = null;
     if (mediaType === 'video') {
       transcript = await transcribeWithGroq(sourceUrl || videoUrl);
     }
 
-    // Paso 1: análisis visual con Gemini
-    console.log(`🔍 [Gemini] Analizando ${mediaType}...`);
-    const geminiAnalysis = await analyzeWithGemini(videoUrl, mediaType, title);
-    console.log(`✅ [Gemini] Análisis completado para video ${videoId}`);
+    await updateProgress(2, '🔍 Analizando contenido visual con Gemini...');
 
-    // Paso 2: copy con Claude (recibe análisis + transcripción + contexto artista)
-    console.log(`✍️ [Claude] Generando copy para video ${videoId}...`);
+    // Paso 2: análisis visual con Gemini
+    const geminiAnalysis = await analyzeWithGemini(videoUrl, mediaType, title);
+    logDebug(`✅ [Gemini] Análisis completado para video ${videoId}`);
+
+    await updateProgress(3, '✍️ Generando copy y hashtags con Claude...');
+
+    // Paso 3: copy con Claude
     const copy = await generateCopyWithClaude(geminiAnalysis, transcript, title, platforms, artistContext);
-    console.log(`✅ [Claude] Copy generado para video ${videoId}`);
+    logDebug(`✅ [Claude] Copy generado para video ${videoId}`);
+
+    await updateProgress(4, '💾 Guardando resultados...');
 
     const updates = {
       status: 'needs_review',
@@ -302,11 +316,13 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
       ai_copy_long: copy.ai_copy_long || null,
       hashtags: copy.hashtags || null,
       viral_score: typeof copy.viral_score === 'number' ? copy.viral_score : null,
+      error_log: null, // Limpiar errores anteriores
+      updated_at: new Date().toISOString(),
       ...(sourceUrl ? { source_url: sourceUrl } : {}),
     };
 
     await supabase.from('videos').update(updates).eq('id', videoId);
-    console.log(`✅ [AI interno] Video ${videoId} procesado y guardado con éxito.`);
+    logDebug(`✅ [AI interno] Video ${videoId} procesado y guardado con éxito.`);
 
     return updates;
   } catch (err) {
@@ -314,9 +330,17 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
     logDebug(`   - Mensaje: ${err.message}`);
     console.error(`   - Detalles:`, err.response?.data || 'No hay detalles adicionales');
     
+    const errorDetail = JSON.stringify({
+      message: err.message,
+      details: err.response?.data || null,
+      timestamp: new Date().toISOString()
+    });
+
     await supabase.from('videos').update({ 
       status: 'error',
-      ai_copy_short: `Error AI: ${err.message}`
+      ai_copy_short: null, // No sobreescribir el copy con el error
+      error_log: errorDetail,
+      updated_at: new Date().toISOString()
     }).eq('id', videoId);
     throw err;
   }
