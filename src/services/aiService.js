@@ -13,12 +13,27 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
 
+const fs = require('fs');
+const path = require('path');
+const debugLogPath = path.join(process.cwd(), 'debug_ai.log');
+
+function logDebug(message) {
+  const timestamp = new Date().toISOString();
+  const logMsg = `[${timestamp}] ${message}\n`;
+  console.log(message);
+  try {
+    fs.appendFileSync(debugLogPath, logMsg);
+  } catch (e) {
+    console.error('Failed to write to debug_ai.log', e.message);
+  }
+}
+
 let gemini = null;
 let anthropic = null;
 
 function getGemini() {
   if (!gemini) {
-    console.log('🧪 [Gemini] Verificando API Key:', process.env.GEMINI_API_KEY ? 'Presente' : '⚠️ FALTANTE');
+    logDebug('🧪 [Gemini] Verificando API Key: ' + (process.env.GEMINI_API_KEY ? 'Presente' : '⚠️ FALTANTE'));
     if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurado');
     gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   }
@@ -27,7 +42,7 @@ function getGemini() {
 
 function getAnthropic() {
   if (!anthropic) {
-    console.log('🧪 [Anthropic] Verificando API Key:', process.env.ANTHROPIC_API_KEY ? 'Presente' : '⚠️ FALTANTE');
+    logDebug('🧪 [Anthropic] Verificando API Key: ' + (process.env.ANTHROPIC_API_KEY ? 'Presente' : '⚠️ FALTANTE'));
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY no configurado');
     anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
@@ -260,7 +275,7 @@ Respondé SOLO con el JSON, sin texto adicional.`;
  * @param {{ nombre, genero, audiencia, tono }|null} artistContext
  */
 async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms, title, artistContext = null) {
-  console.log(`🤖 [AI interno] Iniciando análisis para video ${videoId}`);
+  logDebug(`🤖 [AI interno] Iniciando análisis para video ${videoId}`);
 
   try {
     await supabase.from('videos').update({ status: 'analyzing' }).eq('id', videoId);
@@ -282,7 +297,7 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
     console.log(`✅ [Claude] Copy generado para video ${videoId}`);
 
     const updates = {
-      status: 'ready',
+      status: 'needs_review',
       ai_copy_short: copy.ai_copy_short || null,
       ai_copy_long: copy.ai_copy_long || null,
       hashtags: copy.hashtags || null,
@@ -295,11 +310,14 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
 
     return updates;
   } catch (err) {
-    console.error(`❌ [AI interno] Error crítico procesando video ${videoId}:`);
-    console.error(`   - Mensaje: ${err.message}`);
+    logDebug(`❌ [AI interno] Error crítico procesando video ${videoId}:`);
+    logDebug(`   - Mensaje: ${err.message}`);
     console.error(`   - Detalles:`, err.response?.data || 'No hay detalles adicionales');
     
-    await supabase.from('videos').update({ status: 'error' }).eq('id', videoId);
+    await supabase.from('videos').update({ 
+      status: 'error',
+      ai_copy_short: `Error AI: ${err.message}`
+    }).eq('id', videoId);
     throw err;
   }
 }
