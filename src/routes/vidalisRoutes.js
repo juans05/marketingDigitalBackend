@@ -10,6 +10,7 @@ router.post('/agencies', vidalisController.createAgency);
 router.post('/artists', vidalisController.createArtist);
 router.get('/artists/:agencyId', vidalisController.getArtists);
 router.delete('/artists/:artistId', vidalisController.deleteArtist);
+router.post('/artists/:artistId/sync', vidalisController.syncSocialAccounts);
 
 // Videos
 router.post('/upload', vidalisController.processVideo);
