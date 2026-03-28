@@ -96,7 +96,8 @@ exports.getVideoAnalytics = async (req, res) => {
 exports.getDashboardStats = async (req, res) => {
   try {
     const { agencyId } = req.params;
-    const stats = await vidalisService.getDashboardStats(agencyId);
+    const { artistId } = req.query;
+    const stats = await vidalisService.getDashboardStats(agencyId, artistId);
     res.status(200).json(stats);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -236,7 +237,8 @@ exports.setPublishMode = async (req, res) => {
 exports.publishNow = async (req, res) => {
   try {
     const { videoId } = req.params;
-    const result = await vidalisService.publishVideoNow(videoId);
+    const { platforms, postType } = req.body || {};
+    const result = await vidalisService.publishVideoNow(videoId, { platforms, postType });
     res.status(200).json(result);
   } catch (error) {
     console.error('❌ Error en publishNow:', error.message);

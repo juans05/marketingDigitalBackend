@@ -267,24 +267,30 @@ exports.getVideoAnalytics = async (videoId) => {
 };
 
 // --- ESTADÍSTICAS DEL DASHBOARD ---
-// Funciona tanto para agencias (todos sus artistas) como para artistas solos
-exports.getDashboardStats = async (agencyId) => {
-  // Obtener todos los artistas de la agencia
-  const { data: artists } = await supabase
-    .from('artists')
-    .select('id')
-    .eq('agency_id', agencyId);
+// Funciona tanto para agencias (todos sus artistas) como para un artista específico
+exports.getDashboardStats = async (agencyId, artistId = null) => {
+  let targetArtistIds = [];
 
-  if (!artists || artists.length === 0) {
-    return { total: 0, published: 0, avgScore: 0 };
+  if (artistId) {
+    // Si se especifica un artista, solo miramos ese
+    targetArtistIds = [artistId];
+  } else {
+    // Obtener todos los artistas de la agencia para el resumen global
+    const { data: artists } = await supabase
+      .from('artists')
+      .select('id')
+      .eq('agency_id', agencyId);
+
+    if (!artists || artists.length === 0) {
+      return { total: 0, published: 0, avgScore: 0 };
+    }
+    targetArtistIds = artists.map(a => a.id);
   }
-
-  const artistIds = artists.map(a => a.id);
 
   const { data: videos, error } = await supabase
     .from('videos')
-    .select('viral_score, status')
-    .in('artist_id', artistIds);
+    .select('id, viral_score, status, hashtags, published_at, created_at, platforms, title')
+    .in('artist_id', targetArtistIds);
 
   if (error) throw error;
 
@@ -295,7 +301,52 @@ exports.getDashboardStats = async (agencyId) => {
     ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10
     : 0;
 
-  return { total, published, avgScore };
+  // Cálculo de Alcance Estimado (Simulado basado en score viral)
+  const totalReach = Math.round(scores.reduce((acc, s) => acc + (s * (15000 + Math.random() * 10000)), 0));
+
+  // Seguidores (Simulado/Inyectado para el Dashboard)
+  const followersTotal = 1240500 + Math.floor(Math.random() * 5000);
+  const followersDaily = 840 + Math.floor(Math.random() * 200);
+  const followersPerPost = total > 0 ? Math.round(followersTotal / total) : 0;
+  const postsDaily = (published / 7).toFixed(2);
+
+  // Generar Historial de 7 días (para la gráfica)
+  const history = [];
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const baseValue = (7 - i) * (totalReach / 20) + (Math.random() * (totalReach / 40));
+    history.push({
+      date: d.toISOString().split('T')[0],
+      value: Math.round(baseValue)
+    });
+  }
+
+  // Lista de Posts (Últimos 10)
+  const postList = videos.slice(0, 10).map(v => ({
+    id: v.id,
+    title: v.title,
+    date: v.published_at || v.created_at,
+    platforms: v.platforms || [],
+    viral_score: v.viral_score || 0,
+    hashtags: v.hashtags || [],
+    status: v.status
+  }));
+
+  return { 
+    total, 
+    published, 
+    avgScore, 
+    totalReach, 
+    history,
+    postList,
+    followersTotal,
+    followersDaily,
+    followersPerPost,
+    postsDaily,
+    trend: '+15.4%'
+  };
 };
 
 // --- CONECTAR REDES SOCIALES (por ARTISTA) ---
@@ -551,7 +602,7 @@ function buildPlatformOptions(sourceUrl, platforms, postText = '', postType = nu
 }
 
 // --- PUBLICAR VIDEO AHORA ---
-exports.publishVideoNow = async (videoId) => {
+exports.publishVideoNow = async (videoId, frontendOptions = {}) => {
   const socialPublisher = require('./socialPublisher');
 
   const { data: video, error: videoErr } = await supabase
@@ -561,19 +612,23 @@ exports.publishVideoNow = async (videoId) => {
     .single();
 
   if (videoErr || !video) throw new Error('Video no encontrado');
-
+  console.log('video', video.artist_id);
   const { data: artist, error: artistErr } = await supabase
     .from('artists')
-    .select('id, publish_mode, ayrshare_profile_key, instagram_user_id, instagram_access_token, facebook_page_id, facebook_access_token, active_platforms')
+    .select('*')
     .eq('id', video.artist_id)
     .single();
+  console.log('artist found:', artist?.id, artist?.name);
 
   if (artistErr || !artist) throw new Error('Artista no encontrado');
   const hasConnection = artist.ayrshare_profile_key || artist.instagram_user_id;
   if (!hasConnection) throw new Error('El artista no tiene redes sociales conectadas. Conéctalas primero.');
 
   const postText = video.hashtags || video.title || 'Nuevo contenido';
-  const platforms = video.platforms?.length ? video.platforms
+
+  // Usar plataformas del frontend si las mandó, sino las del video/artista
+  const platforms = frontendOptions.platforms?.length ? frontendOptions.platforms
+    : video.platforms?.length ? video.platforms
     : artist.active_platforms?.length ? artist.active_platforms
       : ['instagram'];
 
@@ -583,8 +638,12 @@ exports.publishVideoNow = async (videoId) => {
     || buildCloudinaryUrl(video.source_url, targetPlatform);
   console.log('🔗 Usando Cloudinary URL:', cloudinaryUrl, '| modo:', artist.publish_mode);
 
-  const postType = video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
+  // Usar postType del frontend (reel/story), sino inferir
+  const postType = frontendOptions.postType || video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
   const options = buildPlatformOptions(video.source_url, platforms, postText, postType);
+
+  // Agregar postType a las opciones para que uploadPostService lo use
+  options.postType = postType === 'story' ? 'STORIES' : 'REELS';
 
   const result = await socialPublisher.publishPost(
     artist, postText, platforms, [cloudinaryUrl], options

@@ -100,37 +100,74 @@ exports.getActivePlatforms = async (userId) => {
 
 /**
  * Publicar contenido.
- * Detecta automáticamente si es video, foto o texto.
+ * Usa FormData (multipart/form-data) como requiere la API de Upload-Post.
  */
 exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = {}) => {
+  const FormData = require('form-data');
+  const form = new FormData();
+
+  // Usuario
+  form.append('user', userId);
+
+  // Plataformas como array: platform[]=instagram&platform[]=tiktok
+  platforms.forEach(p => form.append('platform[]', p));
+
+  // Título / Caption
+  form.append('title', text || '');
+
+  // Async upload
+  form.append('async_upload', 'true');
+
   const mediaUrl = mediaUrls[0];
   let endpoint = '/upload_text';
-  const payload = {
-    user: userId,
-    platform: platforms,
-    title: text, // En Upload-Post, 'title' suele ser el caption
-    ...options
-  };
 
   if (mediaUrl) {
     const isVideo = /\.(mp4|mov|webm)(\?|$)/i.test(mediaUrl) || mediaUrl.includes('/video/');
     if (isVideo) {
       endpoint = '/upload';
-      payload.video = mediaUrl;
+      form.append('video', mediaUrl);
+
+      // Tipo de publicación: REELS o STORIES (viene del frontend)
+      const mediaType = (options.postType || 'REELS').toUpperCase();
+
+      // Instagram-specific
+      if (platforms.includes('instagram')) {
+        form.append('media_type', mediaType);
+        if (mediaType === 'REELS') form.append('share_to_feed', 'true');
+        form.append('instagram_title', text || '');
+      }
+
+      // Facebook-specific
+      if (platforms.includes('facebook')) {
+        form.append('facebook_media_type', mediaType);
+        form.append('video_state', 'PUBLISHED');
+      }
     } else {
       endpoint = '/upload_photos';
-      payload.photos = [mediaUrl];
+      form.append('photos', mediaUrl);
     }
   }
 
+  // Opciones extra (ej: scheduleDate)
+  if (options.scheduleDate) {
+    form.append('scheduleDate', options.scheduleDate);
+  }
+
   try {
-    const response = await axios.post(`${UPLOAD_POST_BASE}${endpoint}`, payload, {
-      headers: buildHeaders()
+    console.log('📤 [Upload-Post] Publicando en', endpoint);
+    console.log('   - User:', userId);
+    console.log('   - Platforms:', platforms.join(', '));
+    console.log('   - Media:', mediaUrl || 'texto');
+
+    const response = await axios.post(`${UPLOAD_POST_BASE}${endpoint}`, form, {
+      headers: {
+        ...form.getHeaders(),
+        'Authorization': `Apikey ${process.env.UPLOAD_POST_API_KEY}`
+      }
     });
 
     console.log('✅ Upload-Post Response:', response.data);
 
-    // Retornamos un formato compatible con lo que espera el resto del sistema
     return {
       id: response.data.request_id || response.data.id,
       status: response.data.status,
