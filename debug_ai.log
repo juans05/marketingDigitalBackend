@@ -1,0 +1,6 @@
+[2026-03-28T10:28:20.605Z] 🤖 [AI interno] Iniciando análisis para video 1e9a8402-3dee-4bca-8862-4d7e3fea6a66
+[2026-03-28T10:28:20.609Z]    [Paso 1] 🎙️ Transcribiendo audio...
+[2026-03-28T10:28:25.282Z]    [Paso 2] 🔍 Analizando contenido visual con Gemini...
+[2026-03-28T10:28:25.510Z] 🧪 [Gemini] Verificando API Key: Presente
+[2026-03-28T10:28:29.325Z] ❌ [AI interno] Error crítico procesando video 1e9a8402-3dee-4bca-8862-4d7e3fea6a66:
+[2026-03-28T10:28:29.326Z]    - Mensaje: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent: [404 Not Found] models/gemini-2.0-flash-exp is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
