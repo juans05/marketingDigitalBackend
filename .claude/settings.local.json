@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.upload-post.com)",
+      "Bash(ls d:/Github/marketingDigitalBackend/*.sql)",
+      "Bash(ls d:/Github/marketingDigitalBackend/supabase*)"
+    ]
+  }
+}

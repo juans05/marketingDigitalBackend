@@ -2,6 +2,8 @@ const vidalisService = require('../services/vidalisService');
 const cloudinaryService = require('../services/cloudinaryService');
 const ayrshareService = require('../services/ayrshareService');
 const instagramService = require('../services/instagramService');
+const uploadPostService = require('../services/uploadPostService');
+const { generateInsights } = require('../services/aiService');
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
@@ -46,6 +48,15 @@ exports.getArtists = async (req, res) => {
     const { agencyId } = req.params;
     const artists = await vidalisService.getArtistsByAgency(agencyId);
     res.status(200).json(artists);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.completeOnboarding = async (req, res) => {
+  try {
+    const result = await vidalisService.completeOnboarding(req.body);
+    res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -169,9 +180,19 @@ exports.publishToSocial = async (req, res) => {
 
 exports.updateVideo = async (req, res) => {
   try {
-    console.log("req.body", req.body);
     const { videoId } = req.params;
-    const result = await vidalisService.updateVideoSettings(videoId, req.body);
+    const updateData = req.body;
+    const updated = await vidalisService.updateVideoSettings(videoId, updateData);
+    res.status(200).json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.retryVideo = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const result = await vidalisService.retryVideoProcessing(videoId);
     res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -271,8 +292,161 @@ exports.deleteArtist = async (req, res) => {
 };
 
 /**
- * Sincroniza las plataformas activas desde Upload-Post a la base de datos local.
+ * GET /analytics-posts/:artistId
+ * Devuelve métricas reales por post consultando Upload-Post y guarda snapshots en DB.
  */
+exports.getPostMetrics = async (req, res) => {
+  const { artistId } = req.params;
+  try {
+    const { data: artist, error } = await supabase
+      .from('artists')
+      .select('ayrshare_profile_key, active_platforms')
+      .eq('id', artistId)
+      .single();
+
+    if (error || !artist) return res.status(404).json({ error: 'Artista no encontrado' });
+
+    const { data: videos, error: vErr } = await supabase
+      .from('videos')
+      .select('id, title, platforms, published_at, created_at, viral_score, viral_score_real, ayrshare_post_id, source_url, processed_url, status, analytics_4h')
+      .eq('artist_id', artistId)
+      .in('status', ['published', 'scheduled', 'needs_review'])
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (vErr) throw vErr;
+
+    // Consultar métricas reales y guardar snapshots en paralelo
+    const withMetrics = await Promise.all((videos || []).map(async (video) => {
+      if (!video.ayrshare_post_id) return { ...video, metrics: null };
+
+      const rawMetrics = await uploadPostService.getPostAnalytics(video.ayrshare_post_id);
+      if (!rawMetrics) return { ...video, metrics: null };
+
+      // Detectar plataforma principal del post
+      const platform = Array.isArray(video.platforms) ? video.platforms[0] : 'unknown';
+
+      // Guardar snapshot + actualizar viral_score_real en el video
+      const normalized = await uploadPostService.saveMetricsSnapshot(
+        video.id, artistId, platform, rawMetrics
+      );
+
+      return { ...video, metrics: rawMetrics, ...normalized };
+    }));
+
+    res.json({ posts: withMetrics });
+  } catch (err) {
+    console.error('❌ getPostMetrics:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /analytics-insights/:artistId
+ * Genera insights IA con historial, guarda el resultado en analytics_insights_log.
+ */
+exports.getAnalyticsInsights = async (req, res) => {
+  const { artistId } = req.params;
+  try {
+    const { data: artist, error } = await supabase
+      .from('artists')
+      .select('name, ayrshare_profile_key, active_platforms')
+      .eq('id', artistId)
+      .single();
+
+    if (error || !artist) return res.status(404).json({ error: 'Artista no encontrado' });
+
+    // 1. Analytics de perfil (seguidores, reach por plataforma)
+    let profileAnalytics = {};
+    if (artist.ayrshare_profile_key && artist.active_platforms?.length) {
+      try {
+        profileAnalytics = await uploadPostService.getAnalytics(
+          artist.ayrshare_profile_key,
+          artist.active_platforms
+        );
+      } catch (e) {
+        console.warn('⚠️ No se pudieron obtener analytics de perfil:', e.message);
+      }
+    }
+
+    // 2. Últimos posts con métricas reales (incluye viral_score_real guardado)
+    const { data: videos } = await supabase
+      .from('videos')
+      .select('id, title, platforms, published_at, created_at, viral_score, viral_score_real, ayrshare_post_id, status, analytics_4h')
+      .eq('artist_id', artistId)
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    const postsWithMetrics = await Promise.all((videos || []).map(async (video) => {
+      // Usar datos ya guardados en analytics_4h si existen (evita llamadas redundantes)
+      const cached = video.analytics_4h;
+      if (cached && (cached.likes > 0 || cached.views > 0)) {
+        return {
+          ...video,
+          likes:          cached.likes    || 0,
+          comments:       cached.comments || 0,
+          views:          cached.views    || 0,
+          shares:         cached.shares   || 0,
+          saves:          cached.saves    || 0,
+          engagement_rate: cached.engagement_rate || 0,
+        };
+      }
+
+      if (!video.ayrshare_post_id) return { ...video, likes: 0, comments: 0, views: 0, shares: 0, engagement_rate: 0 };
+
+      const rawMetrics = await uploadPostService.getPostAnalytics(video.ayrshare_post_id);
+      if (!rawMetrics) return { ...video, likes: 0, comments: 0, views: 0, shares: 0, engagement_rate: 0 };
+
+      const platform = Array.isArray(video.platforms) ? video.platforms[0] : 'unknown';
+      const normalized = await uploadPostService.saveMetricsSnapshot(video.id, artistId, platform, rawMetrics);
+      return { ...video, ...normalized };
+    }));
+
+    // 3. Leer historial de análisis anteriores (últimos 3) para que Claude aprenda
+    const { data: prevInsights } = await supabase
+      .from('analytics_insights_log')
+      .select('generated_at, insights, decisions, engagement_rate, followers_total, best_platform')
+      .eq('artist_id', artistId)
+      .order('generated_at', { ascending: false })
+      .limit(3);
+
+    // 4. Generar insights con Claude (con contexto histórico)
+    const insights = await generateInsights(
+      profileAnalytics,
+      postsWithMetrics,
+      artist.name,
+      prevInsights || []
+    );
+
+    // 5. Guardar este análisis en el log para futuras comparaciones
+    const followersTotal = Object.values(profileAnalytics || {})
+      .reduce((acc, p) => acc + (p?.followers || 0), 0);
+    const totalReach = Object.values(profileAnalytics || {})
+      .reduce((acc, p) => acc + (p?.reach || 0), 0);
+
+    const { error: logErr } = await supabase
+      .from('analytics_insights_log')
+      .insert({
+        artist_id:       artistId,
+        insights:        insights.insights || [],
+        decisions:       insights.decisions || [],
+        best_platform:   insights.best_platform || null,
+        best_post_title: insights.best_post_title || null,
+        engagement_rate: insights.engagement_rate || 0,
+        followers_total: followersTotal,
+        total_reach:     totalReach,
+        profile_data:    profileAnalytics
+      });
+
+    if (logErr) console.warn('⚠️ No se pudo guardar analytics_insights_log:', logErr.message);
+
+    res.json({ ...insights, profile: profileAnalytics, posts: postsWithMetrics });
+  } catch (err) {
+    console.error('❌ getAnalyticsInsights:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.syncSocialAccounts = async (req, res) => {
   const { artistId } = req.params;
   try {
@@ -303,8 +477,9 @@ exports.syncSocialAccounts = async (req, res) => {
     if (profileData.success && profileData.profile.social_accounts) {
       const accounts = profileData.profile.social_accounts;
       Object.keys(accounts).forEach(platform => {
-        // Si hay al menos una cuenta vinculada para esa plataforma
-        if (Array.isArray(accounts[platform]) && accounts[platform].length > 0) {
+        const acc = accounts[platform];
+        // Upload-Post devuelve un objeto o un string no vacío si está conectado
+        if (acc && (typeof acc === 'object' || (typeof acc === 'string' && acc.trim() !== ''))) {
           activePlatforms.push(platform);
           socialKeys[platform] = 'linked';
         }

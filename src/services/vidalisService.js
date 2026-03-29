@@ -14,7 +14,7 @@ const internalQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis simult
  * - AI_MODE=n8n       → siempre usa n8n (comportamiento anterior)
  * - AI_MODE=hybrid    → usa interno si la cola está libre; si está llena → n8n como overflow
  */
-const AI_MODE = process.env.AI_MODE || 'n8n';
+const AI_MODE = process.env.AI_MODE || 'internal';
 const N8N_QUEUE_THRESHOLD = parseInt(process.env.N8N_QUEUE_THRESHOLD || '3', 10);
 
 function shouldUseInternal() {
@@ -65,6 +65,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       plan: agency.plan_type,
       account_type: resolvedType,
       artist_id,
+      onboarding_completed: agency.onboarding_completed || false,
     };
   }
 
@@ -93,6 +94,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       plan: agency.plan_type,
       account_type: 'artist',
       artist_id: newArtist[0].id,
+      onboarding_completed: false,
     };
   }
 
@@ -103,7 +105,73 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
     plan: agency.plan_type,
     account_type: 'agency',
     artist_id: null,
+    onboarding_completed: false,
   };
+};
+
+// --- COMPLETAR ONBOARDING ---
+exports.completeOnboarding = async (data) => {
+  const { userId, persona, teamSize, goals, firstArtist } = data;
+
+  try {
+    // Actualizar tabla agencies con los campos de onboarding
+    const { error: agencyErr } = await supabase
+      .from('agencies')
+      .update({
+        onboarding_completed: true,
+        account_type: persona,
+        team_size: teamSize,
+        goals: goals
+      })
+      .eq('id', userId);
+
+    if (agencyErr) {
+      console.warn('⚠️ Error al actualizar campos completos de onboarding. Si faltan columnas, actualizando lo básico...');
+      // Fallback si no aplicaron el script SQL
+      await supabase.from('agencies').update({ account_type: persona }).eq('id', userId);
+    }
+
+    // Si es agencia y registró una marca, insertarla
+    if (persona === 'agency' && firstArtist && firstArtist.name) {
+      const { data: artist, error: artistErr } = await supabase
+        .from('artists')
+        .insert([{
+          agency_id: userId,
+          name: firstArtist.name,
+          branding_data: { genre: firstArtist.genre, tone: firstArtist.tone }
+        }])
+        .select();
+        
+      if (artistErr) throw artistErr;
+      return { success: true, artist: artist[0] };
+    } 
+    // Si es cuenta individual (creador)
+    else if (persona === 'individual') {
+      const { data: existingArtists } = await supabase
+        .from('artists')
+        .select('id')
+        .eq('agency_id', userId)
+        .limit(1);
+
+      if (!existingArtists || existingArtists.length === 0) {
+        const { data: userAgency } = await supabase.from('agencies').select('name').eq('id', userId).single();
+        const artistName = userAgency?.name || 'Creador';
+        const { data: newArtist, error: artistErr } = await supabase
+          .from('artists')
+          .insert([{ 
+            agency_id: userId, 
+            name: artistName, 
+            branding_data: { genre: firstArtist?.genre, tone: firstArtist?.tone } 
+          }])
+          .select();
+        if (!artistErr && newArtist) return { success: true, artist: newArtist[0] };
+      }
+    }
+
+    return { success: true };
+  } catch (error) {
+    throw new Error('Error al completar onboarding: ' + error.message);
+  }
 };
 
 // --- GESTIÓN DE AGENCIAS ---
@@ -214,7 +282,8 @@ exports.registerVideo = async (videoData) => {
           mediaType,
           targetPlatforms,
           video.title || '',
-          artistContext
+          artistContext,
+          artist.id
         )).catch(err => console.error(`❌ [AI interno] Cola error video ${video.id}:`, err.message));
         console.log(`🤖 [AI interno] Encolado video ${video.id} (cola: ${internalQueue.size + 1})`);
       } else if (process.env.N8N_WEBHOOK_URL) {
@@ -244,6 +313,66 @@ exports.registerVideo = async (videoData) => {
   return video;
 };
 
+// --- REINTENTAR PROCESAMIENTO ---
+exports.retryVideoProcessing = async (videoId) => {
+  // 1. Obtener datos del video
+  const { data: video, error: videoErr } = await supabase
+    .from('videos')
+    .select('*')
+    .eq('id', videoId)
+    .single();
+
+  if (videoErr || !video) throw new Error('Video no encontrado');
+
+  // 2. Obtener datos del artista para el contexto
+  const { data: artist, error: artistErr } = await supabase
+    .from('artists')
+    .select('id, name, active_platforms, ai_genre, ai_audience, ai_tone')
+    .eq('id', video.artist_id)
+    .single();
+
+  if (artistErr || !artist) throw new Error('Artista no encontrado');
+
+  // 3. Resetear el estado del video de vuelta a la cola
+  const { error: updateErr } = await supabase
+    .from('videos')
+    .update({ 
+      status: 'analyzing', 
+      ai_copy_short: null, 
+      ai_copy_long: null,
+      error_log: null
+    })
+    .eq('id', videoId);
+
+  if (updateErr) throw new Error('Error al reiniciar el estado: ' + updateErr.message);
+
+  // 4. Encolar nuevamente al proceso de IA interno directamente
+  const aiService = require('./aiService');
+  const artistContext = (artist.ai_genre || artist.ai_audience || artist.ai_tone) ? {
+    nombre: artist.name,
+    genero: artist.ai_genre || null,
+    audiencia: artist.ai_audience || null,
+    tono: artist.ai_tone || null,
+  } : null;
+
+  const targetPlatforms = video.platforms?.length ? video.platforms : ['tiktok', 'instagram', 'facebook', 'youtube'];
+  const mediaType = video.source_url.match(/\.(mp4|mov|webm|ogv)(\?|$)/i) || video.source_url.includes('/video/') ? 'video' : 'image';
+
+  internalQueue.add(() => aiService.processVideoAI(
+    video.id,
+    video.processed_url || video.source_url,
+    video.source_url,
+    mediaType,
+    targetPlatforms,
+    video.title || '',
+    artistContext,
+    artist.id
+  )).catch(err => console.error(`❌ [AI interno] Cola error reintento video ${video.id}:`, err.message));
+  console.log(`🤖 [AI interno] RE-Encolado manual video ${video.id} (cola: ${internalQueue.size + 1})`);
+
+  return { success: true, message: 'Procesamiento reiniciado exitosamente' };
+};
+
 // --- GALERÍA ---
 exports.fetchArtistGallery = async (artistId) => {
   const { data, error } = await supabase
@@ -259,7 +388,7 @@ exports.fetchArtistGallery = async (artistId) => {
 exports.getVideoAnalytics = async (videoId) => {
   const { data, error } = await supabase
     .from('videos')
-    .select('id, title, status, viral_score, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at, updated_at')
+    .select('id, title, status, viral_score, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at')
     .eq('id', videoId)
     .single();
   if (error) throw error;
@@ -269,22 +398,21 @@ exports.getVideoAnalytics = async (videoId) => {
 // --- ESTADÍSTICAS DEL DASHBOARD ---
 // Funciona tanto para agencias (todos sus artistas) como para un artista específico
 exports.getDashboardStats = async (agencyId, artistId = null) => {
-  let targetArtistIds = [];
-
+  const uploadPostService = require('./uploadPostService');
+  let artistQuery = supabase.from('artists').select('id, ayrshare_profile_key, active_platforms');
+  
   if (artistId) {
-    // Si se especifica un artista, solo miramos ese
-    targetArtistIds = [artistId];
+    artistQuery = artistQuery.eq('id', artistId);
   } else {
-    // Obtener todos los artistas de la agencia para el resumen global
-    const { data: artists } = await supabase
-      .from('artists')
-      .select('id')
-      .eq('agency_id', agencyId);
+    artistQuery = artistQuery.eq('agency_id', agencyId);
+  }
 
-    if (!artists || artists.length === 0) {
-      return { total: 0, published: 0, avgScore: 0 };
-    }
-    targetArtistIds = artists.map(a => a.id);
+  const { data: artistsData, error: artistsErr } = await artistQuery;
+  if (artistsErr) throw artistsErr;
+
+  const targetArtistIds = (artistsData || []).map(a => a.id);
+  if (targetArtistIds.length === 0) {
+    return { total: 0, published: 0, avgScore: 0, totalReach: 0, history: [], postList: [], followersTotal: 0, followersDaily: 0, followersPerPost: 0, postsDaily: 0, trend: '0%' };
   }
 
   const { data: videos, error } = await supabase
@@ -301,27 +429,67 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10
     : 0;
 
-  // Cálculo de Alcance Estimado (Simulado basado en score viral)
-  const totalReach = Math.round(scores.reduce((acc, s) => acc + (s * (15000 + Math.random() * 10000)), 0));
+  let followersTotal = 0;
+  let totalReach = 0;
+  let totalViews = 0;
+  const historyMap = {}; 
 
-  // Seguidores (Simulado/Inyectado para el Dashboard)
-  const followersTotal = 1240500 + Math.floor(Math.random() * 5000);
-  const followersDaily = 840 + Math.floor(Math.random() * 200);
-  const followersPerPost = total > 0 ? Math.round(followersTotal / total) : 0;
-  const postsDaily = (published / 7).toFixed(2);
+  // Recolectar estadísticas reales de Upload-Post en paralelo
+  const analyticsPromises = artistsData.map(async (artist) => {
+    if (!artist.ayrshare_profile_key || !artist.active_platforms || artist.active_platforms.length === 0) {
+      return null;
+    }
+    try {
+      return await uploadPostService.getAnalytics(
+        artist.ayrshare_profile_key,
+        artist.active_platforms
+      );
+    } catch (e) {
+      console.warn(`Error fetching analytics for ${artist.ayrshare_profile_key}:`, e.message);
+      return null;
+    }
+  });
 
-  // Generar Historial de 7 días (para la gráfica)
+  const analyticsResults = await Promise.all(analyticsPromises);
+
+  analyticsResults.forEach(res => {
+    if (!res) return;
+    Object.keys(res).forEach(platform => {
+      const pData = res[platform];
+      if (pData && pData.success !== false) {
+        followersTotal += (pData.followers || 0);
+        totalReach += (pData.reach || 0);
+        totalViews += (pData.views || 0);
+
+        if (Array.isArray(pData.reach_timeseries)) {
+          pData.reach_timeseries.forEach(item => {
+            if (item.date) {
+              historyMap[item.date] = (historyMap[item.date] || 0) + (item.value || 0);
+            }
+          });
+        }
+      }
+    });
+  });
+
+  // Generar Historial de 7 días ordenado
   const history = [];
   const today = new Date();
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const baseValue = (7 - i) * (totalReach / 20) + (Math.random() * (totalReach / 40));
+    const dateStr = d.toISOString().split('T')[0];
     history.push({
-      date: d.toISOString().split('T')[0],
-      value: Math.round(baseValue)
+      date: dateStr,
+      value: historyMap[dateStr] || 0
     });
   }
+
+  // Métricas derivadas reales
+  const postsDaily = (published / 7).toFixed(2);
+  const followersPerPost = total > 0 ? Math.round(followersTotal / total) : 0;
+  const followersDaily = 0; // Upload-Post no devuelve el crecimiento diario nativamente
+  const trend = totalReach > 0 ? '+inc' : '0%';
 
   // Lista de Posts (Últimos 10)
   const postList = videos.slice(0, 10).map(v => ({
@@ -345,7 +513,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     followersDaily,
     followersPerPost,
     postsDaily,
-    trend: '+15.4%'
+    trend
   };
 };
 
@@ -397,9 +565,12 @@ exports.getSocialStatus = async (artistId, refresh = false) => {
     .single();
   const platforms = await socialPublisher.getActivePlatforms(artistFull || artist);
 
+  const socialKeys = {};
+  platforms.forEach(p => { socialKeys[p] = 'linked'; });
+
   await supabase
     .from('artists')
-    .update({ active_platforms: platforms })
+    .update({ active_platforms: platforms, social_keys: socialKeys })
     .eq('id', artistId);
 
   return { platforms };
