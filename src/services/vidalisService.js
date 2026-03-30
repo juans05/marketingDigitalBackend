@@ -16,6 +16,14 @@ const internalQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis simult
  */
 const AI_MODE = process.env.AI_MODE || 'internal';
 const N8N_QUEUE_THRESHOLD = parseInt(process.env.N8N_QUEUE_THRESHOLD || '3', 10);
+const BYPASS_PLAN_LIMITS = process.env.BYPASS_PLAN_LIMITS === 'true';
+
+const PLAN_CONFIG = {
+  'Free': { videos: 3, platforms: ['instagram'], calendar: false },
+  'Creator': { videos: 10, platforms: ['instagram', 'facebook'], calendar: false },
+  'Business Elite': { videos: 20, platforms: ['tiktok', 'instagram', 'facebook', 'youtube', 'linkedin'], calendar: true },
+  'Agencia Pro': { videos: Infinity, platforms: ['tiktok', 'instagram', 'facebook', 'youtube', 'linkedin'], calendar: true },
+};
 
 function shouldUseInternal() {
   if (AI_MODE === 'internal') return true;
@@ -73,7 +81,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
   const name = displayName || email.split('@')[0];
   const { data: newAgency, error: agencyErr } = await supabase
     .from('agencies')
-    .insert([{ name, email, plan_type: 'Pro', account_type: accountType || 'agency' }])
+    .insert([{ name, email, plan_type: 'Free', account_type: accountType || 'agency' }])
     .select();
 
   if (agencyErr) throw new Error('Error al crear cuenta');
@@ -206,6 +214,33 @@ exports.getArtistsByAgency = async (agencyId) => {
 
 // --- SUBIR VIDEO ---
 exports.registerVideo = async (videoData) => {
+  // Verificar límites del plan antes de proceder
+  if (!BYPASS_PLAN_LIMITS) {
+    const { data: agency } = await supabase
+      .from('artists')
+      .select('agencies(id, plan_type)')
+      .eq('id', videoData.artist_id)
+      .single();
+
+    const planType = agency?.agencies?.plan_type || 'Free';
+    const config = PLAN_CONFIG[planType] || PLAN_CONFIG['Free'];
+
+    // Contar videos creados este mes
+    const firstDayOfMonth = new Date();
+    firstDayOfMonth.setDate(1);
+    firstDayOfMonth.setHours(0, 0, 0, 0);
+
+    const { count, error: countErr } = await supabase
+      .from('videos')
+      .select('id', { count: 'exact', head: true })
+      .eq('artist_id', videoData.artist_id)
+      .gte('created_at', firstDayOfMonth.toISOString());
+
+    if (!countErr && count >= config.videos) {
+      throw new Error(`Has alcanzado el límite de tu plan ${planType} (${config.videos} videos/mes). Por favor, sube de nivel para continuar.`);
+    }
+  }
+
   // Sanitizar URL — eliminar espacios que rompen Cloudinary
   if (videoData.source_url) {
     videoData.source_url = videoData.source_url.replace(/\s+/g, '');
