@@ -214,16 +214,17 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
   const FormData = require('form-data');
   const form = new FormData();
 
-  // Usuario
   form.append('user', userId);
-
-  // Plataformas como array: platform[]=instagram&platform[]=tiktok
   platforms.forEach(p => form.append('platform[]', p));
 
-  // Título / Caption
+  // Campo principal de texto (caption/título por defecto para todas las plataformas)
   form.append('title', text || '');
 
-  // Async upload
+  // Descripción larga (YouTube, Facebook, LinkedIn la usan)
+  if (options.description) {
+    form.append('description', options.description);
+  }
+
   form.append('async_upload', 'true');
 
   const mediaUrl = mediaUrls[0];
@@ -231,34 +232,78 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
 
   if (mediaUrl) {
     const isVideo = /\.(mp4|mov|webm)(\?|$)/i.test(mediaUrl) || mediaUrl.includes('/video/');
+
     if (isVideo) {
       endpoint = '/upload';
       form.append('video', mediaUrl);
 
-      // Tipo de publicación: REELS o STORIES (viene del frontend)
-      const mediaType = (options.postType || 'REELS').toUpperCase();
+      // postType viene del frontend: 'REELS' | 'STORIES' | 'FEED' | 'VIDEO'
+      const postType = (options.postType || 'REELS').toUpperCase();
 
-      // Instagram-specific
+      // --- Instagram ---
       if (platforms.includes('instagram')) {
-        form.append('media_type', mediaType);
-        if (mediaType === 'REELS') form.append('share_to_feed', 'true');
+        // media_type: REELS | STORIES
+        const igType = postType === 'STORIES' ? 'STORIES' : 'REELS';
+        form.append('media_type', igType);
+        form.append('share_to_feed', 'true');
         form.append('instagram_title', text || '');
       }
 
-      // Facebook-specific
+      // --- Facebook ---
       if (platforms.includes('facebook')) {
-        form.append('facebook_media_type', mediaType);
+        // facebook_media_type: FEED | STORIES | REELS | VIDEO
+        const fbType = ['FEED', 'STORIES', 'REELS', 'VIDEO'].includes(postType) ? postType : 'REELS';
+        form.append('facebook_media_type', fbType);
         form.append('video_state', 'PUBLISHED');
+        form.append('facebook_title', text || '');
+        if (options.description) form.append('facebook_description', options.description);
+        // facebook_page_id: requerido si hay más de una página conectada
+        if (options.facebookPageId) form.append('facebook_page_id', options.facebookPageId);
       }
+
+      // --- TikTok ---
+      if (platforms.includes('tiktok')) {
+        // privacy_level: PUBLIC | PRIVATE | FRIENDS — default PUBLIC
+        form.append('privacy_level', options.tiktokPrivacy || 'PUBLIC');
+        // post_mode: FEED | STORY — default FEED
+        form.append('post_mode', postType === 'STORIES' ? 'STORY' : 'FEED');
+        form.append('tiktok_title', (text || '').slice(0, 150)); // TikTok limita el título
+        // cover_timestamp en ms (thumbnail del video, default 1000ms)
+        form.append('cover_timestamp', String(options.coverTimestamp || 1000));
+      }
+
+      // --- YouTube ---
+      if (platforms.includes('youtube')) {
+        form.append('youtube_title', text || '');
+        form.append('youtube_description', options.description || text || '');
+        // privacyStatus: PUBLIC | UNLISTED | PRIVATE — default PUBLIC
+        form.append('privacyStatus', options.youtubePrivacy || 'PUBLIC');
+        // categoryId: 22 = People & Blogs (default razonable)
+        form.append('categoryId', String(options.youtubeCategoryId || 22));
+        if (options.youtubeTags?.length) {
+          options.youtubeTags.forEach(tag => form.append('tags[]', tag));
+        }
+      }
+
+      // --- LinkedIn ---
+      if (platforms.includes('linkedin')) {
+        if (options.linkedinDescription) form.append('linkedin_description', options.linkedinDescription);
+        form.append('visibility', 'PUBLIC');
+        if (options.linkedinPageId) form.append('target_linkedin_page_id', options.linkedinPageId);
+      }
+
     } else {
+      // FOTOS — campo correcto es image[]
       endpoint = '/upload_photos';
-      form.append('photos', mediaUrl);
+      form.append('image[]', mediaUrl);
     }
   }
 
-  // Opciones extra (ej: scheduleDate)
-  if (options.scheduleDate) {
-    form.append('scheduleDate', options.scheduleDate);
+  // Scheduling — campo correcto es scheduled_date (snake_case, ISO 8601)
+  const scheduleDate = options.scheduleDate || options.scheduled_date;
+  if (scheduleDate) {
+    form.append('scheduled_date', new Date(scheduleDate).toISOString());
+    if (options.timezone) form.append('timezone', options.timezone);
   }
 
   try {

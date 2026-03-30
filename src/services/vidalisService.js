@@ -634,7 +634,7 @@ exports.updateVideoSettings = async (videoId, updateData) => {
         || buildCloudinaryUrl(video.source_url, targetPlatform);
 
       const postType = updateData.post_type || video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
-      const options = buildPlatformOptions(video.source_url, platforms, postText, postType);
+      const options = buildPlatformOptions(video.source_url, postText, postType);
 
       const result = await socialPublisher.schedulePost(
         artist,
@@ -735,41 +735,26 @@ function getPlatformUrls(sourceUrl) {
   };
 }
 
-// --- HELPER: Opciones por plataforma según tipo de contenido ---
-function buildPlatformOptions(sourceUrl, platforms, postText = '', postType = null) {
+// --- HELPER: Opciones por plataforma para Upload-Post API ---
+function buildPlatformOptions(sourceUrl, postText = '', postType = null) {
   const isVideo = sourceUrl && (sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i));
-  const options = {};
 
-  // 1. INSTAGRAM (Reels, Story, Feed)
-  if (platforms.includes('instagram')) {
-    options.instagramOptions = {};
+  // postType normalizado a mayúsculas para Upload-Post
+  const finalType = (postType || (isVideo ? 'reel' : 'feed')).toUpperCase();
+  // Mapeo: 'REEL' → 'REELS', 'STORY'→'STORIES', 'FEED'→'FEED'
+  const upPostType = finalType === 'REEL' ? 'REELS' : finalType === 'STORY' ? 'STORIES' : finalType;
 
-    // Si no se especifica postType, inferimos según el medio
-    const finalType = postType || (isVideo ? 'reel' : 'feed');
-
-    if (finalType === 'story') {
-      options.instagramOptions.stories = true;
-    } else if (finalType === 'reel') {
-      options.instagramOptions.reels = true;
-      options.instagramOptions.shareReelsFeed = true;
-    }
-    // Si es 'feed', no se añaden flags especiales (estándar).
-  }
-
-  // 2. YOUTUBE (Shorts vs Normal)
-  if (platforms.includes('youtube')) {
-    options.youtubeOptions = { visibility: 'public' };
-    if (isVideo) {
-      options.youtubeOptions.youtubeShortsPost = true;
-    }
-  }
-
-  // 3. TIKTOK (Video title)
-  if (platforms.includes('tiktok') && postText) {
-    options.tiktokOptions = { videoTitle: postText.slice(0, 100) };
-  }
-
-  return options;
+  return {
+    postType:       upPostType,                        // Instagram + Facebook + TikTok
+    description:    postText,                          // YouTube, Facebook, LinkedIn
+    // TikTok
+    tiktokPrivacy:  'PUBLIC',
+    // YouTube
+    youtubePrivacy: 'PUBLIC',
+    youtubeCategoryId: 22,                             // People & Blogs
+    youtubeTags:    postText ? postText.match(/#\w+/g)?.map(t => t.slice(1)) || [] : [],
+    // No pasamos facebookPageId aquí — si el artista tiene uno se toma del artist.facebook_page_id
+  };
 }
 
 // --- PUBLICAR VIDEO AHORA ---
@@ -811,7 +796,7 @@ exports.publishVideoNow = async (videoId, frontendOptions = {}) => {
 
   // Usar postType del frontend (reel/story), sino inferir
   const postType = frontendOptions.postType || video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
-  const options = buildPlatformOptions(video.source_url, platforms, postText, postType);
+  const options = buildPlatformOptions(video.source_url, postText, postType);
 
   // Agregar postType a las opciones para que uploadPostService lo use
   options.postType = postType === 'story' ? 'STORIES' : 'REELS';
