@@ -79,6 +79,124 @@ function extractAudioUrl(videoUrl) {
 }
 
 // ---------------------------------------------------------------------------
+// APRENDIZAJE: Lee historial de la BD para mejorar predicciones
+// ---------------------------------------------------------------------------
+
+/**
+ * Consulta la BD y extrae el contexto de aprendizaje del artista:
+ * - Hashtags que históricamente generaron más engagement
+ * - Plataformas con mejor performance
+ * - Calibración: diferencia promedio entre viral_score predicho vs real
+ * - Patrones de copy que funcionaron
+ *
+ * @param {string} artistId
+ * @returns {object|null} learningContext
+ */
+async function fetchArtistLearningContext(artistId) {
+  if (!artistId) return null;
+
+  try {
+    // 1. Top 10 posts con mejor engagement real (solo los que tienen métricas)
+    const { data: topPosts } = await supabase
+      .from('videos')
+      .select('title, hashtags, platforms, viral_score, viral_score_real, ai_copy_short, analytics_4h')
+      .eq('artist_id', artistId)
+      .not('viral_score_real', 'is', null)
+      .order('viral_score_real', { ascending: false })
+      .limit(10);
+
+    // 2. Snapshots agrupados por plataforma (engagement promedio)
+    const { data: snapshots } = await supabase
+      .from('post_metrics_snapshots')
+      .select('platform, likes, comments, views, shares, engagement_rate, viral_score_real')
+      .eq('artist_id', artistId)
+      .order('snapshot_at', { ascending: false })
+      .limit(100);
+
+    // 3. Últimos 3 análisis de insights (para detectar tendencias en decisiones)
+    const { data: insightsLog } = await supabase
+      .from('analytics_insights_log')
+      .select('generated_at, insights, decisions, engagement_rate, best_platform')
+      .eq('artist_id', artistId)
+      .order('generated_at', { ascending: false })
+      .limit(3);
+
+    if (!topPosts?.length && !snapshots?.length) return null;
+
+    // --- Calcular performance por plataforma ---
+    const platformStats = {};
+    (snapshots || []).forEach(s => {
+      if (!s.platform) return;
+      if (!platformStats[s.platform]) {
+        platformStats[s.platform] = { totalEngagement: 0, totalViews: 0, count: 0, totalScore: 0 };
+      }
+      platformStats[s.platform].totalEngagement += s.engagement_rate || 0;
+      platformStats[s.platform].totalViews     += s.views || 0;
+      platformStats[s.platform].totalScore     += s.viral_score_real || 0;
+      platformStats[s.platform].count++;
+    });
+
+    const platformPerformance = Object.entries(platformStats)
+      .map(([platform, stats]) => ({
+        platform,
+        avgEngagement: parseFloat((stats.totalEngagement / stats.count).toFixed(2)),
+        avgViews:      Math.round(stats.totalViews / stats.count),
+        avgScore:      parseFloat((stats.totalScore / stats.count).toFixed(1)),
+      }))
+      .sort((a, b) => b.avgEngagement - a.avgEngagement);
+
+    // --- Extraer y rankear hashtags por engagement ---
+    const hashtagEngagement = {};
+    (topPosts || []).forEach(post => {
+      if (!post.hashtags) return;
+      const score = post.viral_score_real || post.viral_score || 5;
+      const tags = post.hashtags.match(/#\w+/g) || [];
+      tags.forEach(tag => {
+        const t = tag.toLowerCase();
+        if (!hashtagEngagement[t]) hashtagEngagement[t] = { totalScore: 0, count: 0 };
+        hashtagEngagement[t].totalScore += score;
+        hashtagEngagement[t].count++;
+      });
+    });
+
+    const topHashtags = Object.entries(hashtagEngagement)
+      .map(([tag, data]) => ({ tag, avgScore: data.totalScore / data.count, count: data.count }))
+      .sort((a, b) => b.avgScore - a.avgScore)
+      .slice(0, 25)
+      .map(h => h.tag);
+
+    // --- Calibración: sesgo del modelo (predicho vs real) ---
+    const calibrationPosts = (topPosts || []).filter(p => p.viral_score && p.viral_score_real);
+    let scoreBias = 0;
+    if (calibrationPosts.length > 0) {
+      const totalBias = calibrationPosts.reduce((acc, p) => acc + (p.viral_score - p.viral_score_real), 0);
+      scoreBias = parseFloat((totalBias / calibrationPosts.length).toFixed(1));
+    }
+
+    // --- Top copies que funcionaron (score real >= 6) ---
+    const topCopies = (topPosts || [])
+      .filter(p => (p.viral_score_real || 0) >= 6 && p.ai_copy_short)
+      .slice(0, 3)
+      .map(p => ({ copy: p.ai_copy_short, score: p.viral_score_real, platforms: p.platforms }));
+
+    logDebug(`📚 [Learning] Artista ${artistId}: ${topHashtags.length} hashtags aprendidos, bias=${scoreBias}, best platform=${platformPerformance[0]?.platform || 'N/A'}`);
+
+    return {
+      topHashtags,          // hashtags que históricamente generan más engagement
+      platformPerformance,  // plataformas ordenadas por avg engagement
+      bestPlatform: platformPerformance[0]?.platform || null,
+      scoreBias,            // si > 0 la IA sobreestima; si < 0 subestima
+      topCopies,            // ejemplos de copy que funcionaron
+      totalPostsAnalyzed: calibrationPosts.length,
+      recentInsights: (insightsLog || []).flatMap(i => i.decisions || []).slice(0, 3),
+    };
+  } catch (err) {
+    logDebug(`⚠️ [Learning] No se pudo obtener contexto de aprendizaje: ${err.message}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // PASO 0 (opcional): Transcripción de audio con Groq Whisper
 // ---------------------------------------------------------------------------
 
@@ -164,17 +282,8 @@ async function fetchAsBase64(url) {
   return { base64, mimeType };
 }
 
-/**
- * Analiza el contenido visual con Gemini 2.0 Flash.
- * @param {string} mediaUrl
- * @param {'video'|'image'} mediaType
- * @param {string} title
- * @returns {string} Análisis detallado
- */
 async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
-  const model = getGemini().getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-  const imageUrl = mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl;
-  const { base64, mimeType } = await fetchAsBase64(imageUrl);
+  const { base64, mimeType } = await fetchAsBase64(mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl);
 
   const prompt = `Analizá este contenido visual${title ? ` titulado "${title}"` : ''}.
 Describí en detalle:
@@ -186,12 +295,26 @@ Describí en detalle:
 
 Sé específico y detallado. Esta información se usará para generar copy de marketing.`;
 
-  const result = await model.generateContent([
-    { inlineData: { data: base64, mimeType } },
-    prompt
-  ]);
-
-  return result.response.text();
+  try {
+    const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await model.generateContent([
+      { inlineData: { data: base64, mimeType } },
+      prompt
+    ]);
+    return result.response.text();
+  } catch (error) {
+    // Si Gemini 2.5 bota error de Cuota (429) o no está habilitado, intentamos de emergencia con la versión 2.5-lite
+    if (error.status === 429 || (error.message && error.message.includes('429'))) {
+      console.warn('⚠️ Límite de Gemini 2.5 Flash alcanzado. Reintentando análisis con Gemini 2.5 Flash Lite...');
+      const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+      const fallbackResult = await fallbackModel.generateContent([
+        { inlineData: { data: base64, mimeType } },
+        prompt
+      ]);
+      return fallbackResult.response.text();
+    }
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -207,57 +330,121 @@ Sé específico y detallado. Esta información se usará para generar copy de ma
  * @param {{ nombre, genero, audiencia, tono }|null} artistContext - Contexto del artista
  * @returns {{ ai_copy_short, ai_copy_long, hashtags, viral_score }}
  */
-async function generateCopyWithClaude(geminiAnalysis, transcript, title = '', platforms = [], artistContext = null) {
+async function generateCopyWithClaude(geminiAnalysis, transcript, title = '', platforms = [], artistContext = null, learningContext = null) {
   const platformList = platforms.length > 0 ? platforms.join(', ') : 'TikTok, Instagram, YouTube';
 
-  // Construir system prompt con contexto del artista (si existe)
   let systemPrompt = `Sos un experto en marketing de contenido para redes sociales (${platformList}).`;
+
   if (artistContext) {
     systemPrompt += `\n\nContexto del artista:
 - Nombre: ${artistContext.nombre || 'N/A'}
 - Género/Nicho: ${artistContext.genero || 'N/A'}
 - Público objetivo: ${artistContext.audiencia || 'N/A'}
-- Tono de comunicación: ${artistContext.tono || 'N/A'}
-
-Adaptá el copy y los hashtags al estilo, nicho y audiencia de este artista.`;
+- Tono de comunicación: ${artistContext.tono || 'N/A'}`;
   }
 
-  // Construir el mensaje con análisis visual y transcripción
-  let userContent = `Análisis visual del contenido:
-${geminiAnalysis}`;
+  // Inyectar aprendizaje histórico real de la BD
+  if (learningContext) {
+    const { topHashtags, platformPerformance, scoreBias, topCopies, recentInsights, totalPostsAnalyzed } = learningContext;
+
+    systemPrompt += `\n\nAPRENDIZAJE DE PUBLICACIONES ANTERIORES (${totalPostsAnalyzed} posts analizados con métricas reales):`;
+
+    if (platformPerformance?.length) {
+      systemPrompt += `\n\nPerformance por plataforma (ordenado por engagement real):`;
+      platformPerformance.forEach(p => {
+        systemPrompt += `\n- ${p.platform.toUpperCase()}: ${p.avgEngagement}% engagement promedio, ${p.avgViews} vistas promedio, score real ${p.avgScore}/10`;
+      });
+    }
+
+    if (topHashtags?.length) {
+      systemPrompt += `\n\nHashtags que históricamente generaron MÁS engagement en este artista (priorizalos):
+${topHashtags.join(' ')}`;
+    }
+
+    if (topCopies?.length) {
+      systemPrompt += `\n\nEjemplos de copy que funcionaron (viral score real alto):`;
+      topCopies.forEach(c => {
+        systemPrompt += `\n- [Score ${c.score}/10 en ${(c.platforms||[]).join('+')}]: "${c.copy}"`;
+      });
+    }
+
+    if (scoreBias !== 0) {
+      const direction = scoreBias > 0 ? 'sobreestimado' : 'subestimado';
+      const adjust = scoreBias > 0
+        ? `Ajustá el viral_score HACIA ABAJO en ~${Math.abs(scoreBias)} puntos respecto a tu estimación inicial.`
+        : `Ajustá el viral_score HACIA ARRIBA en ~${Math.abs(scoreBias)} puntos respecto a tu estimación inicial.`;
+      systemPrompt += `\n\nCALIBRACIÓN: En publicaciones anteriores el score predicho fue ${direction} por ${Math.abs(scoreBias)} puntos en promedio. ${adjust}`;
+    }
+
+    if (recentInsights?.length) {
+      systemPrompt += `\n\nDecisiones estratégicas recientes para este artista (a tener en cuenta):
+${recentInsights.map(d => `- ${d}`).join('\n')}`;
+    }
+  }
+
+  // Contenido del análisis visual + transcripción
+  let userContent = `Análisis visual del contenido:\n${geminiAnalysis}`;
 
   if (transcript && transcript.trim().length > 10) {
-    userContent += `\n\nTranscripción del audio:
-"${transcript.trim()}"
-
-Usá la transcripción para entender mejor el mensaje del contenido y generá un copy más preciso y auténtico.`;
+    userContent += `\n\nTranscripción del audio:\n"${transcript.trim()}"\n\nUsá la transcripción para entender mejor el mensaje del contenido.`;
   }
 
   userContent += `\n\nTítulo del contenido: ${title || '(sin título)'}
 
 Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
 {
-  "ai_copy_short": "Copy corto de 1-2 oraciones para caption de redes sociales. Enganchador, con llamado a la acción.",
-  "ai_copy_long": "Copy largo de 3-5 oraciones. Más descriptivo, storytelling, ideal para YouTube o blog.",
-  "hashtags": "#hashtag1 #hashtag2 #hashtag3 ... (15-20 hashtags relevantes, mezcla de masivos y nicho)",
+  "ai_copy_short": "Copy corto de 1-2 oraciones para caption. Enganchador, con llamado a la acción. Adaptado al estilo del artista y a las plataformas activas.",
+  "ai_copy_long": "Copy largo de 3-5 oraciones. Storytelling. Incorpora elementos del audio si hay transcripción.",
+  "hashtags": "#hashtag1 #hashtag2 ... (15-20 hashtags: priorizá los que funcionaron antes, completá con relevantes al contenido)",
   "viral_score": 7.5
 }
 
-viral_score: número del 1 al 10 basado en el potencial viral del contenido.
+viral_score: número del 1 al 10. Basate en el análisis visual, la transcripción Y la calibración histórica del artista.
 Respondé SOLO con el JSON, sin texto adicional.`;
 
-  const message = await getAnthropic().messages.create({
-    model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userContent }]
-  });
+  const parseResponse = (raw) => {
+    const text = raw.trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Claude no devolvió JSON válido');
+    const parsed = JSON.parse(jsonMatch[0]);
+    
+    // Fuzzy matching de posibles propiedades por si Claude traduce las llaves al español.
+    let tags = parsed.hashtags || parsed.etiquetas || '';
+    if (Array.isArray(tags)) tags = tags.join(' ');
 
-  const raw = message.content[0].text.trim();
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Claude no devolvió JSON válido');
+    return {
+      ai_copy_short: parsed.ai_copy_short || parsed.copy_corto || parsed.short_copy || '',
+      ai_copy_long: parsed.ai_copy_long || parsed.copy_largo || parsed.long_copy || '',
+      hashtags: tags,
+      viral_score: typeof parsed.viral_score === 'number' ? Math.round(parsed.viral_score) : (parseInt(String(parsed.viral_score)) || null),
+    };
+  };
 
-  return JSON.parse(jsonMatch[0]);
+  try {
+    const msg = await getAnthropic().messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1500,
+      temperature: 0.7,
+      system: systemPrompt,
+      messages: [
+        { role: "user", content: userContent }
+      ],
+    });
+    return parseResponse(msg.content[0].text);
+  } catch (error) {
+    if (error.status === 404 || error.status === 429 || (error.message && (error.message.includes('404') || error.message.includes('429')))) {
+      console.warn('⚠️ Límite o modelo no encontrado en Claude. Reintentando con otro alias...');
+      const fallbackMsg = await getAnthropic().messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1500,
+        temperature: 0.7,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userContent }],
+      });
+      return parseResponse(fallbackMsg.content[0].text);
+    }
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -274,54 +461,60 @@ Respondé SOLO con el JSON, sin texto adicional.`;
  * @param {string} title
  * @param {{ nombre, genero, audiencia, tono }|null} artistContext
  */
-async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms, title, artistContext = null) {
+async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms, title, artistContext = null, artistId = null) {
   logDebug(`🤖 [AI interno] Iniciando análisis para video ${videoId}`);
 
-  // Helper: actualizar progreso en DB para que el frontend pueda mostrarlo
   async function updateProgress(step, message) {
     logDebug(`   [Paso ${step}] ${message}`);
     await supabase.from('videos').update({
       status: 'analyzing',
-      ai_copy_short: `[Paso ${step}/4] ${message}`,
-      updated_at: new Date().toISOString()
+      ai_copy_short: `[Paso ${step}/4] ${message}`
     }).eq('id', videoId);
   }
 
   try {
-    await updateProgress(1, '🎙️ Transcribiendo audio...');
+    await updateProgress(1, 'Transcripción...');
 
-    // Paso 1 (solo videos): transcripción de audio con Groq Whisper
     let transcript = null;
     if (mediaType === 'video') {
       transcript = await transcribeWithGroq(sourceUrl || videoUrl);
     }
 
-    await updateProgress(2, '🔍 Analizando contenido visual con Gemini...');
+    await updateProgress(2, 'Entendiendo contenido...');
 
-    // Paso 2: análisis visual con Gemini
     const geminiAnalysis = await analyzeWithGemini(videoUrl, mediaType, title);
     logDebug(`✅ [Gemini] Análisis completado para video ${videoId}`);
 
-    await updateProgress(3, '✍️ Generando copy y hashtags con Claude...');
+    await updateProgress(3, 'Aprendiendo del historial...');
 
-    // Paso 3: copy con Claude
-    const copy = await generateCopyWithClaude(geminiAnalysis, transcript, title, platforms, artistContext);
+    // Obtener contexto de aprendizaje histórico del artista desde la BD
+    const learningContext = await fetchArtistLearningContext(artistId);
+    if (learningContext) {
+      logDebug(`📚 [Learning] Contexto cargado: ${learningContext.topHashtags.length} hashtags, bias=${learningContext.scoreBias}, best=${learningContext.bestPlatform}`);
+    }
+
+    // Paso 3: copy con Claude (con aprendizaje histórico)
+    const copy = await generateCopyWithClaude(geminiAnalysis, transcript, title, platforms, artistContext, learningContext);
     logDebug(`✅ [Claude] Copy generado para video ${videoId}`);
 
-    await updateProgress(4, '💾 Guardando resultados...');
+    await updateProgress(4, 'Envío...');
 
     const updates = {
       status: 'needs_review',
       ai_copy_short: copy.ai_copy_short || null,
       ai_copy_long: copy.ai_copy_long || null,
       hashtags: copy.hashtags || null,
-      viral_score: typeof copy.viral_score === 'number' ? copy.viral_score : null,
+      viral_score: copy.viral_score,
       error_log: null, // Limpiar errores anteriores
-      updated_at: new Date().toISOString(),
       ...(sourceUrl ? { source_url: sourceUrl } : {}),
     };
 
-    await supabase.from('videos').update(updates).eq('id', videoId);
+    const { error: dbError } = await supabase.from('videos').update(updates).eq('id', videoId);
+    if (dbError) {
+      logDebug(`❌ [AI interno] Error de Supabase al guardar: ${JSON.stringify(dbError)}`);
+      throw new Error(`Error DB al guardar AI final: ${dbError.message || JSON.stringify(dbError)}`);
+    }
+
     logDebug(`✅ [AI interno] Video ${videoId} procesado y guardado con éxito.`);
 
     return updates;
@@ -329,21 +522,128 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
     logDebug(`❌ [AI interno] Error crítico procesando video ${videoId}:`);
     logDebug(`   - Mensaje: ${err.message}`);
     console.error(`   - Detalles:`, err.response?.data || 'No hay detalles adicionales');
-    
+
     const errorDetail = JSON.stringify({
       message: err.message,
       details: err.response?.data || null,
       timestamp: new Date().toISOString()
     });
 
-    await supabase.from('videos').update({ 
+    await supabase.from('videos').update({
       status: 'error',
       ai_copy_short: null, // No sobreescribir el copy con el error
-      error_log: errorDetail,
-      updated_at: new Date().toISOString()
+      error_log: errorDetail
     }).eq('id', videoId);
     throw err;
   }
 }
 
-module.exports = { processVideoAI, analyzeWithGemini, generateCopyWithClaude, transcribeWithGroq };
+// ---------------------------------------------------------------------------
+// INSIGHTS DE ANALÍTICA con Claude
+// ---------------------------------------------------------------------------
+
+/**
+ * Genera insights y recomendaciones de decisión basados en analíticas reales + historial.
+ *
+ * @param {object} profileAnalytics - Datos de seguidores, reach, etc. por plataforma
+ * @param {Array}  posts            - Lista de posts con métricas reales (ya enriquecidos con engagement_rate, viral_score_real)
+ * @param {string} artistName       - Nombre del artista/marca
+ * @param {Array}  historicalInsights - Últimos 3 análisis anteriores (de analytics_insights_log)
+ * @returns {{ insights, decisions, best_platform, best_post_title, engagement_rate }}
+ */
+async function generateInsights(profileAnalytics, posts, artistName = '', historicalInsights = []) {
+  const platformSummary = Object.entries(profileAnalytics || {})
+    .filter(([, v]) => v && v.success !== false)
+    .map(([platform, data]) => {
+      return `- ${platform.toUpperCase()}: ${data.followers || 0} seguidores, ${data.reach || 0} alcance, ${data.impressions || 0} impresiones`;
+    }).join('\n') || 'Sin datos de plataformas disponibles.';
+
+  // Posts con métricas reales + comparación entre viral score predicho vs real
+  const postsSummary = (posts || []).slice(0, 15).map((p, i) => {
+    const likes       = p.likes    || 0;
+    const comments    = p.comments || 0;
+    const views       = p.views    || 0;
+    const shares      = p.shares   || 0;
+    const engRate     = typeof p.engagement_rate === 'number' ? p.engagement_rate.toFixed(2) + '%' : '—';
+    const scorePred   = p.viral_score      ? `${p.viral_score}/10 (predicho)` : '—';
+    const scoreReal   = p.viral_score_real ? `${p.viral_score_real}/10 (real)` : '—';
+    const platforms   = Array.isArray(p.platforms) ? p.platforms.join(', ') : 'desconocido';
+    const date        = (p.published_at || p.created_at)
+      ? new Date(p.published_at || p.created_at).toLocaleDateString('es-AR', { weekday: 'short', month: 'short', day: 'numeric' })
+      : 'N/A';
+    return `Post ${i + 1}: "${p.title || 'sin título'}" [${date}] [${platforms}]\n  ❤️ ${likes} likes | 💬 ${comments} comentarios | 👁 ${views} vistas | 🔁 ${shares} shares | Engagement: ${engRate} | Score ${scorePred} → ${scoreReal}`;
+  }).join('\n\n') || 'Sin publicaciones con métricas disponibles.';
+
+  // Historial de análisis anteriores (para detectar tendencias)
+  let historySummary = '';
+  if (historicalInsights.length > 0) {
+    historySummary = `\nHISTORIAL DE ANÁLISIS ANTERIORES (últimos ${historicalInsights.length}):\n` +
+      historicalInsights.map((h) => {
+        const date = new Date(h.generated_at).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' });
+        const prevInsights = (h.insights || []).slice(0, 2).join(' / ');
+        return `[${date}] Engagement: ${h.engagement_rate || 0}% | Seguidores: ${h.followers_total || 0} | Notas: ${prevInsights}`;
+      }).join('\n');
+  }
+
+  const userContent = `Sos un estratega de contenido digital para redes sociales${artistName ? ` trabajando con "${artistName}"` : ''}.
+
+DATOS DE PERFIL ACTUAL (por plataforma):
+${platformSummary}
+${historySummary}
+
+ÚLTIMAS PUBLICACIONES CON MÉTRICAS REALES:
+${postsSummary}
+
+IMPORTANTE:
+- Los posts tienen dos scores: "predicho" (estimado por IA al subir) y "real" (calculado con métricas reales de la plataforma).
+- Si el score real es muy distinto del predicho, comentalo como aprendizaje.
+- Basate en datos concretos. Si los datos son 0 o escasos, mencioná que se necesita más tiempo.
+
+Respondé SOLO con este JSON (sin markdown, sin texto extra):
+{
+  "insights": [
+    "observación 1 concreta sobre qué está funcionando o no, basada en los números",
+    "observación 2: patrón detectado (plataforma, tipo de contenido, horario si hay datos)",
+    "observación 3: comparación score predicho vs real — ¿la IA está aprendiendo bien?"
+  ],
+  "decisions": [
+    "decisión 1: acción concreta y específica para esta semana (qué publicar, cuándo, dónde)",
+    "decisión 2: ajuste de estrategia basado en engagement real",
+    "decisión 3: qué tipo de contenido priorizar y por qué según los datos"
+  ],
+  "best_platform": "nombre de la plataforma con mejor engagement o 'sin datos suficientes'",
+  "best_post_title": "título del post con mejor engagement_rate real o 'sin datos suficientes'",
+  "engagement_rate": 0.0
+}`;
+
+  try {
+    const msg = await getAnthropic().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1400,
+      temperature: 0.45,
+      system: 'Sos un analista de marketing digital experto en redes sociales. Tus análisis son concretos, accionables y basados ESTRICTAMENTE en los datos provistos. Nunca inventás métricas ni hacés suposiciones sin fundamento en los números.',
+      messages: [{ role: 'user', content: userContent }],
+    });
+
+    const raw = msg.content[0].text.trim();
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Claude no devolvió JSON válido en insights');
+    const parsed = JSON.parse(jsonMatch[0]);
+    // Asegurar que engagement_rate sea número
+    if (typeof parsed.engagement_rate === 'string') {
+      parsed.engagement_rate = parseFloat(parsed.engagement_rate) || 0;
+    }
+    return parsed;
+  } catch (err) {
+    logDebug(`❌ [generateInsights] Error: ${err.message}`);
+    return {
+      insights: ['No se pudieron generar insights. Verificá que haya publicaciones con métricas disponibles.'],
+      decisions: ['Publicá más contenido y esperá 24-48hs para que las plataformas registren métricas.'],
+      best_platform: 'sin datos suficientes',
+      best_post_title: 'sin datos suficientes',
+      engagement_rate: 0
+    };
+  }
+}
+
+module.exports = { processVideoAI, analyzeWithGemini, generateCopyWithClaude, transcribeWithGroq, generateInsights };

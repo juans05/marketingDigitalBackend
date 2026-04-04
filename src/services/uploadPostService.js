@@ -9,8 +9,116 @@
  */
 
 const axios = require('axios');
+const { createClient } = require('@supabase/supabase-js');
 
 const UPLOAD_POST_BASE = 'https://api.upload-post.com/api';
+
+const supabase = createClient(
+  process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_ANON_KEY || 'placeholder'
+);
+
+// ============================================================
+// HELPER: Calcula viral score real (1-10) desde métricas crudas
+// ============================================================
+
+/**
+ * Normaliza métricas de engagement a un score 1-10.
+ * Fórmula: engagement_rate = (likes + comments*2 + shares*3 + saves*2) / max(views, impressions, 1) * 100
+ * Scale: 0% → 1, 1% → 4, 3% → 6, 6% → 8, 10%+ → 10
+ */
+function calcEngagementRate(likes = 0, comments = 0, shares = 0, saves = 0, views = 0, impressions = 0) {
+  const denominator = Math.max(views, impressions, 1);
+  const weighted = likes + (comments * 2) + (shares * 3) + (saves * 2);
+  return (weighted / denominator) * 100;
+}
+
+function engagementToViralScore(rate) {
+  if (rate >= 15) return 10;
+  if (rate >= 10) return 9;
+  if (rate >= 7) return 8;
+  if (rate >= 5) return 7;
+  if (rate >= 3) return 6;
+  if (rate >= 2) return 5;
+  if (rate >= 1) return 4;
+  if (rate >= 0.5) return 3;
+  if (rate >= 0.1) return 2;
+  return 1;
+}
+
+/**
+ * Extrae y normaliza métricas desde la respuesta cruda de Upload-Post.
+ * Cubre distintos nombres de campo según la plataforma.
+ */
+function normalizeMetrics(raw) {
+  if (!raw) return { likes: 0, comments: 0, views: 0, shares: 0, saves: 0, reach: 0, impressions: 0 };
+  return {
+    likes: raw.likes || raw.like_count || raw.heart || 0,
+    comments: raw.comments || raw.comment_count || 0,
+    views: raw.views || raw.view_count || raw.play_count || 0,
+    shares: raw.shares || raw.share_count || raw.retweet_count || raw.reposts || 0,
+    saves: raw.saves || raw.save_count || raw.bookmarks || 0,
+    reach: raw.reach || raw.non_followers_reach || 0,
+    impressions: raw.impressions || raw.impression_count || 0,
+  };
+}
+
+/**
+ * Guarda un snapshot de métricas de un post en la tabla post_metrics_snapshots.
+ * También actualiza videos.viral_score_real y videos.analytics_4h.
+ *
+ * @param {string} videoId
+ * @param {string} artistId
+ * @param {string} platform
+ * @param {object} rawMetrics - Respuesta cruda de Upload-Post post-analytics
+ */
+exports.saveMetricsSnapshot = async (videoId, artistId, platform, rawMetrics) => {
+  const m = normalizeMetrics(rawMetrics);
+  const engRate = calcEngagementRate(m.likes, m.comments, m.shares, m.saves, m.views, m.impressions);
+  const viralScore = engagementToViralScore(engRate);
+
+  // 1. Guardar snapshot
+  const { error: snapErr } = await supabase
+    .from('post_metrics_snapshots')
+    .insert({
+      video_id: videoId,
+      artist_id: artistId,
+      platform: platform || 'unknown',
+      likes: m.likes,
+      comments: m.comments,
+      views: m.views,
+      shares: m.shares,
+      saves: m.saves,
+      reach: m.reach,
+      impressions: m.impressions,
+      engagement_rate: parseFloat(engRate.toFixed(3)),
+      viral_score_real: viralScore,
+      raw_data: rawMetrics || {}
+    });
+
+  if (snapErr) {
+    console.warn('⚠️ No se pudo guardar snapshot de métricas:', snapErr.message);
+  }
+
+  // 2. Actualizar viral_score_real en el video (solo si mejora o hay datos reales)
+  if (m.views > 0 || m.likes > 0) {
+    const { error: vErr } = await supabase
+      .from('videos')
+      .update({
+        viral_score_real: viralScore,
+        analytics_4h: { ...m, engagement_rate: parseFloat(engRate.toFixed(3)), updated_at: new Date().toISOString() }
+      })
+      .eq('id', videoId);
+
+    if (vErr) console.warn('⚠️ No se pudo actualizar viral_score_real:', vErr.message);
+  }
+
+  return { ...m, engagement_rate: engRate, viral_score_real: viralScore };
+};
+
+exports.normalizeMetrics = normalizeMetrics;
+exports.calcEngagementRate = calcEngagementRate;
+exports.engagementToViralScore = engagementToViralScore;
 
 /**
  * Helper: Construye los headers de Upload-Post.
@@ -106,16 +214,17 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
   const FormData = require('form-data');
   const form = new FormData();
 
-  // Usuario
   form.append('user', userId);
-
-  // Plataformas como array: platform[]=instagram&platform[]=tiktok
   platforms.forEach(p => form.append('platform[]', p));
 
-  // Título / Caption
+  // Campo principal de texto (caption/título por defecto para todas las plataformas)
   form.append('title', text || '');
 
-  // Async upload
+  // Descripción larga (YouTube, Facebook, LinkedIn la usan)
+  if (options.description) {
+    form.append('description', options.description);
+  }
+
   form.append('async_upload', 'true');
 
   const mediaUrl = mediaUrls[0];
@@ -123,25 +232,66 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
 
   if (mediaUrl) {
     const isVideo = /\.(mp4|mov|webm)(\?|$)/i.test(mediaUrl) || mediaUrl.includes('/video/');
+
     if (isVideo) {
       endpoint = '/upload';
       form.append('video', mediaUrl);
 
-      // Tipo de publicación: REELS o STORIES (viene del frontend)
-      const mediaType = (options.postType || 'REELS').toUpperCase();
+      // postType viene del frontend: 'REELS' | 'STORIES' | 'FEED' | 'VIDEO'
+      const postType = (options.postType || 'REELS').toUpperCase();
 
-      // Instagram-specific
+      // --- Instagram ---
       if (platforms.includes('instagram')) {
-        form.append('media_type', mediaType);
-        if (mediaType === 'REELS') form.append('share_to_feed', 'true');
+        // media_type: REELS | STORIES
+        const igType = postType === 'STORIES' ? 'STORIES' : 'REELS';
+        form.append('media_type', igType);
+        form.append('share_to_feed', 'true');
         form.append('instagram_title', text || '');
       }
 
-      // Facebook-specific
+      // --- Facebook ---
       if (platforms.includes('facebook')) {
-        form.append('facebook_media_type', mediaType);
+        // facebook_media_type: FEED | STORIES | REELS | VIDEO
+        const fbType = ['FEED', 'STORIES', 'REELS', 'VIDEO'].includes(postType) ? postType : 'REELS';
+        form.append('facebook_media_type', fbType);
         form.append('video_state', 'PUBLISHED');
+        form.append('facebook_title', text || '');
+        if (options.description) form.append('facebook_description', options.description);
+        // facebook_page_id: requerido si hay más de una página conectada
+        if (options.facebookPageId) form.append('facebook_page_id', options.facebookPageId);
       }
+
+      // --- TikTok ---
+      if (platforms.includes('tiktok')) {
+        // privacy_level: PUBLIC | PRIVATE | FRIENDS — default PUBLIC
+        form.append('privacy_level', options.tiktokPrivacy || 'PUBLIC');
+        // post_mode: FEED | STORY — default FEED
+        form.append('post_mode', postType === 'STORIES' ? 'STORY' : 'FEED');
+        form.append('tiktok_title', (text || '').slice(0, 150)); // TikTok limita el título
+        // cover_timestamp en ms (thumbnail del video, default 1000ms)
+        form.append('cover_timestamp', String(options.coverTimestamp || 1000));
+      }
+
+      // --- YouTube ---
+      if (platforms.includes('youtube')) {
+        form.append('youtube_title', text || '');
+        form.append('youtube_description', options.description || text || '');
+        // privacyStatus: PUBLIC | UNLISTED | PRIVATE — default PUBLIC
+        form.append('privacyStatus', options.youtubePrivacy || 'PUBLIC');
+        // categoryId: 22 = People & Blogs (default razonable)
+        form.append('categoryId', String(options.youtubeCategoryId || 22));
+        if (options.youtubeTags?.length) {
+          options.youtubeTags.forEach(tag => form.append('tags[]', tag));
+        }
+      }
+
+      // --- LinkedIn ---
+      if (platforms.includes('linkedin')) {
+        if (options.linkedinDescription) form.append('linkedin_description', options.linkedinDescription);
+        form.append('visibility', 'PUBLIC');
+        if (options.linkedinPageId) form.append('target_linkedin_page_id', options.linkedinPageId);
+      }
+
 
       // YouTube-specific
       if (platforms.includes('youtube')) {
@@ -157,14 +307,17 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
         form.append('tiktok_title', text || '');
       }
     } else {
+      // FOTOS — campo correcto es image[]
       endpoint = '/upload_photos';
-      form.append('photos', mediaUrl);
+      form.append('image[]', mediaUrl);
     }
   }
 
-  // Opciones extra (ej: scheduleDate)
-  if (options.scheduleDate) {
-    form.append('scheduleDate', options.scheduleDate);
+  // Scheduling — campo correcto es scheduled_date (snake_case, ISO 8601)
+  const scheduleDate = options.scheduleDate || options.scheduled_date;
+  if (scheduleDate) {
+    form.append('scheduled_date', new Date(scheduleDate).toISOString());
+    if (options.timezone) form.append('timezone', options.timezone);
   }
 
   try {
@@ -215,13 +368,18 @@ exports.schedulePost = async (text, platforms, mediaUrls, scheduleDate, userId, 
  * @param {string} username - El nombre de usuario del perfil (o ID si aplica).
  * @param {string[]} platforms - Array de plataformas ej: ['instagram', 'tiktok'].
  */
-exports.getAnalytics = async (username, platforms) => {
+exports.getAnalytics = async (username, platforms, options = {}) => {
   try {
+    const params = {
+      platforms: platforms.join(',')
+    };
+    if (options.facebookPageId) {
+      params.page_id = options.facebookPageId;
+    }
+
     const response = await axios.get(`${UPLOAD_POST_BASE}/analytics/${username}`, {
       headers: buildHeaders(),
-      params: {
-        platforms: platforms.join(',')
-      }
+      params
     });
 
     return response.data;
@@ -246,6 +404,42 @@ exports.getProfile = async (username) => {
   }
 };
 
+// ============================================================
+// 5. ANALÍTICAS POR POST
+// ============================================================
+
+/**
+ * Obtener métricas reales de un post publicado (likes, comments, views, shares).
+ * @param {string} requestId - El request_id devuelto al publicar.
+ */
+exports.getPostAnalytics = async (requestId) => {
+  try {
+    const response = await axios.get(`${UPLOAD_POST_BASE}/uploadposts/post-analytics/${requestId}`, {
+      headers: buildHeaders()
+    });
+    return response.data;
+  } catch (err) {
+    console.warn('⚠️ No se pudo obtener analytics del post:', err.response?.data || err.message);
+    return null;
+  }
+};
+
+/**
+ * Obtener impresiones totales del perfil.
+ * @param {string} username - Username del perfil.
+ */
+exports.getTotalImpressions = async (username) => {
+  try {
+    const response = await axios.get(`${UPLOAD_POST_BASE}/uploadposts/total-impressions/${username}`, {
+      headers: buildHeaders()
+    });
+    return response.data;
+  } catch (err) {
+    console.warn('⚠️ No se pudo obtener total-impressions:', err.response?.data || err.message);
+    return null;
+  }
+};
+
 /**
  * Devuelve un array con los nombres de las plataformas vinculadas.
  */
@@ -256,7 +450,10 @@ exports.getActivePlatforms = async (username) => {
     if (profileData.success && profileData.profile.social_accounts) {
       const accounts = profileData.profile.social_accounts;
       Object.keys(accounts).forEach(p => {
-        if (Array.isArray(accounts[p]) && accounts[p].length > 0) activePlatforms.push(p);
+        const acc = accounts[p];
+        if (acc && (typeof acc === 'object' || (typeof acc === 'string' && acc.trim() !== ''))) {
+          activePlatforms.push(p);
+        }
       });
     }
     return activePlatforms;
