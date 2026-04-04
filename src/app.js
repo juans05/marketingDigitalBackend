@@ -1,5 +1,14 @@
 require('dotenv').config();
 const express = require('express');
+
+// Validación de variables de entorno críticas
+const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'CLOUDINARY_URL'];
+const missing = REQUIRED_ENV.filter(key => !process.env[key]);
+if (missing.length > 0) {
+  console.error(`\x1b[31m%s\x1b[0m`, `❌ ERROR CRÍTICO: Faltan variables de entorno: ${missing.join(', ')}`);
+  console.error(`\x1b[33m%s\x1b[0m`, `   Asegúrate de configurar el archivo .env correctamente.`);
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+}
 const { jsonrepair } = require('jsonrepair');
 const vidalisRoutes = require('./routes/vidalisRoutes');
 

@@ -17,6 +17,7 @@
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.99.2",
     "axios": "^1.13.6",
+    "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",

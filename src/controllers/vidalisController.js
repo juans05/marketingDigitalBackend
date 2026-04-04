@@ -2,6 +2,7 @@ const vidalisService = require('../services/vidalisService');
 const cloudinaryService = require('../services/cloudinaryService');
 const ayrshareService = require('../services/ayrshareService');
 const instagramService = require('../services/instagramService');
+const uploadPostService = require('../services/uploadPostService');
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
@@ -53,8 +54,8 @@ exports.getArtists = async (req, res) => {
 
 exports.getSignature = (req, res) => {
   try {
-    const { folder } = req.query;
-    const signatureData = cloudinaryService.generateUploadSignature(folder);
+    const { folder, resourceType } = req.query;
+    const signatureData = cloudinaryService.generateUploadSignature(folder, resourceType || 'video');
     res.status(200).json(signatureData);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -182,7 +183,13 @@ exports.updateVideo = async (req, res) => {
 exports.n8nCallback = async (req, res) => {
   try {
     const { videoId } = req.params;
-    const { status, viral_score, ai_copy_short, ai_copy_long, hashtags } = req.body;
+    const { status, viral_score, ai_copy_short, ai_copy_long, hashtags, secret } = req.body;
+
+    // Validación de seguridad opcional si se define WEBHOOK_SECRET
+    if (process.env.WEBHOOK_SECRET && secret !== process.env.WEBHOOK_SECRET) {
+      console.warn(`⚠️ Intento de callback no autorizado para video ${videoId}`);
+      return res.status(401).json({ error: 'Unauthorized secret' });
+    }
 
     const updates = {};
     if (status) updates.status = status;

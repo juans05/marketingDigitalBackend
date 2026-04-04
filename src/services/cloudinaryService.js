@@ -10,10 +10,17 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-exports.generateUploadSignature = (folder = null) => {
+exports.generateUploadSignature = (folder = null, resourceType = 'video') => {
   const timestamp = Math.round(new Date().getTime() / 1000);
-  const eager = 'w_1080,h_1920,c_fill,vc_h264,ac_aac,f_mp4';
-  // Signed upload directo sin preset — evita conflictos con presets Signed de Cloudinary
+  
+  // Eager diferenciado:
+  // - Video: Versión optimizada para Reels (MP4/H264/AAC)
+  // - Image: Versión optimizada para Feed (JPG/1080x1080)
+  const eager = resourceType === 'video' 
+    ? 'w_1080,h_1920,c_fill,vc_h264,ac_aac,f_mp4'
+    : 'w_1080,h_1080,c_pad,b_black,f_jpg';
+
+  // Signed upload directo sin preset
   const params = {
     access_mode: 'public',
     folder: folder || 'vidalis_uploads',

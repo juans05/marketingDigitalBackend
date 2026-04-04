@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const PQueue = require('p-queue').default;
+const bcrypt = require('bcryptjs');
 
 // Cola para llamadas a n8n — evita saturar el workflow con uploads simultáneos
 const n8nQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis en paralelo
@@ -37,70 +38,100 @@ const supabase = createClient(
 // accountType: 'agency' | 'artist' | null (login existente)
 // displayName: nombre para el registro (opcional)
 exports.loginUser = async (email, password, accountType = null, displayName = null) => {
-  // Buscar cuenta existente por email o por nombre (compatibilidad hacia atrás)
-  const { data: existing } = await supabase
+  if (!email || !password) throw new Error('Se requiere email y contraseña');
+
+  // Buscar cuenta existente por email
+  const { data: users, error: searchError } = await supabase
     .from('agencies')
     .select('*')
-    .or(`email.eq.${email},name.ilike.%${email.split('@')[0]}%`)
+    .eq('email', email)
     .limit(1);
 
-  if (existing && existing.length > 0) {
-    const agency = existing[0];
-    const resolvedType = agency.account_type || 'agency';
+  if (searchError) throw new Error('Error al buscar usuario');
+
+  const user = users?.[0];
+
+  if (user) {
+    // 1. Validar contraseña si existe password_hash
+    if (user.password_hash) {
+      const isMatch = await bcrypt.compare(password, user.password_hash);
+      if (!isMatch) throw new Error('Email o contraseña incorrectos');
+    } else {
+      // ⚠️ Caso borde: El usuario existe pero no tiene hash (ej: migración antigua)
+      // Por seguridad en este punto, vamos a crear el hash con la password que envió
+      const salt = await bcrypt.genSalt(10);
+      const hash = await bcrypt.hash(password, salt);
+      await supabase.from('agencies').update({ password_hash: hash }).eq('id', user.id);
+      console.warn(`🔐 Contraseña hasheada automáticamente para el usuario: ${email}`);
+    }
+
+    const resolvedType = user.account_type || 'agency';
 
     let artist_id = null;
     if (resolvedType === 'artist') {
       const { data: artists } = await supabase
         .from('artists')
         .select('id')
-        .eq('agency_id', agency.id)
+        .eq('agency_id', user.id)
         .limit(1);
       if (artists?.[0]) artist_id = artists[0].id;
     }
 
     return {
-      id: agency.id,
-      email: agency.email || email,
-      name: agency.name,
-      plan: agency.plan_type,
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      plan: user.plan_type,
       account_type: resolvedType,
       artist_id,
     };
   }
 
-  // Crear nueva cuenta
+  // --- REGISTRO DE NUEVO USUARIO ---
   const name = displayName || email.split('@')[0];
-  const { data: newAgency, error: agencyErr } = await supabase
+  const salt = await bcrypt.genSalt(10);
+  const password_hash = await bcrypt.hash(password, salt);
+
+  const { data: newAgencies, error: agencyErr } = await supabase
     .from('agencies')
-    .insert([{ name, email, plan_type: 'Pro', account_type: accountType || 'agency' }])
+    .insert([{ 
+      name, 
+      email, 
+      password_hash,
+      plan_type: 'Pro', 
+      account_type: accountType || 'agency' 
+    }])
     .select();
 
-  if (agencyErr) throw new Error('Error al crear cuenta');
-  const agency = newAgency[0];
+  if (agencyErr) {
+    console.error('Error insertando agencia:', agencyErr);
+    throw new Error('No se pudo crear la cuenta');
+  }
+  
+  const newAgency = newAgencies[0];
 
   if (accountType === 'artist') {
-    // Artista solo: crear su perfil de artista automáticamente
-    const { data: newArtist, error: artistErr } = await supabase
+    const { data: newArtists, error: artistErr } = await supabase
       .from('artists')
-      .insert([{ agency_id: agency.id, name }])
+      .insert([{ agency_id: newAgency.id, name }])
       .select();
     if (artistErr) throw new Error('Error al crear perfil de artista');
 
     return {
-      id: agency.id,
+      id: newAgency.id,
       email,
       name,
-      plan: agency.plan_type,
+      plan: newAgency.plan_type,
       account_type: 'artist',
-      artist_id: newArtist[0].id,
+      artist_id: newArtists[0].id,
     };
   }
 
   return {
-    id: agency.id,
+    id: newAgency.id,
     email,
     name,
-    plan: agency.plan_type,
+    plan: newAgency.plan_type,
     account_type: 'agency',
     artist_id: null,
   };
@@ -516,38 +547,39 @@ function buildCloudinaryUrl(sourceUrl, targetPlatform = null) {
   if (!sourceUrl || !sourceUrl.includes('cloudinary.com') || !sourceUrl.includes('/upload/')) {
     return sourceUrl;
   }
-  // Eliminar espacios en blanco que rompen la URL
-  sourceUrl = sourceUrl.replace(/\s+/g, '');
 
-  const regex = /^(.*\/upload\/)(?:[^\/]+\/)*(v\d+\/.*)$/;
-  const match = sourceUrl.match(regex);
+  // Sanitización profunda: eliminar espacios y parámetros de cache/query innecesarios
+  const cleanUrl = sourceUrl.replace(/\s+/g, '').split('?')[0];
 
-  let cleanBase, publicPart;
-  if (match) {
-    cleanBase = match[1];
-    publicPart = match[2];
-  } else {
-    const uploadIdx = sourceUrl.indexOf('/upload/');
-    cleanBase = sourceUrl.slice(0, uploadIdx + 8);
-    publicPart = sourceUrl.slice(uploadIdx + 8);
+  // Regex robusto para separar: Base + Subida + [Transformaciones Existentes] + Versión/PublicID
+  // Captura: 1: (https://.../upload/)  2: (v12345/path/to/video.mp4)
+  const regex = /^(https:\/\/res\.cloudinary\.com\/[^\/]+\/(?:video|image)\/upload\/)(?:[^\/]+\/)*(v\d+\/.*)$/;
+  const match = cleanUrl.match(regex);
+
+  if (!match) {
+    console.warn("⚠️ URL de Cloudinary no estándar, devolviendo original:", cleanUrl);
+    return cleanUrl;
   }
 
-  const isVideo = sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i);
+  const baseUrl = match[1];
+  const publicId = match[2];
+  const isVideo = cleanUrl.includes('/video/') || cleanUrl.match(/\.(mp4|mov|webm|ogv)$/i);
 
   if (isVideo) {
-    // REELS / TIKTOK / SHORTS: 1080x1920 (9:16), H.264, AAC Audio, moov atom al principio
-    const url = `${cleanBase}w_1080,h_1920,c_fill,vc_h264,ac_aac,f_mp4/${publicPart}`;
-    return url.match(/\.(mp4|mov)(\?|$)/i) ? url : url + '.mp4';
+    // REELS / TIKTOK / SHORTS: 1080x1920 (9:16), H.264, AAC Audio
+    // Forzamos mp4 al final para asegurar compatibilidad con Instagram API
+    const trans = 'w_1080,h_1920,c_fill,vc_h264,ac_aac,f_mp4';
+    return `${baseUrl}${trans}/${publicId}`.replace(/\.[a-z0-7]+$/i, '.mp4');
   } else {
     // IMÁGENES:
     if (targetPlatform === 'instagram' || targetPlatform === 'facebook') {
-      // Instagram Feed: 1080x1080 (1:1) con barras negras para asegurar aspecto válido (0.56 a 1.91)
-      const url = `${cleanBase}w_1080,h_1080,c_pad,ar_1:1,b_black,f_jpg/${publicPart}`;
-      return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
+      // Instagram Feed: 1080x1080 (1:1) con fondo negro si no es cuadrado
+      const trans = 'w_1080,h_1080,c_pad,ar_1:1,b_black,f_jpg';
+      return `${baseUrl}${trans}/${publicId}`.replace(/\.[a-z0-7]+$/i, '.jpg');
     } else {
-      // General Portrait: 1080x1920 (9:16) para Stories/TikTok
-      const url = `${cleanBase}w_1080,h_1920,c_pad,ar_9:16,b_black,f_jpg/${publicPart}`;
-      return url.match(/\.(jpg|jpeg)(\?|$)/i) ? url : url + '.jpg';
+      // General Portrait: 1080x1920 (9:16)
+      const trans = 'w_1080,h_1920,c_pad,ar_9:16,b_black,f_jpg';
+      return `${baseUrl}${trans}/${publicId}`.replace(/\.[a-z0-7]+$/i, '.jpg');
     }
   }
 }
@@ -565,7 +597,7 @@ function getPlatformUrls(sourceUrl) {
 }
 
 // --- HELPER: Opciones por plataforma según tipo de contenido ---
-function buildPlatformOptions(sourceUrl, platforms, postText = '', postType = null) {
+exports.buildPlatformOptions = (sourceUrl, platforms, postText = '', postType = null) => {
   const isVideo = sourceUrl && (sourceUrl.includes('/video/') || sourceUrl.match(/\.(mp4|mov|webm|ogv)(\?|$)/i));
   const options = {};
 

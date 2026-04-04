@@ -142,6 +142,20 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
         form.append('facebook_media_type', mediaType);
         form.append('video_state', 'PUBLISHED');
       }
+
+      // YouTube-specific
+      if (platforms.includes('youtube')) {
+        form.append('youtube_visibility', options.youtubeOptions?.visibility || 'public');
+        if (options.youtubeOptions?.youtubeShortsPost) {
+          form.append('youtube_as_shorts', 'true');
+        }
+        form.append('youtube_title', text || '');
+      }
+
+      // TikTok-specific
+      if (platforms.includes('tiktok')) {
+        form.append('tiktok_title', text || '');
+      }
     } else {
       endpoint = '/upload_photos';
       form.append('photos', mediaUrl);
