@@ -2,6 +2,8 @@ const vidalisService = require('../services/vidalisService');
 const cloudinaryService = require('../services/cloudinaryService');
 const ayrshareService = require('../services/ayrshareService');
 const instagramService = require('../services/instagramService');
+const uploadPostService = require('../services/uploadPostService');
+const { generateInsights } = require('../services/aiService');
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
