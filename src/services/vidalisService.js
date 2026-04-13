@@ -247,9 +247,23 @@ exports.createAgency = async (agencyData) => {
 
 // --- GESTIÓN DE ARTISTAS ---
 exports.createArtist = async (artistData) => {
+  // Map only the columns that exist in the artists table.
+  // The mobile sends `genre` as a convenience field but the DB uses `ai_genre`.
+  const { genre, agency_id, name, ai_genre, ai_audience, ai_tone, image_url, tiktok_url, instagram_url, youtube_url } = artistData;
+  const row = {
+    agency_id,
+    name,
+    ai_genre: ai_genre ?? genre ?? null,
+    ai_audience: ai_audience ?? null,
+    ai_tone: ai_tone ?? null,
+    ...(image_url && { image_url }),
+    ...(tiktok_url && { tiktok_url }),
+    ...(instagram_url && { instagram_url }),
+    ...(youtube_url && { youtube_url }),
+  };
   const { data, error } = await supabase
     .from('artists')
-    .insert([artistData])
+    .insert([row])
     .select();
   if (error) throw error;
   return data[0];
