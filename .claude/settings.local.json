@@ -3,7 +3,10 @@
     "allow": [
       "WebFetch(domain:docs.upload-post.com)",
       "Bash(ls d:/Github/marketingDigitalBackend/*.sql)",
-      "Bash(ls d:/Github/marketingDigitalBackend/supabase*)"
+      "Bash(ls d:/Github/marketingDigitalBackend/supabase*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m 'fix: strip unknown '\\\\''genre'\\\\'' field before inserting artist to avoid Supabase schema cache error:*)",
+      "Bash(git push:*)"
     ]
   }
 }

@@ -282,10 +282,8 @@ async function fetchAsBase64(url) {
   return { base64, mimeType };
 }
 
-async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
-  const { base64, mimeType } = await fetchAsBase64(mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl);
-
-  const prompt = `Analizá este contenido visual${title ? ` titulado "${title}"` : ''}.
+const VISUAL_ANALYSIS_PROMPT = (title) =>
+  `Analizá este contenido visual${title ? ` titulado "${title}"` : ''}.
 Describí en detalle:
 1. Qué se ve (personas, escena, actividad, colores, estética, vestuario)
 2. Tono y mood (energético, tranquilo, dramático, etc.)
@@ -295,6 +293,37 @@ Describí en detalle:
 
 Sé específico y detallado. Esta información se usará para generar copy de marketing.`;
 
+const isGeminiUnavailable = (err) =>
+  err.status === 429 || err.status === 503 ||
+  (err.message && (err.message.includes('429') || err.message.includes('503') ||
+    err.message.includes('alta demanda') || err.message.includes('high demand') ||
+    err.message.includes('quota') || err.message.includes('cuota')));
+
+/**
+ * Fallback: analiza la imagen usando Claude Vision cuando Gemini no está disponible.
+ */
+async function analyzeWithClaudeVision(base64, mimeType, title = '') {
+  logDebug('🔄 [Claude Vision] Gemini no disponible — usando Claude como fallback visual...');
+  const msg = await getAnthropic().messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1000,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64 } },
+        { type: 'text', text: VISUAL_ANALYSIS_PROMPT(title) }
+      ]
+    }]
+  });
+  return msg.content[0].text;
+}
+
+async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
+  const imageUrl = mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl;
+  const { base64, mimeType } = await fetchAsBase64(imageUrl);
+  const prompt = VISUAL_ANALYSIS_PROMPT(title);
+
+  // 1. Intento principal: Gemini 2.5 Flash
   try {
     const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
     const result = await model.generateContent([
@@ -303,18 +332,25 @@ Sé específico y detallado. Esta información se usará para generar copy de ma
     ]);
     return result.response.text();
   } catch (error) {
-    // Si Gemini 2.5 bota error de Cuota (429) o no está habilitado, intentamos de emergencia con la versión 2.5-lite
-    if (error.status === 429 || (error.message && error.message.includes('429'))) {
-      console.warn('⚠️ Límite de Gemini 2.5 Flash alcanzado. Reintentando análisis con Gemini 2.5 Flash Lite...');
-      const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
-      const fallbackResult = await fallbackModel.generateContent([
-        { inlineData: { data: base64, mimeType } },
-        prompt
-      ]);
-      return fallbackResult.response.text();
-    }
-    throw error;
+    if (!isGeminiUnavailable(error)) throw error;
+    logDebug(`⚠️ Gemini 2.5 Flash no disponible (${error.status || 'quota'}). Probando gemini-2.0-flash...`);
   }
+
+  // 2. Fallback: Gemini 2.0 Flash
+  try {
+    const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const fallbackResult = await fallbackModel.generateContent([
+      { inlineData: { data: base64, mimeType } },
+      prompt
+    ]);
+    return fallbackResult.response.text();
+  } catch (error) {
+    if (!isGeminiUnavailable(error)) throw error;
+    logDebug(`⚠️ Gemini 2.0 Flash tampoco disponible (${error.status || 'quota'}). Usando Claude Vision...`);
+  }
+
+  // 3. Último recurso: Claude Vision
+  return analyzeWithClaudeVision(base64, mimeType, title);
 }
 
 // ---------------------------------------------------------------------------
@@ -432,10 +468,10 @@ Respondé SOLO con el JSON, sin texto adicional.`;
     });
     return parseResponse(msg.content[0].text);
   } catch (error) {
-    if (error.status === 404 || error.status === 429 || (error.message && (error.message.includes('404') || error.message.includes('429')))) {
-      console.warn('⚠️ Límite o modelo no encontrado en Claude. Reintentando con otro alias...');
+    if (error.status === 404 || error.status === 429 || error.status === 529 || (error.message && (error.message.includes('404') || error.message.includes('429') || error.message.includes('529') || error.message.includes('overloaded')))) {
+      console.warn(`⚠️ Claude sonnet-4 no disponible (${error.status}). Reintentando con claude-haiku-4-5-20251001...`);
       const fallbackMsg = await getAnthropic().messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 1500,
         temperature: 0.7,
         system: systemPrompt,

@@ -92,7 +92,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       plan: user.plan_type,
       account_type: resolvedType,
       artist_id,
-      onboarding_completed: agency.onboarding_completed || false,
+      onboarding_completed: user.onboarding_completed || false,
     };
   }
 
