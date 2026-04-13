@@ -169,19 +169,42 @@ exports.completeOnboarding = async (data) => {
       await supabase.from('agencies').update({ account_type: persona }).eq('id', userId);
     }
 
-    // Si es agencia y registró una marca, insertarla
+    // Si es agencia y registró una marca, insertarla o actualizarla
     if (persona === 'agency' && firstArtist && firstArtist.name) {
-      const { data: artist, error: artistErr } = await supabase
+      // Verificar si ya existe un artista para esta agencia (para evitar duplicados si se llama dos veces)
+      const { data: existing } = await supabase
         .from('artists')
-        .insert([{
-          agency_id: userId,
-          name: firstArtist.name,
-          branding_data: { genre: firstArtist.genre, tone: firstArtist.tone }
-        }])
-        .select();
+        .select('id')
+        .eq('agency_id', userId)
+        .eq('name', firstArtist.name)
+        .limit(1);
 
-      if (artistErr) throw artistErr;
-      return { success: true, artist: artist[0] };
+      if (existing && existing.length > 0) {
+        // Ya existe, actualizar datos de branding
+        const { data: updated, error: updateErr } = await supabase
+          .from('artists')
+          .update({
+            branding_data: { genre: firstArtist.genre, tone: firstArtist.tone }
+          })
+          .eq('id', existing[0].id)
+          .select();
+        
+        if (updateErr) throw updateErr;
+        return { success: true, artist: updated[0] };
+      } else {
+        // No existe, insertar
+        const { data: artist, error: artistErr } = await supabase
+          .from('artists')
+          .insert([{
+            agency_id: userId,
+            name: firstArtist.name,
+            branding_data: { genre: firstArtist.genre, tone: firstArtist.tone }
+          }])
+          .select();
+
+        if (artistErr) throw artistErr;
+        return { success: true, artist: artist[0] };
+      }
     }
     // Si es cuenta individual (creador)
     else if (persona === 'individual') {
