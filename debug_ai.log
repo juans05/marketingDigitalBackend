@@ -38,3 +38,4 @@ Please retry in 44.85090028s. [{"@type":"type.googleapis.com/google.rpc.Help","l
 [2026-04-13T09:39:33.873Z] ✅ [Claude] Copy generado para video 4c9b267d-03fb-4f70-8b20-9c88bd6b8871
 [2026-04-13T09:39:33.877Z]    [Paso 4] Envío...
 [2026-04-13T09:39:34.183Z] ✅ [AI interno] Video 4c9b267d-03fb-4f70-8b20-9c88bd6b8871 procesado y guardado con éxito.
+[2026-04-15T04:57:24.671Z] 🧪 [Anthropic] Verificando API Key: Presente

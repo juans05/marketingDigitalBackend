@@ -272,7 +272,7 @@ exports.createArtist = async (artistData) => {
 exports.getArtistsByAgency = async (agencyId) => {
   const { data, error } = await supabase
     .from('artists')
-    .select('id, name, agency_id, genre, active_platforms, ayrshare_profile_key, image_url, tiktok_url, instagram_url, youtube_url, ai_genre, ai_audience, ai_tone, created_at')
+    .select('id, name, agency_id, active_platforms, ayrshare_profile_key, image_url, tiktok_url, instagram_url, youtube_url, ai_genre, ai_audience, ai_tone, created_at')
     .eq('agency_id', agencyId)
     .order('created_at', { ascending: true });
   if (error) throw error;
