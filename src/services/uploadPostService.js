@@ -141,19 +141,34 @@ function buildHeaders() {
  * @returns {Promise<string>} - El ID del usuario creado.
  */
 exports.createProfile = async (name) => {
+  const sanitizedUsername = (name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '') || `artista_${Date.now()}`;
+  console.log("Creating new profile in Upload-Post:", sanitizedUsername);
+
   try {
-    console.log("Creating new profile", name);
-    const sanitizedUsername = (name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '') || `artista_${Date.now()}`;
-    console.log("Creating new profile", sanitizedUsername);
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users`, {
       username: sanitizedUsername
     }, {
       headers: buildHeaders()
     });
-
-    // Según docs, retorna el ID del usuario creado
     return response.data.user_id || response.data.id || sanitizedUsername;
   } catch (err) {
+    const status = err.response?.status;
+    const errCode = err.response?.data?.details?.error_code || err.response?.data?.error_code;
+
+    // Si el perfil ya existe, intentar obtenerlo directamente
+    if (status === 400 || (status === 403 && errCode === 'USERNAME_TAKEN')) {
+      console.warn('⚠️ Perfil ya existe en Upload-Post, reutilizando:', sanitizedUsername);
+      return sanitizedUsername;
+    }
+
+    // Límite de perfiles del plan alcanzado — error claro para el usuario
+    if (status === 403 && errCode === 'PROFILE_LIMIT_REACHED') {
+      const limitErr = new Error('PROFILE_LIMIT_REACHED');
+      limitErr.profileLimitReached = true;
+      limitErr.details = err.response?.data?.details || {};
+      throw limitErr;
+    }
+
     console.error('❌ Error al crear perfil en Upload-Post:', err.response?.data || err.message);
     throw err;
   }

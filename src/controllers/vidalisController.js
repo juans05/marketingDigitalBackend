@@ -132,6 +132,14 @@ exports.connectSocial = async (req, res) => {
     const result = await vidalisService.connectSocialAccounts(artistId);
     res.status(200).json(result);
   } catch (error) {
+    if (error.profileLimitReached) {
+      return res.status(403).json({
+        error: 'Límite de perfiles alcanzado',
+        code: 'PROFILE_LIMIT_REACHED',
+        message: 'Tu plan actual no permite más perfiles de redes sociales. Contacta a soporte para ampliar tu plan.',
+        details: error.details
+      });
+    }
     const status = error.response?.status || 500;
     res.status(status).json({ error: error.message, details: error.response?.data });
   }

@@ -736,7 +736,7 @@ exports.updateVideoSettings = async (videoId, updateData) => {
         || buildCloudinaryUrl(video.source_url, targetPlatform);
 
       const postType = updateData.post_type || video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
-      const options = buildPlatformOptions(video.source_url, postText, postType);
+      const options = exports.buildPlatformOptions(video.source_url, platforms, postText, postType);
 
       const result = await socialPublisher.schedulePost(
         artist,
@@ -899,7 +899,7 @@ exports.publishVideoNow = async (videoId, frontendOptions = {}) => {
 
   // Usar postType del frontend (reel/story), sino inferir
   const postType = frontendOptions.postType || video.post_type || (video.source_url.includes('/video/') ? 'reel' : 'feed');
-  const options = buildPlatformOptions(video.source_url, postText, postType);
+  const options = exports.buildPlatformOptions(video.source_url, platforms, postText, postType);
 
   // Agregar postType a las opciones para que uploadPostService lo use
   options.postType = postType === 'story' ? 'STORIES' : 'REELS';
