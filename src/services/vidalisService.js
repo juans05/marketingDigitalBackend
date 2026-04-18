@@ -625,7 +625,15 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     followersDaily,
     followersPerPost,
     postsDaily,
-    trend
+    trend,
+    // Compatibilidad con App Móvil (snake_case)
+    total_followers: followersTotal,
+    followers_growth: 0, // Crecimiento no implementado aún en backend
+    total_views: totalViews,
+    views_growth: 0,
+    published_videos: published,
+    avg_viral_score: avgScore,
+    growth_data: history.map(h => ({ date: h.date, followers: 0, views: h.value })) // Mapear historial
   };
 };
 
