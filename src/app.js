@@ -15,15 +15,19 @@ const vidalisRoutes = require('./routes/vidalisRoutes');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS manual — primer middleware, antes de todo, incluso si hay errores posteriores
+// CORS robusto para producción
 app.use((req, res, next) => {
-  const origin = req.headers.origin || '*';
-  res.setHeader('Access-Control-Allow-Origin', origin);
+  const origin = req.headers.origin;
+  // Permitir cualquier origen en desarrollo, o ser más restrictivos en prod si se desea
+  res.setHeader('Access-Control-Allow-Origin', origin || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Vary', 'Origin');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
   next();
 });
 

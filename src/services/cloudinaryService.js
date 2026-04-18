@@ -12,6 +12,7 @@ cloudinary.config({
 
 exports.generateUploadSignature = (folder = null, resourceType = 'video') => {
   const timestamp = Math.round(new Date().getTime() / 1000);
+  const cleanFolder = folder || 'vidalis_uploads';
   
   // Eager diferenciado:
   // - Video: Versión optimizada para Reels (MP4/H264/AAC)
@@ -20,10 +21,10 @@ exports.generateUploadSignature = (folder = null, resourceType = 'video') => {
     ? 'w_1080,h_1920,c_fill,vc_h264,ac_aac,f_mp4'
     : 'w_1080,h_1080,c_pad,b_black,f_jpg';
 
-  // Signed upload directo sin preset
+  // Parámetros para la firma EXACTOS a los que enviará el frontend
   const params = {
     access_mode: 'public',
-    folder: folder || 'vidalis_uploads',
+    folder: cleanFolder,
     timestamp,
     eager
   };
@@ -38,7 +39,8 @@ exports.generateUploadSignature = (folder = null, resourceType = 'video') => {
     signature,
     apiKey: process.env.CLOUDINARY_API_KEY,
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-    folder: folder || 'vidalis_uploads',
-    eager
+    folder: cleanFolder,
+    eager,
+    resourceType // Informar al frontend para que lo use consistentemente
   };
 };

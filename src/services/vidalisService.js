@@ -501,7 +501,9 @@ exports.getVideoAnalytics = async (videoId) => {
 // Funciona tanto para agencias (todos sus artistas) como para un artista específico
 exports.getDashboardStats = async (agencyId, artistId = null) => {
   const uploadPostService = require('./uploadPostService');
-  let artistQuery = supabase.from('artists').select('id, ayrshare_profile_key, active_platforms');
+  
+  // Seleccionar más columnas necesarias para las APIs de analítica
+  let artistQuery = supabase.from('artists').select('id, ayrshare_profile_key, active_platforms, facebook_page_id, instagram_user_id');
 
   if (artistId) {
     artistQuery = artistQuery.eq('id', artistId);
@@ -542,9 +544,14 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
       return null;
     }
     try {
+      // Pasar opciones extra como facebook_page_id si existen
+      const options = {};
+      if (artist.facebook_page_id) options.facebookPageId = artist.facebook_page_id;
+
       return await uploadPostService.getAnalytics(
         artist.ayrshare_profile_key,
-        artist.active_platforms
+        artist.active_platforms,
+        options
       );
     } catch (e) {
       console.warn(`Error fetching analytics for ${artist.ayrshare_profile_key}:`, e.message);
@@ -559,9 +566,12 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     Object.keys(res).forEach(platform => {
       const pData = res[platform];
       if (pData && pData.success !== false) {
-        followersTotal += (pData.followers || 0);
-        totalReach += (pData.reach || 0);
-        totalViews += (pData.views || 0);
+        // Normalizar nombres de campos entre plataformas (followers vs subscribers)
+        const followers = pData.followers || pData.subscribers || pData.subscriber_count || 0;
+        followersTotal += followers;
+        
+        totalReach += (pData.reach || pData.impressions || 0);
+        totalViews += (pData.views || pData.video_views || 0);
 
         if (Array.isArray(pData.reach_timeseries)) {
           pData.reach_timeseries.forEach(item => {

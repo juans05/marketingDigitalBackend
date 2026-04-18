@@ -8,5 +8,8 @@
       "Bash(git commit -m 'fix: strip unknown '\\\\''genre'\\\\'' field before inserting artist to avoid Supabase schema cache error:*)",
       "Bash(git push:*)"
     ]
+  },
+  "enabledPlugins": {
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true
   }
 }
