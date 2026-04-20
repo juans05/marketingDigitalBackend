@@ -2,6 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const PQueue = require('p-queue').default;
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // Cola para llamadas a n8n — evita saturar el workflow con uploads simultáneos
 const n8nQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis en paralelo
@@ -19,10 +20,16 @@ const AI_MODE = process.env.AI_MODE || 'internal';
 const N8N_QUEUE_THRESHOLD = parseInt(process.env.N8N_QUEUE_THRESHOLD || '3', 10);
 const BYPASS_PLAN_LIMITS = process.env.BYPASS_PLAN_LIMITS === 'true';
 
+const aiService = require('./aiService');
+const instagramService = require('./instagramService');
+const uploadPostService = require('./uploadPostService');
+const socialPublisher = require('./socialPublisher');
+const cloudinary = require('cloudinary').v2;
+
 const PLAN_CONFIG = {
-  'Free': { videos: 3, platforms: ['instagram'], calendar: false },
-  'Creator': { videos: 10, platforms: ['instagram', 'facebook'], calendar: false },
-  'Business Elite': { videos: 20, platforms: ['tiktok', 'instagram', 'facebook', 'youtube', 'linkedin'], calendar: true },
+  'Mini': { videos: 5, platforms: ['instagram', 'tiktok'], calendar: false },
+  'Artista': { videos: 20, platforms: ['instagram', 'facebook', 'tiktok'], calendar: true },
+  'Estrella': { videos: 60, platforms: ['tiktok', 'instagram', 'facebook', 'youtube', 'linkedin'], calendar: true },
   'Agencia Pro': { videos: Infinity, platforms: ['tiktok', 'instagram', 'facebook', 'youtube', 'linkedin'], calendar: true },
 };
 
@@ -85,7 +92,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       if (artists?.[0]) artist_id = artists[0].id;
     }
 
-    return {
+    const payload = {
       id: user.id,
       email: user.email,
       name: user.name,
@@ -93,6 +100,18 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       account_type: resolvedType,
       artist_id,
       onboarding_completed: user.onboarding_completed || false,
+    };
+
+    // Firmar Token JWT para seguridad móvil
+    const token = jwt.sign(
+      { id: user.id, email: user.email, account_type: resolvedType },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    return {
+      ...payload,
+      token
     };
   }
 
@@ -107,7 +126,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       name,
       email,
       password_hash,
-      plan_type: 'Free',
+      plan_type: 'Mini',
       account_type: accountType || 'agency'
     }])
     .select();
@@ -476,12 +495,18 @@ exports.retryVideoProcessing = async (videoId) => {
 };
 
 // --- GALERÍA ---
-exports.fetchArtistGallery = async (artistId) => {
+exports.fetchArtistGallery = async (artistId, options = {}) => {
+  const { limit = 20, page = 1 } = options;
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
   const { data, error } = await supabase
     .from('videos')
     .select('*')
     .eq('artist_id', artistId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
   if (error) throw error;
   return data;
 };
@@ -967,4 +992,132 @@ exports.deleteArtist = async (artistId) => {
   if (artistError) throw artistError;
 
   return { ok: true, message: 'Artista y videos eliminados correctamente' };
+};
+exports.updateArtistStyle = async (artistId, creativeDna) => {
+  const { data, error } = await supabase
+    .from('artists')
+    .update({ creative_dna: creativeDna })
+    .eq('id', artistId)
+    .select();
+  
+  if (error) {
+    console.warn('⚠️ Error actualizando creative_dna. Reintentando con branding_data...');
+    // Fallback por si no existe la columna creative_dna aún
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('artists')
+      .update({ branding_data: { creative_dna: creativeDna } })
+      .eq('id', artistId)
+      .select();
+    if (fallbackError) throw fallbackError;
+    return fallbackData[0];
+  }
+  return data[0];
+};
+
+/**
+ * Realiza una Auditoría Profunda (Deep Audit) del artista.
+ * Solo disponible para planes Pro (Artista, Estrella, Agencia Pro).
+ */
+exports.runArtistDeepAudit = async (artistId, allowFullAudit = false) => {
+  // 1. Obtener datos del artista
+  const { data: artist, error: artistErr } = await supabase
+    .from('artists')
+    .select('*, agencies(plan_type)')
+    .eq('id', artistId)
+    .single();
+
+  if (artistErr || !artist) throw new Error('Artista no encontrado');
+
+  const planType = (artist.agencies?.plan_type || artist.plan_type || 'Mini').trim();
+  const isPro = ['Artista', 'Estrella', 'Agencia Pro'].includes(planType);
+
+  if (!isPro) {
+    const err = new Error('La Auditoría Profunda es una función Pro. Por favor, sube de nivel tu plan.');
+    err.status = 403;
+    err.code = 'PLAN_LIMIT_REACHED';
+    throw err;
+  }
+
+  console.log(`🧠 Iniciando Auditoría Profunda para ${artist.name} (Plan: ${planType})`);
+
+  let finalPosts = [];
+
+  // 2. Si se permite Auditoría Completa, leer historial de Instagram
+  if (allowFullAudit && artist.instagram_user_id) {
+    try {
+      console.log('📡 Fetching historial externo de Instagram...');
+      const externalMedia = await instagramService.getMediaHistory(artist, 20);
+      
+      // Guardar posts externos en la base de datos (con categoría 'audit')
+      if (externalMedia.length > 0) {
+        const auditRecords = externalMedia.map(m => ({
+          artist_id: artistId,
+          source: 'instagram',
+          external_id: m.id,
+          caption: m.caption,
+          media_url: m.media_url,
+          metrics: { 
+            likes: m.like_count || 0, 
+            comments: m.comments_count || 0,
+            timestamp: m.timestamp 
+          },
+          category: 'audit_deep'
+        }));
+
+        const { error: insErr } = await supabase
+          .from('external_posts_audit') // Asumimos que esta tabla existe o se crea vía migración
+          .insert(auditRecords);
+        
+        if (insErr) {
+          console.warn('⚠️ No se pudo guardar historial externo en DB:', insErr.message);
+          // Si la tabla no existe, fallbback a analytics_insights_log como raw_data
+        }
+
+        finalPosts = externalMedia.map(m => ({
+          title: m.caption || 'Publicación externa',
+          likes: m.like_count || 0,
+          comments: m.comments_count || 0,
+          type: m.media_type
+        }));
+      }
+    } catch (e) {
+      console.warn('⚠️ Falló la lectura de historial externo:', e.message);
+    }
+  }
+
+  // 3. Añadir historial interno de Vidalis
+  const { data: internalVideos } = await supabase
+    .from('videos')
+    .select('title, analytics_4h, viral_score_real')
+    .eq('artist_id', artistId)
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  (internalVideos || []).forEach(v => {
+    finalPosts.push({
+      title: v.title,
+      likes: v.analytics_4h?.likes || 0,
+      comments: v.analytics_4h?.comments || 0,
+      viral_score: v.viral_score_real
+    });
+  });
+
+  // 4. Ejecutar Análisis de IA
+  const auditReport = await aiService.runDeepAuditAnalysis(artist, finalPosts);
+
+  // 5. Si tiene auto-ajuste activo, actualizar el ADN Creativo
+  if (artist.auto_style_adjustment && auditReport.suggested_dna) {
+    await exports.updateArtistStyle(artistId, auditReport.suggested_dna);
+    auditReport.applied = true;
+  }
+
+  // 6. Registrar en el log de insights
+  await supabase.from('analytics_insights_log').insert({
+    artist_id: artistId,
+    insights: auditReport.insights || [],
+    decisions: auditReport.peticiones || auditReport.decisions || [],
+    category: 'deep_audit'
+  });
+
+  return auditReport;
 };

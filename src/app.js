@@ -1,5 +1,7 @@
 require('dotenv').config();
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 // Validación de variables de entorno críticas
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'CLOUDINARY_URL'];
@@ -14,6 +16,15 @@ const vidalisRoutes = require('./routes/vidalisRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Seguridad Base
+app.use(helmet()); 
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // Límite de 100 peticiones por IP por ventana
+  message: { error: 'Demasiadas peticiones desde esta IP, por favor intenta más tarde.' }
+});
+app.use('/api/', limiter);
 
 // CORS robusto para producción
 app.use((req, res, next) => {

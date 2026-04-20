@@ -197,6 +197,30 @@ exports.publishToFacebook = async (artist, message, mediaUrl, isVideo = false, s
 // ============================================================
 
 /**
+ * Obtiene el historial de publicaciones del artista directamente de Instagram.
+ * Se usa para la Auditoría Profunda.
+ */
+exports.getMediaHistory = async (artist, limit = 20) => {
+  const { instagram_user_id: igId, instagram_access_token: token } = artist;
+  if (!igId || !token) throw new Error('Artista sin cuenta Instagram conectada');
+
+  try {
+    const res = await axios.get(`${GRAPH_BASE}/${igId}/media`, {
+      params: {
+        fields: 'id,caption,media_type,media_url,timestamp,like_count,comments_count,permalink',
+        access_token: token,
+        limit
+      }
+    });
+
+    return res.data.data || [];
+  } catch (err) {
+    console.error('❌ Error getMediaHistory:', err.response?.data || err.message);
+    throw err;
+  }
+};
+
+/**
  * Retorna qué plataformas tiene conectadas el artista en modo directo.
  */
 exports.getActivePlatforms = (artist) => {

@@ -96,6 +96,12 @@ async function fetchArtistLearningContext(artistId) {
   if (!artistId) return null;
 
   try {
+    const { data: artistProfile } = await supabase
+      .from('artists')
+      .select('name, ai_genre, ai_audience, ai_tone, creative_dna, branding_data')
+      .eq('id', artistId)
+      .single();
+
     // 1. Top 10 posts con mejor engagement real (solo los que tienen métricas)
     const { data: topPosts } = await supabase
       .from('videos')
@@ -183,12 +189,14 @@ async function fetchArtistLearningContext(artistId) {
 
     return {
       topHashtags,          // hashtags que históricamente generan más engagement
-      platformPerformance,  // plataformas ordenadas por avg engagement
+      platformPerformance,  // plataformas ordenadas por engagement
       bestPlatform: platformPerformance[0]?.platform || null,
       scoreBias,            // si > 0 la IA sobreestima; si < 0 subestima
       topCopies,            // ejemplos de copy que funcionaron
       totalPostsAnalyzed: calibrationPosts.length,
       recentInsights: (insightsLog || []).flatMap(i => i.decisions || []).slice(0, 3),
+      creativeDNA: artistProfile?.creative_dna || artistProfile?.branding_data?.creative_dna || null,
+      brandingData: artistProfile?.branding_data || null,
     };
   } catch (err) {
     logDebug(`⚠️ [Learning] No se pudo obtener contexto de aprendizaje: ${err.message}`);
@@ -369,14 +377,25 @@ async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
 async function generateCopyWithClaude(geminiAnalysis, transcript, title = '', platforms = [], artistContext = null, learningContext = null) {
   const platformList = platforms.length > 0 ? platforms.join(', ') : 'TikTok, Instagram, YouTube';
 
-  let systemPrompt = `Sos un experto en marketing de contenido para redes sociales (${platformList}).`;
+  let systemPrompt = `Sos un Compañero Manager y Estratega de Contenido Digital. Tu objetivo es acompañar al artista y a su equipo para potenciar su crecimiento en ${platformList}.
+Tu tono es motivador, colaborativo y experto, pero siempre cercano. Hablá en plural ("Nosotros", "Vamos a probar").`;
 
   if (artistContext) {
-    systemPrompt += `\n\nContexto del artista:
+    systemPrompt += `\n\nConozco bien a nuestro artista:
 - Nombre: ${artistContext.nombre || 'N/A'}
-- Género/Nicho: ${artistContext.genero || 'N/A'}
-- Público objetivo: ${artistContext.audiencia || 'N/A'}
-- Tono de comunicación: ${artistContext.tono || 'N/A'}`;
+- Estilo/Género: ${artistContext.genero || 'N/A'}
+- Nuestra Audiencia: ${artistContext.audiencia || 'N/A'}
+- Nuestro Tono: ${artistContext.tono || 'N/A'}`;
+  }
+
+  // Inyectar ADN Creativo (Gustos del usuario/manager)
+  const dna = learningContext?.creativeDNA;
+  if (dna) {
+    systemPrompt += `\n\nNUESTRO ADN CREATIVO (Gustos actuales del equipo):
+- Notas de Estilo: ${dna.style_notes || 'N/A'}
+- Hooks Preferidos: ${dna.preferred_hooks || 'N/A'}
+- Temas Prohibidos (NUNCA USAR): ${dna.prohibited_topics || 'N/A'}`;
+    if (dna.style_keywords) systemPrompt += `\n- Keywords de Marca: ${dna.style_keywords}`;
   }
 
   // Inyectar aprendizaje histórico real de la BD
@@ -405,11 +424,11 @@ ${topHashtags.join(' ')}`;
     }
 
     if (scoreBias !== 0) {
-      const direction = scoreBias > 0 ? 'sobreestimado' : 'subestimado';
+      const direction = scoreBias > 0 ? 'optimista (sobreestimado)' : 'conservador (subestimado)';
       const adjust = scoreBias > 0
-        ? `Ajustá el viral_score HACIA ABAJO en ~${Math.abs(scoreBias)} puntos respecto a tu estimación inicial.`
-        : `Ajustá el viral_score HACIA ARRIBA en ~${Math.abs(scoreBias)} puntos respecto a tu estimación inicial.`;
-      systemPrompt += `\n\nCALIBRACIÓN: En publicaciones anteriores el score predicho fue ${direction} por ${Math.abs(scoreBias)} puntos en promedio. ${adjust}`;
+        ? `He notado que antes hemos sido un poco optimistas, así que voy a ajustar el viral_score UN POCO HACIA ABAJO (~${Math.abs(scoreBias)} puntos) para ser más realistas con lo que hemos visto en su audiencia.`
+        : `Nuestra audiencia está respondiendo mejor de lo que pensábamos, así que voy a ajustar el viral_score UN POCO HACIA ARRIBA (~${Math.abs(scoreBias)} puntos) para reflejar su verdadero potencial.`;
+      systemPrompt += `\n\nCALIBRACIÓN DE NUESTRO EQUIPO: En publicaciones anteriores nuestro score predicho ha sido algo ${direction}. ${adjust}`;
     }
 
     if (recentInsights?.length) {
@@ -429,9 +448,9 @@ ${recentInsights.map(d => `- ${d}`).join('\n')}`;
 
 Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
 {
-  "ai_copy_short": "Copy corto de 1-2 oraciones para caption. Enganchador, con llamado a la acción. Adaptado al estilo del artista y a las plataformas activas.",
-  "ai_copy_long": "Copy largo de 3-5 oraciones. Storytelling. Incorpora elementos del audio si hay transcripción.",
-  "hashtags": "#hashtag1 #hashtag2 ... (15-20 hashtags: priorizá los que funcionaron antes, completá con relevantes al contenido)",
+  "ai_copy_short": "Un caption corto y potente (1-2 oraciones). Buscamos engagement inmediato.",
+  "ai_copy_long": "Una versión con más contexto (3-5 oraciones) para generar conexión/storytelling.",
+  "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 combinando nuestros clásicos que funcionan con nuevos relevantes)",
   "viral_score": 7.5
 }
 
@@ -657,7 +676,8 @@ Respondé SOLO con este JSON (sin markdown, sin texto extra):
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1400,
       temperature: 0.45,
-      system: 'Sos un analista de marketing digital experto en redes sociales. Tus análisis son concretos, accionables y basados ESTRICTAMENTE en los datos provistos. Nunca inventás métricas ni hacés suposiciones sin fundamento en los números.',
+      system: `Sos un Compañero Manager y Estratega Digital. Tu misión es analizar nuestros resultados y acompañarme a tomar las mejores decisiones para el artista.
+Tu análisis debe ser motivador pero basado 100% en los datos reales que hemos recolectado. Hablá como parte del equipo ("Estamos viendo", "Sugiero que vayamos por").`,
       messages: [{ role: 'user', content: userContent }],
     });
 
@@ -682,4 +702,75 @@ Respondé SOLO con este JSON (sin markdown, sin texto extra):
   }
 }
 
-module.exports = { processVideoAI, analyzeWithGemini, generateCopyWithClaude, transcribeWithGroq, generateInsights };
+/**
+ * Realiza un análisis profundo de una lista de posts históricos (Auditoría de Marca).
+ * @param {object} artist - Datos del artista.
+ * @param {array} history - Array de objetos { title, likes, comments, viral_score }.
+ */
+async function runDeepAuditAnalysis(artist, history = []) {
+  if (history.length === 0) {
+    return {
+      insights: ["No hay suficiente historial para realizar una auditoría profunda."],
+      decisions: ["Empezar a publicar con Vidalis para generar datos reales."]
+    };
+  }
+
+  const systemPrompt = `Sos un Consultor de Branding y Estratega Digital Senior. Tu objetivo es realizar una "Auditoría de Marca" basada en el historial real de publicaciones de un artista.
+Tu tono es analítico, profesional y directo. No uses relleno.
+
+DATOS DEL ARTISTA:
+- Nombre: ${artist.name}
+- Género/Estilo: ${artist.ai_genre || 'N/A'}
+- Tono Manual: ${artist.ai_tone || 'N/A'}
+
+HISTORIAL DE PUBLICACIONES (Los últimos 20-30 posts):
+${history.map((h, i) => `${i+1}. [Título: ${h.title}] | Engagement: ${h.likes} likes, ${h.comments} comments | Score: ${h.viral_score || 'N/A'}`).join('\n')}
+
+TU MISIÓN:
+1. Detectar patrones de éxito: ¿Qué temas o frases funcionaron mejor?
+2. Detectar debilidades: ¿Qué posts pasaron desapercibidos?
+3. Generar un "ADN Sugerido": Basado en la DATA REAL, ¿cuál debería ser el estilo, los hooks y temas del artista?
+
+Respondé SOLO con el siguiente JSON:
+{
+  "insights": ["3-5 conclusiones clave sobre lo que funciona"],
+  "decisions": ["3-5 acciones inmediatas tácticas"],
+  "suggested_dna": {
+    "style_notes": "Cómo debe ser el tono basado en el éxito real",
+    "preferred_hooks": "Ejemplos de ganchos que funcionan",
+    "prohibited_topics": "Temas que no generan engagement o dañan la marca",
+    "style_keywords": "4-5 palabras clave"
+  }
+}`;
+
+  try {
+    const msg = await getAnthropic().messages.create({
+      model: "claude-3-5-sonnet-20240620",
+      max_tokens: 1500,
+      system: systemPrompt,
+      messages: [{ role: "user", content: "Analizá mi historial y dame el reporte estratégico." }],
+    });
+
+    const raw = msg.content[0].text;
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Claude no devolvió JSON en auditoría');
+    
+    return JSON.parse(jsonMatch[0]);
+  } catch (err) {
+    console.error('❌ Error en runDeepAuditAnalysis:', err.message);
+    return {
+      insights: ["Error al procesar la auditoría con IA."],
+      decisions: ["Reintentar en unos minutos."],
+      error: err.message
+    };
+  }
+}
+
+module.exports = { 
+  processVideoAI, 
+  analyzeWithGemini, 
+  generateCopyWithClaude, 
+  transcribeWithGroq, 
+  generateInsights,
+  runDeepAuditAnalysis
+};

@@ -87,7 +87,13 @@ exports.processVideo = async (req, res) => {
 exports.getGallery = async (req, res) => {
   try {
     const { artistId } = req.params;
-    const gallery = await vidalisService.fetchArtistGallery(artistId);
+    const { limit, page } = req.query;
+    
+    const gallery = await vidalisService.fetchArtistGallery(artistId, {
+      limit: parseInt(limit) || 20,
+      page: parseInt(page) || 1
+    });
+    
     res.status(200).json(gallery);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -454,7 +460,34 @@ exports.getAnalyticsInsights = async (req, res) => {
 
     if (logErr) console.warn('⚠️ No se pudo guardar analytics_insights_log:', logErr.message);
 
-    res.json({ ...insights, profile: profileAnalytics, posts: postsWithMetrics });
+    // 6. Obtener uso mensual y límites
+    const firstDayOfMonth = new Date();
+    firstDayOfMonth.setDate(1);
+    firstDayOfMonth.setHours(0, 0, 0, 0);
+
+    const { count: usageCount } = await supabase
+      .from('videos')
+      .select('id', { count: 'exact', head: true })
+      .eq('artist_id', artistId)
+      .gte('created_at', firstDayOfMonth.toISOString());
+
+    const planType = (artist.agencies?.plan_type || artist.plan_type || 'Mini').trim();
+    const PLAN_CONFIG = {
+      'Mini': { videos: 5 },
+      'Artista': { videos: 20 },
+      'Estrella': { videos: 60 },
+      'Agencia Pro': { videos: Infinity },
+    };
+    const config = PLAN_CONFIG[planType] || PLAN_CONFIG['Mini'];
+
+    res.json({ 
+      ...insights, 
+      profile: profileAnalytics, 
+      posts: postsWithMetrics,
+      monthly_usage: usageCount || 0,
+      monthly_limit: config.videos === Infinity ? 9999 : config.videos,
+      plan_name: planType
+    });
   } catch (err) {
     console.error('❌ getAnalyticsInsights:', err.message);
     res.status(500).json({ error: err.message });
@@ -527,5 +560,28 @@ exports.syncSocialAccounts = async (req, res) => {
   } catch (error) {
     console.error('❌ Error en syncSocialAccounts:', error.message);
     res.status(500).json({ error: error.message });
+  }
+};
+exports.updateArtistStyle = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const { creative_dna } = req.body;
+    const result = await vidalisService.updateArtistStyle(artistId, creative_dna);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.runDeepAudit = async (req, res) => {
+  const { artistId } = req.params;
+  const { allow_full_audit } = req.body;
+  
+  try {
+    const result = await vidalisService.runArtistDeepAudit(artistId, allow_full_audit);
+    res.json(result);
+  } catch (err) {
+    console.error('❌ runDeepAudit Controller:', err.message);
+    res.status(err.status || 500).json({ error: err.message, code: err.code });
   }
 };
