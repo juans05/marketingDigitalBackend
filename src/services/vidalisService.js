@@ -3,6 +3,9 @@ const axios = require('axios');
 const PQueue = require('p-queue').default;
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
+
+const googleClient = new OAuth2Client();
 
 // Cola para llamadas a n8n — evita saturar el workflow con uploads simultáneos
 const n8nQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis en paralelo
@@ -17,6 +20,36 @@ const internalQueue = new PQueue({ concurrency: 2 }); // máx 2 análisis simult
  * - AI_MODE=hybrid    → usa interno si la cola está libre; si está llena → n8n como overflow
  */
 const AI_MODE = process.env.AI_MODE || 'internal';
+
+/**
+ * Inicia sesión o registra a un usuario mediante un ID Token de Google.
+ * @param {string} idToken - Token enviado desde la app móvil.
+ * @param {string} platform - 'android' | 'ios'
+ */
+exports.loginWithGoogle = async (idToken, platform = 'android') => {
+  const clientId = platform === 'ios' 
+    ? process.env.GOOGLE_CLIENT_ID_IOS 
+    : process.env.GOOGLE_CLIENT_ID_ANDROID;
+
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: clientId
+    });
+    const payload = ticket.getPayload();
+    const { email, name, sub: googleId, picture } = payload;
+
+    // 1. Buscar si el usuario ya existe por email
+    // Usamos el loginUser existente para reciclar la lógica de creación
+    // Pero forzamos que sea tipo 'individual' si es nuevo.
+    return await exports.loginUser(email, googleId, 'individual', name);
+
+  } catch (error) {
+    console.error('❌ Error verificando Google Token:', error.message);
+    throw new Error('Token de Google inválido');
+  }
+};
+
 const N8N_QUEUE_THRESHOLD = parseInt(process.env.N8N_QUEUE_THRESHOLD || '3', 10);
 const BYPASS_PLAN_LIMITS = process.env.BYPASS_PLAN_LIMITS === 'true';
 
@@ -52,7 +85,7 @@ const supabase = createClient(
 // --- AUTENTICACIÓN ---
 // accountType: 'agency' | 'artist' | null (login existente)
 // displayName: nombre para el registro (opcional)
-exports.loginUser = async (email, password, accountType = null, displayName = null) => {
+exports.loginUser = async (email, password, accountType = null, displayName = null, birthDate = null) => {
   if (!email || !password) throw new Error('Se requiere email y contraseña');
 
   // Buscar cuenta existente por email
@@ -127,7 +160,8 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       email,
       password_hash,
       plan_type: 'Mini',
-      account_type: accountType || 'agency'
+      account_type: accountType || 'agency',
+      birth_date: birthDate
     }])
     .select();
 
@@ -162,6 +196,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
     plan: newAgency.plan_type,
     account_type: 'agency',
     artist_id: null,
+    birth_date: newAgency.birth_date,
     onboarding_completed: false,
   };
 };
@@ -1120,4 +1155,61 @@ exports.runArtistDeepAudit = async (artistId, allowFullAudit = false) => {
   });
 
   return auditReport;
+};
+
+exports.uploadFromUrl = async (artistId, remoteUrl, title, _userId) => {
+  // Verificar que el artista existe
+  const { data: artist, error: artistError } = await supabase
+    .from('artists')
+    .select('id, agency_id')
+    .eq('id', artistId)
+    .single();
+
+  if (artistError || !artist) throw new Error('Artista no encontrado');
+
+  // Subir a Cloudinary desde URL remota — Cloudinary hace el fetch directamente
+  const folder = `vidalis/${artistId}`;
+  const result = await cloudinary.uploader.upload(remoteUrl, {
+    resource_type: 'video',
+    folder,
+    eager: 'sp_hd',
+    eager_async: true,
+  });
+
+  if (!result.secure_url) throw new Error('Cloudinary no retornó URL');
+
+  // Registrar en Supabase
+  const { data: video, error: videoError } = await supabase
+    .from('videos')
+    .insert({
+      artist_id: artistId,
+      cloudinary_url: result.secure_url,
+      title: title || 'Video desde URL',
+      status: 'analyzing',
+    })
+    .select()
+    .single();
+
+  if (videoError) throw new Error('Error registrando video: ' + videoError.message);
+
+  // Disparar análisis de IA en background — mismo patrón que processVideo existente
+  if (shouldUseInternal()) {
+    internalQueue.add(() => aiService.processVideoAI(
+      video.id,
+      result.secure_url,
+      result.secure_url,
+      'video',
+      ['tiktok', 'instagram', 'facebook', 'youtube'],
+      title || '',
+      null,
+      artistId
+    )).catch(err => console.error(`❌ [AI interno] uploadFromUrl error video ${video.id}:`, err.message));
+  } else {
+    n8nQueue.add(() => axios.post(process.env.N8N_WEBHOOK_URL, {
+      videoId: video.id,
+      videoUrl: result.secure_url,
+    })).catch(err => console.error(`❌ [n8n] uploadFromUrl error video ${video.id}:`, err.message));
+  }
+
+  return video;
 };

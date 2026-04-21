@@ -5,6 +5,8 @@ const { authenticateToken, authorizeAgency, authorizeArtist } = require('../midd
 
 // Autenticación
 router.post('/login', vidalisController.login);
+router.post('/google-login', vidalisController.googleLogin);
+router.post('/refine-copy', vidalisController.refineCopy);
 
 // Agencias y Artistas (Protegidos)
 router.post('/agencies', authenticateToken, vidalisController.createAgency);
@@ -20,6 +22,7 @@ router.post('/onboarding', authenticateToken, vidalisController.completeOnboardi
 
 // Videos
 router.post('/upload', authenticateToken, vidalisController.processVideo);
+router.post('/videos/from-url', authenticateToken, vidalisController.uploadFromUrl);
 router.get('/gallery/:artistId', authenticateToken, authorizeArtist, vidalisController.getGallery);
 router.patch('/video/:videoId', authenticateToken, vidalisController.updateVideo);
 router.post('/video/:videoId/retry', authenticateToken, vidalisController.retryVideo);

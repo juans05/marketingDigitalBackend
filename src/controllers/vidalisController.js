@@ -9,15 +9,48 @@ const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
   process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
+const aiService = require('../services/aiService');
+
+// --- REFINAR COPY (Marketing Skills) ---
+exports.refineCopy = async (req, res) => {
+  try {
+    const { text, artist_id } = req.body;
+    if (!text) throw new Error('Se requiere el texto a refinar');
+
+    let artistContext = null;
+    if (artist_id) {
+      const { data } = await supabase.from('artists').select('ai_tone').eq('id', artist_id).single();
+      if (data) artistContext = { tono: data.ai_tone };
+    }
+
+    const refined = await aiService.refineCopy(text, artistContext);
+    res.status(200).json({ refined });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 // --- LOGIN ---
 exports.login = async (req, res) => {
   try {
-    const { email, password, account_type, name } = req.body;
+    const { email, password, account_type, name, birth_date } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Se requiere email y contraseña' });
     }
-    const userData = await vidalisService.loginUser(email, password, account_type || null, name || null);
+    const userData = await vidalisService.loginUser(email, password, account_type || null, name || null, birth_date || null);
+    res.status(200).json(userData);
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+};
+
+// --- LOGIN CON GOOGLE ---
+exports.googleLogin = async (req, res) => {
+  try {
+    const { idToken, platform } = req.body;
+    if (!idToken) throw new Error('Se requiere idToken de Google');
+    
+    const userData = await vidalisService.loginWithGoogle(idToken, platform || 'android');
     res.status(200).json(userData);
   } catch (error) {
     res.status(401).json({ error: error.message });
@@ -569,6 +602,25 @@ exports.updateArtistStyle = async (req, res) => {
     const result = await vidalisService.updateArtistStyle(artistId, creative_dna);
     res.status(200).json(result);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.uploadFromUrl = async (req, res) => {
+  try {
+    const { artist_id, remote_url, title } = req.body;
+    if (!artist_id || !remote_url) {
+      return res.status(400).json({ error: 'artist_id y remote_url son requeridos' });
+    }
+    const video = await vidalisService.uploadFromUrl(
+      artist_id,
+      remote_url,
+      title,
+      req.user.id
+    );
+    res.status(201).json(video);
+  } catch (error) {
+    console.error('uploadFromUrl error:', error.message);
     res.status(500).json({ error: error.message });
   }
 };
