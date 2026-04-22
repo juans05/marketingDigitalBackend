@@ -465,37 +465,6 @@ Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
 viral_score: número del 1 al 10. Basate en el análisis visual, la transcripción Y la calibración histórica del artista.
 Respondé SOLO con el JSON, sin texto adicional.`;
 
-/**
- * Especializado en "Humanizar" y optimizar un texto existente usando principios de marketing real.
- */
-async function refineCopy(originalText, artistContext = null) {
-  const systemPrompt = `Sos un experto en Conversión y Marketing Digital de Vidalis AI. Tu misión es HUMANIZAR y OPTIMIZAR el texto que te pase el usuario.
-Hacé que suene natural, directo y convincente. Eliminá frases robóticas, adjetivos vacíos y jerga innecesaria. 
-Mantené el tono del artista: ${artistContext?.tono || 'Natural y cercano'}.`;
-
-  const userContent = `Texto original a optimizar:\n"${originalText}"\n\nOptimizalo aplicando:
-1. Claridad radical (que se entienda en 2 segundos).
-2. Beneficios claros.
-3. Ritmo humano (variá la longitud de las oraciones).
-4. Llamado a la acción sutil pero potente.
-
-Respondé SOLO con el nuevo texto, sin introducciones.`;
-
-  try {
-    const msg = await getAnthropic().messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 800,
-      temperature: 0.8,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
-    });
-    return msg.content[0].text.trim();
-  } catch (error) {
-    console.error('❌ Error en refineCopy:', error.message);
-    throw error;
-  }
-}
-
   const parseResponse = (raw) => {
     const text = raw.trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -805,12 +774,40 @@ Respondé SOLO con el siguiente JSON:
   }
 }
 
-module.exports = { 
-  processVideoAI, 
-  analyzeWithGemini, 
-  generateCopyWithClaude, 
-  transcribeWithGroq, 
-  generateInsights,
+/**
+ * Especializado en "Humanizar" y optimizar un texto existente usando principios de marketing real.
+ */
+async function refineCopy(originalText, artistContext = null) {
+  const systemPrompt = `Sos un experto en Conversión y Marketing Digital de Vidalis AI. Tu misión es HUMANIZAR y OPTIMIZAR el texto que te pase el usuario.
+Hacé que suene natural, directo y convincente. Eliminá frases robóticas, adjetivos vacíos y jerga innecesaria.
+Mantené el tono del artista: ${artistContext?.tono || 'Natural y cercano'}.`;
+
+  const userContent = `Texto original a optimizar:\n"${originalText}"\n\nOptimizalo aplicando:
+1. Claridad radical (que se entienda en 2 segundos).
+2. Beneficios claros.
+3. Ritmo humano (variá la longitud de las oraciones).
+4. Llamado a la acción sutil pero potente.\n\nRespondé SOLO con el nuevo texto, sin introducciones.`;
+
+  try {
+    const msg = await getAnthropic().messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 800,
+      temperature: 0.8,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
+    });
+    return msg.content[0].text.trim();
+  } catch (error) {
+    console.error('❌ Error en refineCopy:', error.message);
+    throw error;
+  }
+}
+
+module.exports = {
+  processVideoAI,
+  analyzeWithGemini,
+  generateCopyWithClaude,
+  transcribeWithGroq,
   generateInsights,
   runDeepAuditAnalysis,
   refineCopy
