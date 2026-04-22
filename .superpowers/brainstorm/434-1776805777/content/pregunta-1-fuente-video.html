@@ -1,0 +1,42 @@
+<h2>Pregunta 1 de 4: ¿De dónde vienen los videos?</h2>
+<p class="subtitle">Esto define la arquitectura base del flujo. Actualmente solo tienes galería.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Solo galería</h3>
+      <p>El artista graba con su cámara nativa y luego entra a Vidalis a subir el video. Flujo más simple de implementar.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Menos paquetes Flutter</li><li>Sin permisos de cámara</li><li>Implementación rápida</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Experiencia menos integrada</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Galería + Cámara in-app</h3>
+      <p>El artista puede grabar directamente desde Vidalis o subir desde galería. Experiencia completa tipo TikTok.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>UX profesional</li><li>Control sobre la grabación</li><li>Posibilidad de compresión en tiempo real</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Requiere <code>camera</code> package</li><li>Más complejo</li><li>Permisos adicionales</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Galería + Cámara + URL remota</h3>
+      <p>Además de grabar y subir, el artista puede pegar una URL de YouTube/Drive y Vidalis la procesa automáticamente.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Máxima flexibilidad</li><li>Reutilización de contenido existente</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Backend necesita descarga remota</li><li>Scope más grande</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px">Mi recomendación: <strong>B</strong> — es el estándar del mercado (Instagram, TikTok) y el backend ya está listo para recibir el video sin importar la fuente.</p>

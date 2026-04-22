@@ -1,0 +1,52 @@
+<h2>Pregunta 4 de 4: ¿Cómo ve el artista el progreso del upload?</h2>
+<p class="subtitle">Define la experiencia de usuario durante la subida en background.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Barra de progreso en pantalla</h3>
+      <p>El artista se queda en la pantalla de upload viendo una barra mientras sube. Si sale, el upload sigue en background pero pierde el feedback visual.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Simple de implementar</li><li>Ya existe en el código actual</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>El usuario no puede navegar la app mientras sube</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Banner flotante persistente ✅ Recomendado</h3>
+      <p>Una barra de progreso pequeña flota en la parte inferior de <strong>toda la app</strong> mientras sube. El artista puede navegar libremente y siempre ve el estado.</p>
+      <div style="margin-top:14px; background:#1a1a2e; border-radius:8px; padding:12px; font-size:13px;">
+        <div style="display:flex; align-items:center; gap:10px; background:#16213e; border-radius:6px; padding:8px 12px;">
+          <span style="font-size:18px;">🎬</span>
+          <div style="flex:1">
+            <div style="color:#a78bfa; font-size:11px; margin-bottom:4px;">Subiendo "Mi nuevo reel"</div>
+            <div style="background:#2d2d4e; border-radius:4px; height:4px; overflow:hidden;">
+              <div style="background:#6366f1; width:62%; height:100%; border-radius:4px;"></div>
+            </div>
+          </div>
+          <span style="color:#94a3b8; font-size:12px;">62%</span>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>UX tipo Instagram/YouTube</li><li>El artista puede seguir usando la app</li><li>Notificación al completar</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Requiere estado global (Provider)</li><li>Algo más de UI</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Solo notificación del sistema al terminar</h3>
+      <p>El upload va en background silencioso. Cuando termina, llega una notificación push local al celular.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>No interrumpe el UX de la app</li><li>El artista puede incluso cerrar la app</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Sin feedback durante la subida</li><li>Requiere permisos de notificación</li><li>Experiencia menos premium</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

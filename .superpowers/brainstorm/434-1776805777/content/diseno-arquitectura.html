@@ -1,0 +1,122 @@
+<h2>Diseño Técnico — Sistema de Upload de Video Vidalis</h2>
+<p class="subtitle">Enfoque B: Flutter + Cloudinary directo, backend como orquestador ligero</p>
+
+<div class="section">
+  <h3>🏗️ Capas del sistema</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">
+    <div style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:10px;padding:14px">
+      <div class="label" style="color:#818cf8">Capa 1 — Flutter</div>
+      <ul style="margin:8px 0 0;padding-left:16px;font-size:13px;line-height:1.8">
+        <li><code>VideoSource</code> — galería / cámara / URL</li>
+        <li><code>VideoCompressor</code> — 1080p con video_compress</li>
+        <li><code>ChunkedUploader</code> — divide y sube a Cloudinary</li>
+        <li><code>UploadQueue</code> — estado global en Provider</li>
+        <li><code>UploadBanner</code> — widget flotante persistente</li>
+        <li><code>LocalNotifier</code> — notificación al terminar</li>
+      </ul>
+    </div>
+    <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:14px">
+      <div class="label" style="color:#34d399">Capa 2 — Backend (Node.js)</div>
+      <ul style="margin:8px 0 0;padding-left:16px;font-size:13px;line-height:1.8">
+        <li><code>POST /cloudinary-signature</code> — ya existe</li>
+        <li><code>POST /videos</code> — registra video en Supabase</li>
+        <li><code>PATCH /videos/:id</code> — actualiza estado/URL</li>
+        <li>Sin cambios de upload directo</li>
+      </ul>
+    </div>
+    <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px">
+      <div class="label" style="color:#fbbf24">Capa 3 — Cloudinary</div>
+      <ul style="margin:8px 0 0;padding-left:16px;font-size:13px;line-height:1.8">
+        <li>Recibe chunks de ~6MB</li>
+        <li>Ensambla el video final</li>
+        <li>Genera URL HLS para streaming</li>
+        <li>Thumbnail automático</li>
+        <li>Upload ID para reanudar</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔄 Flujo completo de upload</h3>
+  <div style="margin-top:12px;font-size:13px">
+    <div style="display:flex;flex-direction:column;gap:6px">
+
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:10px;background:rgba(99,102,241,0.08);border-radius:8px">
+        <div style="background:#6366f1;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">1</div>
+        <div><strong>El artista elige la fuente</strong> — Galería (image_picker), Cámara (camera package), o pega una URL remota. El sistema crea un objeto <code>UploadJob</code> con estado <em>pending</em> y lo agrega al <code>UploadQueue</code>.</div>
+      </div>
+
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:10px;background:rgba(99,102,241,0.08);border-radius:8px">
+        <div style="background:#6366f1;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">2</div>
+        <div><strong>Compresión local</strong> — <code>VideoCompressor.compress(file, quality: VideoQuality.MediumQuality)</code>. Reduce a 1080p. El banner aparece con estado <em>"Preparando video..."</em>. Si es URL remota, se omite este paso.</div>
+      </div>
+
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:10px;background:rgba(99,102,241,0.08);border-radius:8px">
+        <div style="background:#6366f1;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">3</div>
+        <div><strong>Firma de Cloudinary</strong> — <code>GET /api/vidalis/cloudinary-signature</code> al backend. Retorna <code>uploadId</code>, <code>signature</code>, <code>timestamp</code>, <code>apiKey</code>. El <code>uploadId</code> se persiste en <code>SharedPreferences</code> para poder reanudar si se cierra la app.</div>
+      </div>
+
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:10px;background:rgba(99,102,241,0.08);border-radius:8px">
+        <div style="background:#6366f1;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">4</div>
+        <div><strong>Upload en chunks</strong> — <code>ChunkedUploader</code> divide el archivo en bloques de 6MB y los sube secuencialmente a <code>https://api.cloudinary.com/v1_1/.../video/upload</code> con el header <code>X-Unique-Upload-Id</code>. El banner actualiza el % real por chunk completado.</div>
+      </div>
+
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:10px;background:rgba(16,185,129,0.1);border-radius:8px">
+        <div style="background:#10b981;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">5</div>
+        <div><strong>Registro en backend</strong> — El último chunk retorna la <code>secure_url</code> de Cloudinary. Se llama <code>POST /api/vidalis/videos</code> con la URL. El backend guarda en Supabase y dispara el análisis de IA.</div>
+      </div>
+
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:10px;background:rgba(16,185,129,0.1);border-radius:8px">
+        <div style="background:#10b981;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">6</div>
+        <div><strong>Notificación + limpieza</strong> — El banner muestra <em>"¡Video subido!"</em> con check verde. <code>LocalNotifier</code> dispara una notificación del sistema. Se elimina el archivo temporal comprimido del teléfono. Se limpia el <code>uploadId</code> de <code>SharedPreferences</code>.</div>
+      </div>
+
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:10px;background:rgba(239,68,68,0.1);border-radius:8px">
+        <div style="background:#ef4444;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">↩</div>
+        <div><strong>Reanudación tras fallo</strong> — Si la app se cierra o se pierde señal, al volver se detecta el <code>uploadId</code> guardado en <code>SharedPreferences</code>. Se consulta a Cloudinary cuántos bytes recibió y el <code>ChunkedUploader</code> reanuda desde el siguiente chunk pendiente.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📦 Nuevos paquetes Flutter requeridos</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;font-size:13px">
+    <div style="background:rgba(30,30,50,0.6);border-radius:8px;padding:12px">
+      <code style="color:#a78bfa">camera: ^0.11</code>
+      <p style="margin:4px 0 0;color:#94a3b8">Grabación in-app. Reemplaza image_picker para la fuente cámara.</p>
+    </div>
+    <div style="background:rgba(30,30,50,0.6);border-radius:8px;padding:12px">
+      <code style="color:#a78bfa">video_compress: ^3.1</code>
+      <p style="margin:4px 0 0;color:#94a3b8">Compresión local a 1080p antes de subir.</p>
+    </div>
+    <div style="background:rgba(30,30,50,0.6);border-radius:8px;padding:12px">
+      <code style="color:#a78bfa">flutter_local_notifications: ^17</code>
+      <p style="margin:4px 0 0;color:#94a3b8">Notificación del sistema al completar el upload.</p>
+    </div>
+    <div style="background:rgba(30,30,50,0.6);border-radius:8px;padding:12px">
+      <code style="color:#a78bfa">connectivity_plus: ^6</code>
+      <p style="margin:4px 0 0;color:#94a3b8">Detectar pérdida de red para pausar/reanudar chunks.</p>
+    </div>
+  </div>
+  <p style="margin-top:10px;font-size:12px;color:#64748b">⚠️ workmanager no se incluye: Cloudinary chunked upload es suficientemente robusto y workmanager en iOS tiene restricciones severas del OS.</p>
+</div>
+
+<div class="section">
+  <h3>🗂️ Archivos a crear/modificar en Flutter</h3>
+  <div style="font-size:13px;margin-top:8px">
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;line-height:2">
+      <span style="color:#34d399">NUEVO</span><code>lib/core/services/video_compressor.dart</code>
+      <span style="color:#34d399">NUEVO</span><code>lib/core/services/chunked_uploader.dart</code>
+      <span style="color:#34d399">NUEVO</span><code>lib/core/services/upload_queue.dart</code>
+      <span style="color:#34d399">NUEVO</span><code>lib/core/services/local_notifier.dart</code>
+      <span style="color:#34d399">NUEVO</span><code>lib/shared/widgets/upload_banner.dart</code>
+      <span style="color:#34d399">NUEVO</span><code>lib/features/content/video_source_picker.dart</code>
+      <span style="color:#fbbf24">MOD</span><code>lib/features/content/content_screen.dart</code>
+      <span style="color:#fbbf24">MOD</span><code>lib/core/services/app_provider.dart</code>
+      <span style="color:#fbbf24">MOD</span><code>lib/app.dart</code>
+      <span style="color:#fbbf24">MOD</span><code>pubspec.yaml</code>
+    </div>
+  </div>
+</div>

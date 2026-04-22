@@ -1,0 +1,45 @@
+<h2>Pregunta 3 de 4: ¿Qué calidad de video aceptamos subir?</h2>
+<p class="subtitle">Esto define el nivel de compresión local antes de subir. Más compresión = menos datos, pero menor calidad visual.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Sin compresión — video original</h3>
+      <p>Se sube el video tal como está. Un video 4K de 3 minutos puede pesar 1–2 GB.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Máxima calidad</li><li>Sin procesamiento en el celular</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Consume datos masivos</li><li>Tarda mucho en subir</li><li>Calienta el celular durante la subida</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Compresión inteligente — 1080p optimizado ✅ Recomendado</h3>
+      <p>Usamos <code>video_compress</code> para reducir a 1080p con bitrate optimizado para redes sociales. Reduce el peso hasta un 80% sin pérdida visual perceptible.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Estándar de Instagram/TikTok (no más de 1080p)</li><li>Subida 5x más rápida</li><li>Menor consumo de datos</li><li>Celular no se calienta</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>~10–30 seg de procesamiento local antes de subir</li><li>Requiere paquete <code>video_compress</code></li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Compresión adaptativa según conexión</h3>
+      <p>WiFi → 1080p. Datos móviles → 720p. El usuario puede cambiar la preferencia en ajustes.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Experiencia personalizada</li><li>Cuida el plan de datos del usuario</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Más lógica de detección de red</li><li>Necesita pantalla de ajustes adicional</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:28px; padding:16px; background:rgba(99,102,241,0.1); border-radius:12px; border-left:3px solid #6366f1;">
+  <p class="label">Nota técnica</p>
+  <p style="margin:4px 0 0">Las plataformas (Instagram, TikTok, YouTube) re-comprimen el video de todas formas al recibirlo. Subir en 4K no te da mejor calidad en el feed — solo más datos consumidos. El tope real útil es <strong>1080p a 8–15 Mbps</strong>.</p>
+</div>

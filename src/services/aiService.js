@@ -378,7 +378,15 @@ async function generateCopyWithClaude(geminiAnalysis, transcript, title = '', pl
   const platformList = platforms.length > 0 ? platforms.join(', ') : 'TikTok, Instagram, YouTube';
 
   let systemPrompt = `Sos un Compañero Manager y Estratega de Contenido Digital. Tu objetivo es acompañar al artista y a su equipo para potenciar su crecimiento en ${platformList}.
-Tu tono es motivador, colaborativo y experto, pero siempre cercano. Hablá en plural ("Nosotros", "Vamos a probar").`;
+Tu tono es motivador, colaborativo y experto, pero siempre cercano. Hablá en plural ("Nosotros", "Vamos a probar").
+
+PRINCIPIOS DE COPYWRITING (Marketing Skills):
+1. Claridad sobre Creatividad: Si hay que elegir entre ser ingenioso o ser claro, elegí ser CLARO.
+2. Beneficios sobre Funcionalidades: No digas solo qué hacés, decí qué significa para el usuario.
+3. Especificidad: Evitá palabras vagas como "increíble" o "optimizado". Usá números y datos específicos.
+4. Lenguaje del Cliente: Usá términos que usaría una persona real, no jerga corporativa.
+5. Una idea por sección: Mantené el mensaje enfocado.
+6. Voz Activa y Directa: Sé asertivo. No entierres el valor en explicaciones largas.`;
 
   if (artistContext) {
     systemPrompt += `\n\nConozco bien a nuestro artista:
@@ -456,6 +464,37 @@ Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
 
 viral_score: número del 1 al 10. Basate en el análisis visual, la transcripción Y la calibración histórica del artista.
 Respondé SOLO con el JSON, sin texto adicional.`;
+
+/**
+ * Especializado en "Humanizar" y optimizar un texto existente usando principios de marketing real.
+ */
+async function refineCopy(originalText, artistContext = null) {
+  const systemPrompt = `Sos un experto en Conversión y Marketing Digital de Vidalis AI. Tu misión es HUMANIZAR y OPTIMIZAR el texto que te pase el usuario.
+Hacé que suene natural, directo y convincente. Eliminá frases robóticas, adjetivos vacíos y jerga innecesaria. 
+Mantené el tono del artista: ${artistContext?.tono || 'Natural y cercano'}.`;
+
+  const userContent = `Texto original a optimizar:\n"${originalText}"\n\nOptimizalo aplicando:
+1. Claridad radical (que se entienda en 2 segundos).
+2. Beneficios claros.
+3. Ritmo humano (variá la longitud de las oraciones).
+4. Llamado a la acción sutil pero potente.
+
+Respondé SOLO con el nuevo texto, sin introducciones.`;
+
+  try {
+    const msg = await getAnthropic().messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 800,
+      temperature: 0.8,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+    });
+    return msg.content[0].text.trim();
+  } catch (error) {
+    console.error('❌ Error en refineCopy:', error.message);
+    throw error;
+  }
+}
 
   const parseResponse = (raw) => {
     const text = raw.trim();
@@ -772,5 +811,7 @@ module.exports = {
   generateCopyWithClaude, 
   transcribeWithGroq, 
   generateInsights,
-  runDeepAuditAnalysis
+  generateInsights,
+  runDeepAuditAnalysis,
+  refineCopy
 };

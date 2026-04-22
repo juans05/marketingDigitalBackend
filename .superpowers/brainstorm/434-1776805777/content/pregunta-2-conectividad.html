@@ -1,0 +1,42 @@
+<h2>Pregunta 2 de 4: ¿Qué pasa si el artista pierde señal durante la subida?</h2>
+<p class="subtitle">Define qué tan robusto necesita ser el sistema ante interrupciones de red.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Fallo simple + mensaje de error</h3>
+      <p>Si se corta la señal, el upload falla y el usuario vuelve a intentarlo desde cero. Simple de implementar.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Cero complejidad extra</li><li>Ya funciona así hoy</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Un video de 200MB que falla al 90% → reiniciar todo</li><li>Muy frustrante en zonas con señal inestable</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Retry automático (mismo proceso)</h3>
+      <p>Si falla, la app reintenta automáticamente hasta 3 veces mientras el usuario siga en la pantalla.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Maneja cortes cortos de señal</li><li>Sin paquetes adicionales</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Si el usuario cierra la app → pierde todo</li><li>No sirve para videos grandes con señal muy mala</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Upload resumible por chunks ✅ Recomendado</h3>
+      <p>El video se divide en bloques de ~6MB. Si falla en el chunk 8 de 20, retoma desde el 8 — no desde cero. Funciona aunque el usuario cierre la app.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Pros</h4><ul><li>Resistente a cortes de señal</li><li>Cloudinary soporta chunked upload nativamente</li><li>El artista puede cerrar la app y reanudar</li><li>Progreso real por chunk</li></ul></div>
+        <div class="cons"><h4>Contras</h4><ul><li>Más lógica en Flutter y backend</li><li>Requiere <code>workmanager</code> para background</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px">Mi recomendación: <strong>C</strong> — es el estándar de cualquier app de video profesional. Cloudinary ya tiene la API, solo hay que usarla correctamente.</p>
