@@ -637,3 +637,42 @@ exports.runDeepAudit = async (req, res) => {
     res.status(err.status || 500).json({ error: err.message, code: err.code });
   }
 };
+
+// --- PROGRAMAR VIDEO (Calendario) ---
+exports.scheduleVideo = async (req, res) => {
+  const { videoId } = req.params;
+  const { scheduled_at, platforms, format } = req.body;
+
+  try {
+    if (!scheduled_at) {
+      return res.status(400).json({ error: 'Se requiere scheduled_at' });
+    }
+
+    const scheduledDate = new Date(scheduled_at);
+    if (isNaN(scheduledDate.getTime())) {
+      return res.status(400).json({ error: 'Fecha de programación inválida' });
+    }
+
+    const { data, error } = await supabase
+      .from('videos')
+      .update({
+        scheduled_at: scheduledDate.toISOString(),
+        platforms: platforms || [],
+        format: format || 'Reel',
+        status: 'scheduled',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', videoId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    console.log(`📅 Video ${videoId} programado para ${scheduledDate.toISOString()}`);
+    res.status(200).json({ success: true, video: data });
+  } catch (err) {
+    console.error('❌ scheduleVideo:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+

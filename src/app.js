@@ -26,19 +26,36 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS robusto para producción
+// CORS restrictivo — solo dominios autorizados
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || [
+  'https://vidalis-frontend-production.up.railway.app',
+  'http://localhost:3000',
+  'http://localhost:8080',
+].join(',')).split(',').map(o => o.trim()).filter(Boolean);
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  // Permitir cualquier origen en desarrollo, o ser más restrictivos en prod si se desea
-  res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Vary', 'Origin');
+
+  // Sin origin = app móvil nativa o curl interno → siempre permitido
+  if (!origin) return next();
+
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    // Origen no autorizado recibe 204 sin cabeceras CORS → el browser bloqueará
+    return res.status(204).end();
   }
+
+  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+    return res.status(403).json({ error: 'Origen no autorizado' });
+  }
+
   next();
 });
 

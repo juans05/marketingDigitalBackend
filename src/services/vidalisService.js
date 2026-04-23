@@ -76,11 +76,22 @@ function shouldUseInternal() {
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
   console.error("❌ ERROR: Faltan SUPABASE_URL o SUPABASE_ANON_KEY en las variables de entorno.");
 }
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn("⚠️  SUPABASE_SERVICE_ROLE_KEY no configurada — usando anon key (RLS activo, puede causar errores).");
+}
 
+// Service role key: bypassa RLS para operaciones internas del backend.
+// Obtener en Supabase > Settings > API > service_role key.
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-  process.env.SUPABASE_ANON_KEY || 'placeholder'
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
+
+// Cliente con anon key para operaciones que requieren contexto de usuario (uso futuro).
+exports.createUserSupabase = (userJwt) =>
+  createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${userJwt}` } },
+  });
 
 // --- AUTENTICACIÓN ---
 // accountType: 'agency' | 'artist' | null (login existente)
@@ -136,8 +147,9 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
     };
 
     // Firmar Token JWT para seguridad móvil
+    // sub = agency UUID (compatible con Supabase auth.uid() para RLS en acceso directo)
     const token = jwt.sign(
-      { id: user.id, email: user.email, account_type: resolvedType },
+      { sub: user.id, id: user.id, email: user.email, account_type: resolvedType },
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -377,6 +389,17 @@ exports.registerVideo = async (videoData) => {
     videoData.processed_url = buildCloudinaryUrl(videoData.source_url);
     // Inicializar post_type por defecto
     videoData.post_type = looksLikeVideo ? 'reel' : 'feed';
+    
+    // Generar thumbnail para el dashboard
+    if (looksLikeVideo) {
+      const parts = videoData.source_url.split('/upload/');
+      if (parts.length === 2) {
+        const basePath = parts[1].replace(/\.[^/.]+$/, '.jpg');
+        videoData.thumbnail_url = `${parts[0]}/upload/so_1.0,w_300,c_limit/${basePath}`;
+      }
+    } else {
+      videoData.thumbnail_url = videoData.processed_url;
+    }
   }
 
   // Verificar que el artist_id es válido
@@ -561,9 +584,13 @@ exports.getVideoAnalytics = async (videoId) => {
 // Funciona tanto para agencias (todos sus artistas) como para un artista específico
 exports.getDashboardStats = async (agencyId, artistId = null) => {
   const uploadPostService = require('./uploadPostService');
-  
-  // Seleccionar más columnas necesarias para las APIs de analítica
-  let artistQuery = supabase.from('artists').select('id, ayrshare_profile_key, active_platforms, facebook_page_id, instagram_user_id');
+
+  // Plataformas soportadas para intentar si active_platforms está vacío
+  const ALL_PLATFORMS = ['instagram', 'tiktok', 'youtube', 'facebook'];
+
+  let artistQuery = supabase
+    .from('artists')
+    .select('id, ayrshare_profile_key, active_platforms, facebook_page_id, instagram_user_id, agency_id');
 
   if (artistId) {
     artistQuery = artistQuery.eq('id', artistId);
@@ -575,9 +602,36 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
   if (artistsErr) throw artistsErr;
 
   const targetArtistIds = (artistsData || []).map(a => a.id);
-  if (targetArtistIds.length === 0) {
-    return { total: 0, published: 0, avgScore: 0, totalReach: 0, history: [], postList: [], followersTotal: 0, followersDaily: 0, followersPerPost: 0, postsDaily: 0, trend: '0%' };
-  }
+  const emptyStats = {
+    total: 0, published: 0, avgScore: 0, totalReach: 0, history: [], postList: [],
+    followersTotal: 0, followersDaily: 0, followersPerPost: 0, postsDaily: 0, trend: '0%',
+    total_followers: 0, followers_growth: 0, total_views: 0, views_growth: 0,
+    published_videos: 0, avg_viral_score: 0, growth_data: [],
+    monthly_usage: 0, monthly_limit: 5, plan_name: 'Mini',
+  };
+
+  if (targetArtistIds.length === 0) return emptyStats;
+
+  // Obtener plan de la agencia para monthly_usage / monthly_limit
+  const agencyRefId = artistsData[0]?.agency_id || agencyId;
+  const { data: agencyData } = await supabase
+    .from('agencies')
+    .select('plan_type')
+    .eq('id', agencyRefId)
+    .single();
+  const planType = agencyData?.plan_type || 'Mini';
+  const planConfig = PLAN_CONFIG[planType] || PLAN_CONFIG['Mini'] || { videos: 5 };
+  const monthlyLimit = planConfig.videos === Infinity ? 999 : (planConfig.videos || 5);
+
+  // Contar videos creados este mes
+  const firstOfMonth = new Date();
+  firstOfMonth.setDate(1);
+  firstOfMonth.setHours(0, 0, 0, 0);
+  const { count: monthlyUsage } = await supabase
+    .from('videos')
+    .select('id', { count: 'exact', head: true })
+    .in('artist_id', targetArtistIds)
+    .gte('created_at', firstOfMonth.toISOString());
 
   const { data: videos, error } = await supabase
     .from('videos')
@@ -596,74 +650,122 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
   let followersTotal = 0;
   let totalReach = 0;
   let totalViews = 0;
+  let totalPostsSocial = 0;
   const historyMap = {};
+  const platformBreakdown = {};
 
   // Recolectar estadísticas reales de Upload-Post en paralelo
   const analyticsPromises = artistsData.map(async (artist) => {
-    if (!artist.ayrshare_profile_key || !artist.active_platforms || artist.active_platforms.length === 0) {
+    if (!artist.ayrshare_profile_key) {
+      console.warn(`⚠️ getDashboardStats: artista ${artist.id} sin ayrshare_profile_key, saltando analytics`);
       return null;
     }
+    const platforms = (artist.active_platforms && artist.active_platforms.length > 0)
+      ? artist.active_platforms
+      : ALL_PLATFORMS;
     try {
-      // Pasar opciones extra como facebook_page_id si existen
       const options = {};
       if (artist.facebook_page_id) options.facebookPageId = artist.facebook_page_id;
+      
+      // Lanzamos ambas peticiones en paralelo para cada artista
+      const [analytics, profile] = await Promise.all([
+        uploadPostService.getAnalytics(artist.ayrshare_profile_key, platforms, options).catch(e => {
+          console.warn(`⚠️ Error fetching analytics for ${artist.ayrshare_profile_key}:`, e.message);
+          return {};
+        }),
+        uploadPostService.getProfile(artist.ayrshare_profile_key).catch(e => {
+          console.warn(`⚠️ Error fetching profile for ${artist.ayrshare_profile_key}:`, e.message);
+          return {};
+        })
+      ]);
 
-      return await uploadPostService.getAnalytics(
-        artist.ayrshare_profile_key,
-        artist.active_platforms,
-        options
-      );
+      console.log(`📊 [getDashboardStats] Raw Data for ${artist.ayrshare_profile_key}:`, {
+        analytics: JSON.stringify(analytics),
+        profile: JSON.stringify(profile)
+      });
+      
+      return { analytics, profile };
     } catch (e) {
-      console.warn(`Error fetching analytics for ${artist.ayrshare_profile_key}:`, e.message);
+      console.warn(`⚠️ Error fetching data for ${artist.ayrshare_profile_key}:`, e.message);
       return null;
     }
   });
 
-  const analyticsResults = await Promise.all(analyticsPromises);
+  const results = await Promise.all(analyticsPromises);
 
-  analyticsResults.forEach(res => {
-    if (!res) return;
-    Object.keys(res).forEach(platform => {
-      const pData = res[platform];
-      if (pData && pData.success !== false) {
-        // Normalizar nombres de campos entre plataformas (followers vs subscribers)
-        const followers = pData.followers || pData.subscribers || pData.subscriber_count || 0;
-        followersTotal += followers;
-        
-        totalReach += (pData.reach || pData.impressions || 0);
-        totalViews += (pData.views || pData.video_views || 0);
+  results.forEach(item => {
+    if (!item) return;
+    const { analytics, profile } = item;
+    
+    // 1. Procesar Analiticas (Reach, Views, Timeseries)
+    if (analytics) {
+      Object.keys(analytics).forEach(platform => {
+        const pData = analytics[platform];
+        if (pData && pData.success !== false) {
+          const followers = pData.followers || pData.subscribers || pData.subscriber_count || pData.follower_count || pData.fans || 0;
+          const pViews = pData.views || pData.video_views || 0;
+          const pReach = pData.reach || pData.impressions || 0;
+          const pPosts = pData.post_count || pData.media_count || pData.posts || 0;
+          
+          followersTotal += followers;
+          totalReach += pReach;
+          totalViews += pViews;
+          totalPostsSocial += pPosts;
 
-        if (Array.isArray(pData.reach_timeseries)) {
-          pData.reach_timeseries.forEach(item => {
-            if (item.date) {
-              historyMap[item.date] = (historyMap[item.date] || 0) + (item.value || 0);
-            }
-          });
+          const metricValue = pViews > 0 ? pViews : pReach;
+          platformBreakdown[platform] = (platformBreakdown[platform] || 0) + metricValue;
+
+          if (Array.isArray(pData.reach_timeseries)) {
+            pData.reach_timeseries.forEach(item => {
+              if (item.date) {
+                historyMap[item.date] = (historyMap[item.date] || 0) + (item.value || 0);
+              }
+            });
+          }
         }
-      }
-    });
+      });
+    }
+
+    // 2. Procesar Perfil (Seguidores actuales si no vinieron en analytics)
+    // Upload-Post suele retornar profile.social_accounts[platform].follower_count
+    if (profile && profile.success && profile.profile && profile.profile.social_accounts) {
+      const accounts = profile.profile.social_accounts;
+      Object.keys(accounts).forEach(p => {
+        const acc = accounts[p];
+        if (acc && typeof acc === 'object') {
+          const followers = acc.followers || acc.follower_count || acc.subscribers || 0;
+          const posts = acc.post_count || acc.media_count || 0;
+          
+          // Solo sumamos si no teníamos datos de esta plataforma desde analytics para evitar duplicar
+          // O si el valor del perfil es significativamente más alto/actual
+          if (followers > 0 && (!analytics[p] || (analytics[p].followers || 0) === 0)) {
+            followersTotal += followers;
+          }
+          if (posts > totalPostsSocial) {
+             totalPostsSocial = posts;
+          }
+        }
+      });
+    }
   });
 
-  // Generar Historial de 7 días ordenado
+  // Si la red social reporta más videos que nuestra DB local, usamos esa cifra
+  const finalTotalVideos = Math.max(total, totalPostsSocial);
+
+  // Generar historial de 7 días ordenado
   const history = [];
   const today = new Date();
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
-    history.push({
-      date: dateStr,
-      value: historyMap[dateStr] || 0
-    });
+    history.push({ date: dateStr, value: historyMap[dateStr] || 0 });
   }
 
-  // Métricas derivadas reales
   const postsDaily = (published / 7).toFixed(2);
-  const followersPerPost = total > 0 ? Math.round(followersTotal / total) : 0;
-  const followersDaily = 0; // Upload-Post no devuelve el crecimiento diario nativamente
+  const followersPerPost = finalTotalVideos > 0 ? Math.round(followersTotal / finalTotalVideos) : 0;
   const trend = totalReach > 0 ? '+inc' : '0%';
 
-  // Lista de Posts (Últimos 10)
   const postList = videos.slice(0, 10).map(v => ({
     id: v.id,
     title: v.title,
@@ -674,26 +776,40 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     status: v.status
   }));
 
+  // Distribuir followersTotal en el historial (último día = total, días anteriores proporcional)
+  const growthData = history.map((h, idx) => ({
+    date: h.date,
+    // Aproximación: mostrar crecimiento lineal hacia followersTotal en el último día
+    followers: idx === history.length - 1
+      ? followersTotal
+      : Math.round(followersTotal * (idx / (history.length - 1 || 1))),
+    views: h.value,
+  }));
+
   return {
-    total,
+    total: finalTotalVideos,
     published,
     avgScore,
     totalReach,
     history,
     postList,
     followersTotal,
-    followersDaily,
+    followersDaily: 0,
     followersPerPost,
     postsDaily,
     trend,
-    // Compatibilidad con App Móvil (snake_case)
+    // Campos para la App Móvil
     total_followers: followersTotal,
-    followers_growth: 0, // Crecimiento no implementado aún en backend
+    followers_growth: 0,
     total_views: totalViews,
     views_growth: 0,
-    published_videos: published,
+    published_videos: finalTotalVideos,
     avg_viral_score: avgScore,
-    growth_data: history.map(h => ({ date: h.date, followers: 0, views: h.value })) // Mapear historial
+    growth_data: growthData,
+    platform_breakdown: platformBreakdown,
+    monthly_usage: monthlyUsage || 0,
+    monthly_limit: monthlyLimit,
+    plan_name: planType,
   };
 };
 
