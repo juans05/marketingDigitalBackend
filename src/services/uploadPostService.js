@@ -60,6 +60,7 @@ function normalizeMetrics(raw) {
     saves: raw.saves || raw.save_count || raw.bookmarks || 0,
     reach: raw.reach || raw.non_followers_reach || 0,
     impressions: raw.impressions || raw.impression_count || 0,
+    engagement_rate: raw.engagement_rate || 0,
   };
 }
 
@@ -138,10 +139,19 @@ function buildHeaders() {
 /**
  * Crear un perfil (sub-cuenta) para un nuevo artista.
  * @param {string} name - Nombre del artista/cliente.
+ * @param {string} artistId - ID único del artista en Supabase.
  * @returns {Promise<string>} - El ID del usuario creado.
  */
-exports.createProfile = async (name) => {
-  const sanitizedUsername = (name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '') || `artista_${Date.now()}`;
+exports.createProfile = async (name, artistId = null) => {
+  const shortId = artistId ? artistId.toString().split('-')[0] : '';
+  let sanitizedUsername = (name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '');
+  
+  if (shortId) {
+    sanitizedUsername = `${sanitizedUsername}_${shortId}`;
+  }
+
+  if (!sanitizedUsername) sanitizedUsername = `artista_${Date.now()}`;
+  
   console.log("Creating new profile in Upload-Post:", sanitizedUsername);
 
   try {
@@ -356,7 +366,33 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
       details: response.data
     };
   } catch (err) {
-    console.error('❌ Error al publicar en Upload-Post:', err.response?.data || err.message);
+    const errorData = err.response?.data;
+    console.error('❌ Error al publicar en Upload-Post:', errorData || err.message);
+    
+    // Si es un error de límite (429) o validación, propagar el mensaje detallado
+    if (err.response?.status === 429) {
+      if (errorData?.violations) {
+        const violation = errorData.violations[0];
+        const platform = violation.platform || 'la red social';
+        const msg = `Límite diario alcanzado para ${platform}: ${violation.used_last_24h}/${violation.cap}. Por favor, espera unas horas.`;
+        const customErr = new Error(msg);
+        customErr.status = 429;
+        customErr.details = errorData;
+        throw customErr;
+      }
+      
+      const customErr = new Error("Límite de publicaciones alcanzado en esta red social. Por favor, intenta de nuevo en unas horas.");
+      customErr.status = 429;
+      customErr.details = errorData;
+      throw customErr;
+    }
+
+    if (errorData?.message) {
+      const msgErr = new Error(errorData.message);
+      msgErr.status = err.response?.status;
+      throw msgErr;
+    }
+
     throw err;
   }
 };

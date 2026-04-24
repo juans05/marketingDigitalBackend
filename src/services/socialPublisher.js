@@ -84,10 +84,12 @@ exports.getConnectUrl = async (artist, supabase) => {
   // El ID de Upload-Post suele ser un ID de usuario numérico o UUID.
   // Si no estamos seguros o detectamos prefijo de Ayrshare, migramos.
   const isAyrshareKey = profileId && (profileId.startsWith('profile-') || profileId.length > 50); // Ayrshare keys are usually long
+  const shortId = artist.id.toString().split('-')[0];
+  const isOldFormat = profileId && !profileId.includes(shortId) && !isAyrshareKey;
 
-  if (!profileId || artist.publish_mode === 'ayrshare' || isAyrshareKey) {
+  if (!profileId || artist.publish_mode === 'ayrshare' || isAyrshareKey || isOldFormat) {
     console.log("🚀 Migrando/Creando perfil en Upload-Post para:", artist.name);
-    profileId = await uploadPostService.createProfile(artist.name);
+    profileId = await uploadPostService.createProfile(artist.name, artist.id);
 
     // Intentar actualizar la DB (esto fallará silenciosamente si la columna publish_mode no existe, 
     // pero al menos tenemos el profileId en memoria para esta sesión)

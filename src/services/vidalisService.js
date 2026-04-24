@@ -141,6 +141,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       email: user.email,
       name: user.name,
       plan: user.plan_type,
+      sparks_balance: user.sparks_balance || 0,
       account_type: resolvedType,
       artist_id,
       onboarding_completed: user.onboarding_completed || false,
@@ -206,11 +207,109 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
     email,
     name,
     plan: newAgency.plan_type,
+    sparks_balance: newAgency.sparks_balance || 100,
     account_type: 'agency',
     artist_id: null,
     birth_date: newAgency.birth_date,
     onboarding_completed: false,
   };
+};
+
+// --- COMPRA DE SPARKS ---
+// --- COMPRA DE SPARKS ---
+exports.purchaseSparks = async (agencyId, amount) => {
+  try {
+    // 1. Obtener balance actual
+    const { data: agency, error: getErr } = await supabase
+      .from('agencies')
+      .select('sparks_balance')
+      .eq('id', agencyId)
+      .single();
+
+    if (getErr || !agency) throw new Error('Agencia no encontrada');
+
+    const newBalance = (agency.sparks_balance || 0) + amount;
+
+    // 2. Actualizar balance
+    const { error: updErr } = await supabase
+      .from('agencies')
+      .update({ sparks_balance: newBalance })
+      .eq('id', agencyId);
+
+    if (updErr) throw updErr;
+
+    // 3. Registrar transacción
+    await supabase.from('sparks_transactions').insert([{
+      agency_id: agencyId,
+      amount: amount,
+      type: 'purchase',
+      description: `Compra de ${amount} Sparks`
+    }]);
+
+    return { success: true, newBalance };
+  } catch (error) {
+    console.error('❌ purchaseSparks error:', error.message);
+    throw error;
+  }
+};
+
+// --- CANJEAR CUPÓN ---
+exports.redeemCoupon = async (agencyId, code) => {
+  try {
+    // 1. Buscar cupón
+    const { data: coupon, error: findErr } = await supabase
+      .from('coupons')
+      .select('*')
+      .eq('code', code.toUpperCase())
+      .eq('is_active', true)
+      .single();
+
+    if (findErr || !coupon) throw new Error('Cupón inválido o expirado');
+
+    // 2. Verificar vencimiento y usos
+    if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+      throw new Error('El cupón ha expirado');
+    }
+    if (coupon.current_usages >= coupon.max_usages) {
+      throw new Error('El cupón ha alcanzado su límite de uso');
+    }
+
+    // 3. Aplicar bonificación (Sparks extra)
+    const extraSparks = coupon.extra_sparks || 0;
+    if (extraSparks > 0) {
+      const { data: agency, error: getErr } = await supabase
+        .from('agencies')
+        .select('sparks_balance')
+        .eq('id', agencyId)
+        .single();
+
+      if (getErr || !agency) throw new Error('Agencia no encontrada');
+
+      const newBalance = (agency.sparks_balance || 0) + extraSparks;
+
+      await supabase.from('agencies').update({ sparks_balance: newBalance }).eq('id', agencyId);
+
+      // Registrar transacción
+      await supabase.from('sparks_transactions').insert([{
+        agency_id: agencyId,
+        amount: extraSparks,
+        type: 'promo_code',
+        description: `Cupón canjeado: ${code}`
+      }]);
+
+      // Incrementar usos del cupón
+      await supabase.from('coupons')
+        .update({ current_usages: (coupon.current_usages || 0) + 1 })
+        .eq('id', coupon.id);
+
+      return { success: true, extraSparks, newBalance };
+    }
+
+    return { success: false, message: 'El cupón no otorga Sparks extra' };
+  } catch (error) {
+    console.error('❌ redeemCoupon error:', error.message);
+    throw error;
+  }
 };
 
 // --- COMPLETAR ONBOARDING ---
@@ -372,6 +471,31 @@ exports.registerVideo = async (videoData) => {
     if (!countErr && count >= config.videos) {
       throw new Error(`Has alcanzado el límite de tu plan ${planType} (${config.videos} videos/mes). Por favor, sube de nivel para continuar.`);
     }
+  }
+
+  // --- CONTROL DE SPARKS ---
+  const SPARK_COST = 10;
+  const { data: agencyData } = await supabase
+    .from('artists')
+    .select('agencies(id, sparks_balance)')
+    .eq('id', videoData.artist_id)
+    .single();
+
+  const agencyId = agencyData?.agencies?.id;
+  const balance = agencyData?.agencies?.sparks_balance ?? 0;
+
+  if (balance < SPARK_COST) {
+    throw new Error('No tienes suficientes Sparks (Energía) para procesar este video. Recarga tus Sparks para continuar.');
+  }
+
+  // Descontar usando la función RPC (atómica)
+  const { data: deductOk } = await supabase.rpc('deduct_sparks', { 
+    target_agency_id: agencyId, 
+    cost: SPARK_COST 
+  });
+
+  if (!deductOk) {
+    throw new Error('Error al procesar el gasto de Sparks.');
   }
 
   // Sanitizar URL — eliminar espacios que rompen Cloudinary
@@ -571,14 +695,61 @@ exports.fetchArtistGallery = async (artistId, options = {}) => {
 
 // --- ANALYTICS DE UN VIDEO ---
 exports.getVideoAnalytics = async (videoId) => {
-  const { data, error } = await supabase
+  const uploadPostService = require('./uploadPostService');
+
+  // 1. Obtener bases del video
+  const { data: video, error } = await supabase
     .from('videos')
-    .select('id, title, status, viral_score, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at')
+    .select('id, artist_id, title, status, viral_score, viral_score_real, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at, thumbnail_url')
     .eq('id', videoId)
     .single();
-  if (error) throw error;
-  return data;
+
+  if (error || !video) throw new Error('Video no encontrado');
+
+  // 2. Si tiene post id, intentar actualizar métricas reales
+  let realTimeMetrics = null;
+  if (video.ayrshare_post_id && video.status === 'published') {
+    try {
+      realTimeMetrics = await uploadPostService.getPostAnalytics(video.ayrshare_post_id);
+      if (realTimeMetrics) {
+        // Actualizar snapshot en background para el historial
+        const platform = Array.isArray(video.platforms) ? video.platforms[0] : 'unknown';
+        uploadPostService.saveMetricsSnapshot(video.id, video.artist_id, platform, realTimeMetrics)
+          .catch(e => console.warn('⚠️ Error guardando snapshot automático:', e.message));
+      }
+    } catch (e) {
+      console.warn('⚠️ No se pudieron obtener analytics de Upload-Post:', e.message);
+    }
+  }
+
+  // 3. Obtener snapshots históricos (para la gráfica de rendimiento)
+  const { data: snapshots } = await supabase
+    .from('post_metrics_snapshots')
+    .select('snapshot_at, views, likes')
+    .eq('video_id', videoId)
+    .order('snapshot_at', { ascending: true })
+    .limit(24);
+
+  // Normalizar métricas usando los datos más frescos (tiempo real o caché 4h)
+  const finalMetricsSource = (realTimeMetrics && Object.keys(realTimeMetrics).length > 2)
+    ? realTimeMetrics
+    : (video.analytics_4h || {});
+    
+  const metrics = uploadPostService.normalizeMetrics(finalMetricsSource);
+  
+  console.log(`[Analytics] Info enviada al frontend para video ${videoId}:`, {
+    hasAyrshareId: !!video.ayrshare_post_id,
+    hasRealTime: !!realTimeMetrics,
+    metricsFound: metrics.views > 0
+  });
+
+  return {
+    ...video,
+    real_metrics: metrics,
+    history: snapshots || []
+  };
 };
+
 
 // --- ESTADÍSTICAS DEL DASHBOARD ---
 // Funciona tanto para agencias (todos sus artistas) como para un artista específico
@@ -650,6 +821,10 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
   let followersTotal = 0;
   let totalReach = 0;
   let totalViews = 0;
+  let totalLikes = 0;
+  let totalComments = 0;
+  let totalShares = 0;
+  let totalSaves = 0;
   let totalPostsSocial = 0;
   const historyMap = {};
   const platformBreakdown = {};
@@ -711,6 +886,12 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
           totalReach += pReach;
           totalViews += pViews;
           totalPostsSocial += pPosts;
+
+          // Engagement
+          totalLikes += (pData.likes || pData.like_count || pData.heart || 0);
+          totalComments += (pData.comments || pData.comment_count || 0);
+          totalShares += (pData.shares || pData.share_count || pData.retweets || 0);
+          totalSaves += (pData.saves || pData.save_count || pData.bookmarks || 0);
 
           const metricValue = pViews > 0 ? pViews : pReach;
           platformBreakdown[platform] = (platformBreakdown[platform] || 0) + metricValue;
@@ -803,6 +984,10 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     followers_growth: 0,
     total_views: totalViews,
     views_growth: 0,
+    total_likes: totalLikes,
+    total_comments: totalComments,
+    total_shares: totalShares,
+    total_saves: totalSaves,
     published_videos: finalTotalVideos,
     avg_viral_score: avgScore,
     growth_data: growthData,

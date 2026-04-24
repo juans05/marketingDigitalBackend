@@ -48,6 +48,8 @@ router.patch('/n8n-callback/:videoId', verifyWebhookSecret, vidalisController.n8
 // ── Analytics ─────────────────────────────────────────────────────────────────
 router.get('/analytics/:videoId', authenticateToken, authorizeVideo, vidalisController.getVideoAnalytics);
 router.get('/stats/:agencyId', authenticateToken, authorizeAgency, vidalisController.getDashboardStats);
+router.post('/purchase-sparks', authenticateToken, vidalisController.purchaseSparks);
+router.post('/redeem-coupon', authenticateToken, vidalisController.redeemCoupon);
 router.post('/viral-score', authenticateToken, vidalisController.getViralScore);
 router.get('/analytics-posts/:artistId', authenticateToken, authorizeArtist, vidalisController.getPostMetrics);
 router.get('/analytics-insights/:artistId', authenticateToken, authorizeArtist, vidalisController.getAnalyticsInsights);

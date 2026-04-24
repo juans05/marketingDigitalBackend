@@ -154,6 +154,28 @@ exports.getDashboardStats = async (req, res) => {
   }
 };
 
+exports.purchaseSparks = async (req, res) => {
+  try {
+    const { userId, amount } = req.body;
+    if (!userId || !amount) throw new Error('Se requiere userId y amount');
+    const result = await vidalisService.purchaseSparks(userId, amount);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.redeemCoupon = async (req, res) => {
+  try {
+    const { userId, code } = req.body;
+    if (!userId || !code) throw new Error('Se requiere userId y código');
+    const result = await vidalisService.redeemCoupon(userId, code);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
 exports.getViralScore = async (req, res) => {
   try {
     const { videoUrl } = req.body;
@@ -179,8 +201,8 @@ exports.connectSocial = async (req, res) => {
         details: error.details
       });
     }
-    const status = error.response?.status || 500;
-    res.status(status).json({ error: error.message, details: error.response?.data });
+    const status = error.status || error.response?.status || 500;
+    res.status(status).json({ error: error.message, details: error.response?.data || error.details || null });
   }
 };
 
@@ -220,8 +242,8 @@ exports.publishToSocial = async (req, res) => {
 
     res.status(200).json(result);
   } catch (error) {
-    const status = error.response?.status || 500;
-    res.status(status).json({ error: error.response?.data?.message || error.message });
+    const status = error.status || error.response?.status || 500;
+    res.status(status).json({ error: error.message, details: error.response?.data || error.details || null });
   }
 };
 
@@ -316,10 +338,10 @@ exports.publishNow = async (req, res) => {
     res.status(200).json(result);
   } catch (error) {
     console.error('❌ Error en publishNow:', error.message);
-    const status = error.response?.status || 400;
+    const status = error.status || error.response?.status || 400;
     res.status(status).json({
       error: error.message,
-      details: error.response?.data || null
+      details: error.response?.data || error.details || null
     });
   }
 };
