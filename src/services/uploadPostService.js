@@ -381,7 +381,8 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
         throw customErr;
       }
       
-      const customErr = new Error("Límite de publicaciones alcanzado en esta red social. Por favor, intenta de nuevo en unas horas.");
+      const remoteMessage = errorData?.message || errorData?.error || "Límite de publicaciones alcanzado.";
+      const customErr = new Error(`Error de Proveedor (429): ${remoteMessage}`);
       customErr.status = 429;
       customErr.details = errorData;
       throw customErr;

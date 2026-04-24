@@ -14,3 +14,5 @@ pnpm-debug.log*
 .idea/
 *.swp
 *.swo
+scratch/add_coupon.js
+migration_coupons_system.sql
