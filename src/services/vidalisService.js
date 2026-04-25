@@ -155,7 +155,8 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
-
+    return {
+      ...payload,
       token
     };
   }
