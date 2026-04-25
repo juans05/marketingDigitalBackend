@@ -778,7 +778,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     followersTotal: 0, followersDaily: 0, followersPerPost: 0, postsDaily: 0, trend: '0%',
     total_followers: 0, followers_growth: 0, total_views: 0, views_growth: 0,
     published_videos: 0, avg_viral_score: 0, growth_data: [],
-    monthly_usage: 0, monthly_limit: 5, plan_name: 'Mini',
+    monthly_usage: 0, monthly_limit: 9999, plan_name: 'Pro',
   };
 
   if (targetArtistIds.length === 0) return emptyStats;
@@ -790,9 +790,9 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     .select('plan_type')
     .eq('id', agencyRefId)
     .single();
-  const planType = agencyData?.plan_type || 'Mini';
-  const planConfig = PLAN_CONFIG[planType] || PLAN_CONFIG['Mini'] || { videos: 5 };
-  const monthlyLimit = planConfig.videos === Infinity ? 999 : (planConfig.videos || 5);
+  const planType = agencyData?.plan_type || 'Pro';
+  const planConfig = PLAN_CONFIG[planType] || { videos: 9999 };
+  const monthlyLimit = planConfig.videos === Infinity ? 9999 : (planConfig.videos || 9999);
 
   // Contar videos creados este mes
   const firstOfMonth = new Date();
