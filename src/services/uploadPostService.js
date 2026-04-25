@@ -192,16 +192,27 @@ exports.createProfile = async (name, artistId = null) => {
  */
 exports.generateConnectUrl = async (userId) => {
   try {
+    logger.log('info', 'CONNECT_URL_REQUEST', { userId });
+    
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users/generate-jwt`, {
       username: userId,
-      profile_username: userId // Cubrimos ambos nombres por inconsistencia en la API
+      profile_username: userId
     }, {
-      headers: buildHeaders()
+      headers: buildHeaders(),
+      timeout: 10000 // 10 segundos máximo
     });
 
+    if (!response.data || !response.data.access_url) {
+       logger.log('error', 'CONNECT_URL_EMPTY', { userId, response: response.data });
+       throw new Error('La API de proveedor no devolvió una URL de acceso.');
+    }
+
+    logger.log('success', 'CONNECT_URL_GENERATED', { userId });
     return response.data.access_url;
   } catch (err) {
-    console.error('❌ Error al generar JWT en Upload-Post:', err.response?.data || err.message);
+    const errorMsg = err.response?.data?.message || err.message;
+    logger.log('error', 'CONNECT_URL_FAILED', { userId, error: errorMsg });
+    console.error('❌ Error al generar JWT en Upload-Post:', errorMsg);
     throw err;
   }
 };
