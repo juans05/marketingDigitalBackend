@@ -11,6 +11,22 @@ const supabase = createClient(
 );
 const aiService = require('../services/aiService');
 
+// --- CONFIG PÚBLICA ---
+exports.getConfig = async (req, res) => {
+  try {
+    const { key } = req.params;
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('value')
+      .eq('key', key)
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Config not found' });
+    res.status(200).json({ key, value: data.value });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // --- REFINAR COPY (Marketing Skills) ---
 exports.refineCopy = async (req, res) => {
   try {

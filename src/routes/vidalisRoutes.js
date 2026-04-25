@@ -9,6 +9,9 @@ const {
   verifyWebhookSecret,
 } = require('../middleware/authMiddleware');
 
+// ── Config pública (sin auth) ─────────────────────────────────────────────────
+router.get('/config/:key', vidalisController.getConfig);
+
 // ── Autenticación (pública) ───────────────────────────────────────────────────
 router.post('/login', vidalisController.login);
 router.post('/google-login', vidalisController.googleLogin);
