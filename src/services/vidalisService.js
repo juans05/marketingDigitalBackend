@@ -58,6 +58,7 @@ const instagramService = require('./instagramService');
 const uploadPostService = require('./uploadPostService');
 const socialPublisher = require('./socialPublisher');
 const cloudinary = require('cloudinary').v2;
+const logger = require('./loggerService');
 
 const PLAN_CONFIG = {
   'Mini': { videos: 5, platforms: ['instagram', 'tiktok'], calendar: false },
@@ -155,10 +156,14 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       { expiresIn: '30d' }
     );
 
-    return {
-      ...payload,
       token
     };
+  }
+
+  // Si llegamos aquí, es un intento de login fallido o nuevo registro
+  if (user) {
+    logger.log('warn', 'LOGIN_FAILED', { email, reason: 'Password mismatch' });
+    throw new Error('Email o contraseña incorrectos');
   }
 
   // --- REGISTRO DE NUEVO USUARIO ---
@@ -174,16 +179,18 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       password_hash,
       plan_type: 'Mini',
       account_type: accountType || 'agency',
-      birth_date: birthDate
+      ...(birthDate && { birth_date: birthDate })
     }])
     .select();
 
   if (agencyErr) {
+    logger.log('error', 'USER_REGISTER_FAILED', { email, error: agencyErr.message });
     console.error('Error insertando agencia:', agencyErr);
     throw new Error('No se pudo crear la cuenta');
   }
 
   const newAgency = newAgencies[0];
+  logger.log('success', 'USER_REGISTERED', { email, plan: 'Mini' }, newAgency.id);
 
   if (accountType === 'artist') {
     const { data: newArtists, error: artistErr } = await supabase
@@ -541,8 +548,12 @@ exports.registerVideo = async (videoData) => {
     .insert([videoData])
     .select();
 
-  if (error) throw error;
+  if (error) {
+    logger.log('error', 'VIDEO_REGISTRATION_FAILED', { error: error.message, artist_id: videoData.artist_id });
+    throw error;
+  }
   const video = data[0];
+  logger.log('success', 'VIDEO_REGISTERED', { video_id: video.id, title: video.title }, null, 'backend');
   console.log(`✅ Video registrado: ${video.id}`);
 
   // Disparar procesamiento IA (interno o n8n según AI_MODE)

@@ -10,6 +10,7 @@
 
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
+const logger = require('./loggerService');
 
 const UPLOAD_POST_BASE = 'https://api.upload-post.com/api';
 
@@ -382,6 +383,7 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
       }
       
       const remoteMessage = errorData?.message || errorData?.error || "Límite de publicaciones alcanzado.";
+      logger.log('error', 'PUBLISH_API_LIMIT', { error: remoteMessage, userId }, null, 'backend');
       const customErr = new Error(`Error de Proveedor (429): ${remoteMessage}`);
       customErr.status = 429;
       customErr.details = errorData;
@@ -389,11 +391,13 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
     }
 
     if (errorData?.message) {
+      logger.log('error', 'PUBLISH_API_ERROR', { error: errorData.message, status: err.response?.status, userId }, null, 'backend');
       const msgErr = new Error(errorData.message);
       msgErr.status = err.response?.status;
       throw msgErr;
     }
 
+    logger.log('error', 'PUBLISH_SYSTEM_ERROR', { error: err.message, userId }, null, 'backend');
     throw err;
   }
 };
