@@ -32,21 +32,27 @@ exports.loginWithGoogle = async (idToken, platform = 'android') => {
     : process.env.GOOGLE_CLIENT_ID_ANDROID;
 
   try {
+    logger.log('info', 'GOOGLE_LOGIN_ATTEMPT', { platform });
+    
     const ticket = await googleClient.verifyIdToken({
       idToken,
       audience: clientId
     });
     const payload = ticket.getPayload();
-    const { email, name, sub: googleId, picture } = payload;
+    const { email, name, sub: googleId } = payload;
 
-    // 1. Buscar si el usuario ya existe por email
-    // Usamos el loginUser existente para reciclar la lógica de creación
-    // Pero forzamos que sea tipo 'individual' si es nuevo.
+    logger.log('success', 'GOOGLE_TOKEN_VERIFIED', { email });
+
+    // 1. Buscar o crear usuario
     return await exports.loginUser(email, googleId, 'individual', name);
 
   } catch (error) {
+    logger.log('error', 'GOOGLE_LOGIN_FAILED', { 
+      error: error.message, 
+      clientId: clientId ? `${clientId.substring(0, 10)}...` : 'MISSING' 
+    });
     console.error('❌ Error verificando Google Token:', error.message);
-    throw new Error('Token de Google inválido');
+    throw new Error(`Error de Google: ${error.message}`);
   }
 };
 
