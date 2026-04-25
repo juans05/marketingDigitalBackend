@@ -15,7 +15,6 @@ const supabase = createClient(
  */
 exports.log = async (level, event_type, details = {}, agency_id = null, source = 'backend') => {
   try {
-    // Sanitización básica: Nunca guardar campos sensibles si se pasan por error
     const cleanDetails = { ...details };
     delete cleanDetails.password;
     delete cleanDetails.password_hash;
@@ -32,13 +31,14 @@ exports.log = async (level, event_type, details = {}, agency_id = null, source =
         source
       }]);
 
-    if (error) console.error('❌ Error guardando log en DB:', error.message);
-    
-    // También enviarlo a la consola para debugging en tiempo real
     const icon = level === 'error' ? '🔴' : level === 'warn' ? '🟡' : '🟢';
-    console.log(`${icon} [${event_type}] ${JSON.stringify(cleanDetails)}`);
+    if (error) {
+       console.error(`❌ [Log Failed] ${event_type}:`, error.message);
+    } else {
+       console.log(`${icon} [Log Saved] ${event_type}`);
+    }
 
   } catch (err) {
-    console.error('⚠️ [loggerService] Falló el registro de log:', err.message);
+    console.error('⚠️ [loggerService Exception]:', err.message);
   }
 };

@@ -155,6 +155,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
+    logger.log('success', 'USER_LOGIN', { email: user.email, plan: user.plan_type }, user.id);
     return {
       ...payload,
       token
@@ -187,7 +188,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
   if (agencyErr) {
     logger.log('error', 'USER_REGISTER_FAILED', { email, error: agencyErr.message });
     console.error('Error insertando agencia:', agencyErr);
-    throw new Error('No se pudo crear la cuenta');
+    throw new Error('No se pudo completar el registro. Inténtalo de nuevo.');
   }
 
   const newAgency = newAgencies[0];
@@ -254,6 +255,7 @@ exports.purchaseSparks = async (agencyId, amount) => {
       description: `Compra de ${amount} Sparks`
     }]);
 
+    logger.log('success', 'PURCHASE_SPARKS', { amount, newBalance }, agencyId);
     return { success: true, newBalance };
   } catch (error) {
     console.error('❌ purchaseSparks error:', error.message);
@@ -310,12 +312,13 @@ exports.redeemCoupon = async (agencyId, code) => {
         .update({ current_usages: (coupon.current_usages || 0) + 1 })
         .eq('id', coupon.id);
 
+      logger.log('success', 'COUPON_REDEEMED', { code, reward: coupon.sparks_reward, newBalance }, agencyId);
       return { success: true, extraSparks, newBalance };
     }
 
     return { success: false, message: 'El cupón no otorga Sparks extra' };
   } catch (error) {
-    console.error('❌ redeemCoupon error:', error.message);
+    logger.log('error', 'COUPON_REDEEM_FAILED', { code, error: error.message }, agencyId);
     throw error;
   }
 };
