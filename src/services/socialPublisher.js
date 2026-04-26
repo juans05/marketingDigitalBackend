@@ -69,7 +69,7 @@ exports.schedulePost = async (artist, text, platforms, mediaUrls = [], scheduleD
  * Ayrshare:  devuelve { url } — abre el portal de Ayrshare
  * Direct:    devuelve { url } — abre el OAuth de Meta
  */
-exports.getConnectUrl = async (artist, supabase) => {
+exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase) => {
   console.log("artist mode", artist.publish_mode);
   if (artist.publish_mode === 'direct') {
     const url = instagramService.getAuthUrl(artist.id);
@@ -80,10 +80,7 @@ exports.getConnectUrl = async (artist, supabase) => {
   let profileId = artist.ayrshare_profile_key;
 
   // Si tiene un profileId de Ayrshare (ID alfanumérico largo), forzamos creación en Upload-Post
-  // El ID de Ayrshare suele ser 'profile-XYZ...' o similar.
-  // El ID de Upload-Post suele ser un ID de usuario numérico o UUID.
-  // Si no estamos seguros o detectamos prefijo de Ayrshare, migramos.
-  const isAyrshareKey = profileId && (profileId.startsWith('profile-') || profileId.length > 50); // Ayrshare keys are usually long
+  const isAyrshareKey = profileId && (profileId.startsWith('profile-') || profileId.length > 50);
   const shortId = artist.id.toString().split('-')[0];
   const isOldFormat = profileId && !profileId.includes(shortId) && !isAyrshareKey;
 
@@ -91,8 +88,6 @@ exports.getConnectUrl = async (artist, supabase) => {
     console.log("🚀 Migrando/Creando perfil en Upload-Post para:", artist.name);
     profileId = await uploadPostService.createProfile(artist.name, artist.id);
 
-    // Intentar actualizar la DB (esto fallará silenciosamente si la columna publish_mode no existe, 
-    // pero al menos tenemos el profileId en memoria para esta sesión)
     try {
       await supabase.from('artists').update({
         ayrshare_profile_key: profileId,
@@ -104,7 +99,7 @@ exports.getConnectUrl = async (artist, supabase) => {
     }
   }
 
-  const connectUrl = await uploadPostService.generateConnectUrl(profileId);
+  const connectUrl = await uploadPostService.generateConnectUrl(profileId, allowedPlatforms);
   console.log("🔗 Portal Connection URL:", connectUrl);
   return { url: connectUrl, mode: 'upload-post', profileKey: profileId };
 };

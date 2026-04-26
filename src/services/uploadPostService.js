@@ -190,13 +190,14 @@ exports.createProfile = async (name, artistId = null) => {
  * @param {string} userId - El ID del usuario/perfil de Upload-Post.
  * @returns {Promise<string>} - URL de conexión (access_url).
  */
-exports.generateConnectUrl = async (userId) => {
+exports.generateConnectUrl = async (userId, allowedPlatforms = []) => {
   try {
-    logger.log('info', 'CONNECT_URL_REQUEST', { userId });
+    logger.log('info', 'CONNECT_URL_REQUEST', { userId, allowedPlatforms });
     
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users/generate-jwt`, {
       username: userId,
-      profile_username: userId
+      profile_username: userId,
+      platforms: allowedPlatforms.length > 0 ? allowedPlatforms : undefined
     }, {
       headers: buildHeaders(),
       timeout: 10000 // 10 segundos máximo

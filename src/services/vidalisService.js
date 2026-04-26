@@ -1023,9 +1023,10 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
 exports.connectSocialAccounts = async (artistId) => {
   const socialPublisher = require('./socialPublisher');
 
+  // Obtener artista y el plan de su agencia vinculada
   const { data: artist, error } = await supabase
     .from('artists')
-    .select('*') // Usar * para ser más resiliente a cambios de esquema
+    .select('*, agencies(plan_type)')
     .eq('id', artistId)
     .single();
 
@@ -1038,7 +1039,11 @@ exports.connectSocialAccounts = async (artistId) => {
     throw new Error(`Artista no existe en la base de datos: ${artistId}`);
   }
 
-  return socialPublisher.getConnectUrl(artist, supabase);
+  // Determinar plataformas permitidas según el plan
+  const planType = artist.agencies?.plan_type || 'Mini';
+  const allowedPlatforms = PLAN_CONFIG[planType]?.platforms || ['instagram', 'tiktok'];
+
+  return socialPublisher.getConnectUrl(artist, allowedPlatforms, supabase);
 };
 
 // --- VERIFICAR PLATAFORMAS CONECTADAS (por ARTISTA) ---
