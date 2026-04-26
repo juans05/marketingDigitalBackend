@@ -366,7 +366,13 @@ exports.completeOnboarding = async (data) => {
         const { data: updated, error: updateErr } = await supabase
           .from('artists')
           .update({
-            branding_data: { genre: firstArtist.genre, tone: firstArtist.tone }
+            creative_dna: {
+              style_notes: firstArtist.style_notes,
+              preferred_hooks: firstArtist.preferred_hooks,
+              style_keywords: firstArtist.style_keywords,
+              prohibited_topics: firstArtist.prohibited_topics
+            },
+            branding_data: { genre: firstArtist.genre, tone: firstArtist.tone } // Mantener compatibilidad legado
           })
           .eq('id', existing[0].id)
           .select();
@@ -380,6 +386,12 @@ exports.completeOnboarding = async (data) => {
           .insert([{
             agency_id: userId,
             name: firstArtist.name,
+            creative_dna: {
+              style_notes: firstArtist.style_notes,
+              preferred_hooks: firstArtist.preferred_hooks,
+              style_keywords: firstArtist.style_keywords,
+              prohibited_topics: firstArtist.prohibited_topics
+            },
             branding_data: { genre: firstArtist.genre, tone: firstArtist.tone }
           }])
           .select();
@@ -404,6 +416,12 @@ exports.completeOnboarding = async (data) => {
           .insert([{
             agency_id: userId,
             name: artistName,
+            creative_dna: {
+              style_notes: firstArtist?.style_notes || '',
+              preferred_hooks: firstArtist?.preferred_hooks || '',
+              style_keywords: firstArtist?.style_keywords || '',
+              prohibited_topics: firstArtist?.prohibited_topics || ''
+            },
             branding_data: { genre: firstArtist?.genre, tone: firstArtist?.tone }
           }])
           .select();
