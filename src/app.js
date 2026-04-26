@@ -26,34 +26,31 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS restrictivo — solo dominios autorizados
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || [
+// CORS - Configuración fija de URLs y Métodos
+const ALLOWED_ORIGINS = [
+  'https://vidalis.up.railway.app',
   'https://vidalis-frontend-production.up.railway.app',
   'http://localhost:3000',
   'http://localhost:8080',
-].join(',')).split(',').map(o => o.trim()).filter(Boolean);
+];
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
-  // Sin origin = app móvil nativa o curl interno → siempre permitido
-  if (!origin) return next();
-
   if (ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');
-  }
-
-  if (req.method === 'OPTIONS') {
-    // Origen no autorizado recibe 204 sin cabeceras CORS → el browser bloqueará
-    return res.status(204).end();
-  }
-
-  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+  } else if (origin) {
+    // Si hay un origin pero no está en la lista blanca, bloqueamos por seguridad
     return res.status(403).json({ error: 'Origen no autorizado' });
+  }
+
+  // Pasamos al siguiente middleware (necesario para que la app no se trabe)
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
   }
 
   next();
