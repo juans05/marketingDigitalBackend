@@ -302,8 +302,9 @@ Describí en detalle:
 Sé específico y detallado. Esta información se usará para generar copy de marketing.`;
 
 const isGeminiUnavailable = (err) =>
-  err.status === 429 || err.status === 503 ||
+  err.status === 429 || err.status === 503 || err.status === 404 ||
   (err.message && (err.message.includes('429') || err.message.includes('503') ||
+    err.message.includes('404') || err.message.includes('not found') ||
     err.message.includes('alta demanda') || err.message.includes('high demand') ||
     err.message.includes('quota') || err.message.includes('cuota')));
 
@@ -313,7 +314,7 @@ const isGeminiUnavailable = (err) =>
 async function analyzeWithClaudeVision(base64, mimeType, title = '') {
   logDebug('🔄 [Claude Vision] Gemini no disponible — usando Claude como fallback visual...');
   const msg = await getAnthropic().messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-5-20250514',
     max_tokens: 1000,
     messages: [{
       role: 'user',
@@ -485,7 +486,7 @@ Respondé SOLO con el JSON, sin texto adicional.`;
 
   try {
     const msg = await getAnthropic().messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5-20250514",
       max_tokens: 1500,
       temperature: 0.7,
       system: systemPrompt,
@@ -681,7 +682,7 @@ Respondé SOLO con este JSON (sin markdown, sin texto extra):
 
   try {
     const msg = await getAnthropic().messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5-20250514',
       max_tokens: 1400,
       temperature: 0.45,
       system: `Sos un Compañero Manager y Estratega Digital. Tu misión es analizar nuestros resultados y acompañarme a tomar las mejores decisiones para el artista.
@@ -753,7 +754,7 @@ Respondé SOLO con el siguiente JSON:
 
   try {
     const msg = await getAnthropic().messages.create({
-      model: "claude-3-5-sonnet-20240620",
+      model: "claude-sonnet-4-5-20250514",
       max_tokens: 1500,
       system: systemPrompt,
       messages: [{ role: "user", content: "Analizá mi historial y dame el reporte estratégico." }],
