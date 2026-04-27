@@ -715,6 +715,17 @@ exports.retryVideoProcessing = async (videoId) => {
   return { success: true, message: 'Procesamiento reiniciado exitosamente' };
 };
 
+// --- ELIMINAR VIDEO ---
+exports.deleteVideo = async (videoId) => {
+  const { error } = await supabase
+    .from('videos')
+    .delete()
+    .eq('id', videoId);
+
+  if (error) throw new Error('Error al eliminar video: ' + error.message);
+  return { success: true };
+};
+
 // --- GALERÍA ---
 exports.fetchArtistGallery = async (artistId, options = {}) => {
   const { limit = 20, page = 1 } = options;

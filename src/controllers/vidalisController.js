@@ -284,6 +284,16 @@ exports.retryVideo = async (req, res) => {
   }
 };
 
+exports.deleteVideo = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    await vidalisService.deleteVideo(videoId);
+    res.status(200).json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Endpoint para que n8n actualice el status + datos de análisis IA
 exports.n8nCallback = async (req, res) => {
   try {
