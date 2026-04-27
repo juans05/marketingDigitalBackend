@@ -194,10 +194,15 @@ exports.generateConnectUrl = async (userId, allowedPlatforms = []) => {
   try {
     logger.log('info', 'CONNECT_URL_REQUEST', { userId, allowedPlatforms });
     
+    const redirectUrl = process.env.FRONTEND_URL
+      ? `${process.env.FRONTEND_URL}/social-callback`
+      : undefined;
+
     const response = await axios.post(`${UPLOAD_POST_BASE}/uploadposts/users/generate-jwt`, {
       username: userId,
       profile_username: userId,
-      platforms: allowedPlatforms.length > 0 ? allowedPlatforms : undefined
+      platforms: allowedPlatforms.length > 0 ? allowedPlatforms : undefined,
+      ...(redirectUrl && { redirect_url: redirectUrl })
     }, {
       headers: buildHeaders(),
       timeout: 10000 // 10 segundos máximo
