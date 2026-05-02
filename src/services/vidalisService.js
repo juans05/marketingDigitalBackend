@@ -131,7 +131,9 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       console.warn(`🔐 Contraseña hasheada automáticamente para el usuario: ${email}`);
     }
 
-    const resolvedType = user.account_type || 'agency';
+    // Normalizar valor — 'individual' (legacy del frontend) cuenta como 'artist'
+    let resolvedType = user.account_type || 'artist';
+    if (resolvedType === 'individual') resolvedType = 'artist';
 
     let artist_id = null;
     if (resolvedType === 'artist') {
@@ -179,6 +181,10 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
   const salt = await bcrypt.genSalt(10);
   const password_hash = await bcrypt.hash(password, salt);
 
+  // Normalizar 'individual' → 'artist' (consistencia)
+  let normalizedType = accountType || 'artist';
+  if (normalizedType === 'individual') normalizedType = 'artist';
+
   const { data: newAgencies, error: agencyErr } = await supabase
     .from('agencies')
     .insert([{
@@ -186,7 +192,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       email,
       password_hash,
       plan_type: 'Mini',
-      account_type: accountType || 'agency',
+      account_type: normalizedType,
       ...(birthDate && { birth_date: birthDate })
     }])
     .select();
@@ -200,7 +206,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
   const newAgency = newAgencies[0];
   logger.log('success', 'USER_REGISTERED', { email, plan: 'Mini' }, newAgency.id);
 
-  if (accountType === 'artist') {
+  if (normalizedType === 'artist') {
     const { data: newArtists, error: artistErr } = await supabase
       .from('artists')
       .insert([{ agency_id: newAgency.id, name }])
