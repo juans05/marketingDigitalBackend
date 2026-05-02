@@ -70,4 +70,13 @@ router.post('/publish', authenticateToken, authorizeArtist, vidalisController.pu
 // ── Meta OAuth (callback público — inicia desde navegador del usuario) ────────
 router.get('/instagram/callback', vidalisController.instagramCallback);
 
+// ── Growth Pro ────────────────────────────────────────────────────────────────
+router.get('/artists/:artistId/growth/insights', authenticateToken, authorizeArtist, vidalisController.getGrowthInsights);
+router.get('/artists/:artistId/growth/best-time', authenticateToken, authorizeArtist, vidalisController.getGrowthBestTime);
+router.get('/artists/:artistId/growth/strategy', authenticateToken, authorizeArtist, vidalisController.getGrowthStrategy);
+router.get('/artists/:artistId/growth/viral-history', authenticateToken, authorizeArtist, vidalisController.getViralHistory);
+router.post('/videos/:videoId/ab-variants', authenticateToken, authorizeVideo, vidalisController.generateABVariants);
+router.get('/videos/:videoId/ab-result', authenticateToken, authorizeVideo, vidalisController.getABResult);
+router.post('/videos/:videoId/ad-copy', authenticateToken, authorizeVideo, vidalisController.generateAdCopy);
+
 module.exports = router;

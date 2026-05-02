@@ -314,7 +314,7 @@ const isGeminiUnavailable = (err) =>
 async function analyzeWithClaudeVision(base64, mimeType, title = '') {
   logDebug('🔄 [Claude Vision] Gemini no disponible — usando Claude como fallback visual...');
   const msg = await getAnthropic().messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1000,
     messages: [{
       role: 'user',
@@ -327,35 +327,44 @@ async function analyzeWithClaudeVision(base64, mimeType, title = '') {
   return msg.content[0].text;
 }
 
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout (${ms / 1000}s): ${label}`)), ms)
+    ),
+  ]);
+}
+
 async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
   const imageUrl = mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl;
   const { base64, mimeType } = await fetchAsBase64(imageUrl);
   const prompt = VISUAL_ANALYSIS_PROMPT(title);
 
-  // 1. Intento principal: Gemini 2.5 Flash
+  // 1. Intento principal: Gemini 2.5 Pro (máxima calidad)
   try {
-    const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent([
-      { inlineData: { data: base64, mimeType } },
-      prompt
-    ]);
+    const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-pro' });
+    const result = await withTimeout(
+      model.generateContent([{ inlineData: { data: base64, mimeType } }, prompt]),
+      60000, 'Gemini 2.5 Pro'
+    );
     return result.response.text();
   } catch (error) {
-    if (!isGeminiUnavailable(error)) throw error;
-    logDebug(`⚠️ Gemini 2.5 Flash no disponible (${error.status || 'quota'}). Probando gemini-2.0-flash...`);
+    if (!isGeminiUnavailable(error) && !error.message?.includes('Timeout')) throw error;
+    logDebug(`⚠️ Gemini 2.5 Pro no disponible (${error.message}). Probando gemini-2.5-flash...`);
   }
 
-  // 2. Fallback: Gemini 2.0 Flash
+  // 2. Fallback: Gemini 2.5 Flash
   try {
-    const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const fallbackResult = await fallbackModel.generateContent([
-      { inlineData: { data: base64, mimeType } },
-      prompt
-    ]);
+    const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const fallbackResult = await withTimeout(
+      fallbackModel.generateContent([{ inlineData: { data: base64, mimeType } }, prompt]),
+      45000, 'Gemini 2.5 Flash'
+    );
     return fallbackResult.response.text();
   } catch (error) {
-    if (!isGeminiUnavailable(error)) throw error;
-    logDebug(`⚠️ Gemini 2.0 Flash tampoco disponible (${error.status || 'quota'}). Usando Claude Vision...`);
+    if (!isGeminiUnavailable(error) && !error.message?.includes('Timeout')) throw error;
+    logDebug(`⚠️ Gemini 2.5 Flash tampoco disponible (${error.message}). Usando Claude Vision...`);
   }
 
   // 3. Último recurso: Claude Vision
@@ -486,7 +495,7 @@ Respondé SOLO con el JSON, sin texto adicional.`;
 
   try {
     const msg = await getAnthropic().messages.create({
-      model: "claude-sonnet-4-5-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 1500,
       temperature: 0.7,
       system: systemPrompt,
@@ -682,7 +691,7 @@ Respondé SOLO con este JSON (sin markdown, sin texto extra):
 
   try {
     const msg = await getAnthropic().messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1400,
       temperature: 0.45,
       system: `Sos un Compañero Manager y Estratega Digital. Tu misión es analizar nuestros resultados y acompañarme a tomar las mejores decisiones para el artista.
@@ -754,7 +763,7 @@ Respondé SOLO con el siguiente JSON:
 
   try {
     const msg = await getAnthropic().messages.create({
-      model: "claude-sonnet-4-5-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 1500,
       system: systemPrompt,
       messages: [{ role: "user", content: "Analizá mi historial y dame el reporte estratégico." }],

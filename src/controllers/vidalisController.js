@@ -10,6 +10,7 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
 const aiService = require('../services/aiService');
+const growthService = require('../services/growthService');
 
 // --- CONFIG PÚBLICA ---
 exports.getConfig = async (req, res) => {
@@ -723,4 +724,84 @@ exports.scheduleVideo = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// ── Growth Pro ────────────────────────────────────────────────────────────────
+
+exports.getGrowthInsights = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const insights = await growthService.getInsights(artistId);
+    res.status(200).json(insights);
+  } catch (err) {
+    console.error('❌ getGrowthInsights:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getGrowthBestTime = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const data = await growthService.getBestTime(artistId);
+    res.status(200).json(data);
+  } catch (err) {
+    console.error('❌ getGrowthBestTime:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getGrowthStrategy = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const data = await growthService.getContentStrategy(artistId);
+    res.status(200).json(data);
+  } catch (err) {
+    console.error('❌ getGrowthStrategy:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getViralHistory = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const data = await growthService.getViralHistory(artistId);
+    res.status(200).json(data);
+  } catch (err) {
+    console.error('❌ getViralHistory:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.generateABVariants = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const data = await growthService.generateABVariants(videoId);
+    res.status(200).json(data);
+  } catch (err) {
+    console.error('❌ generateABVariants:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getABResult = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const data = await growthService.getABResult(videoId);
+    res.status(200).json(data);
+  } catch (err) {
+    console.error('❌ getABResult:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.generateAdCopy = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const data = await growthService.generateAdCopy(videoId);
+    res.status(200).json(data);
+  } catch (err) {
+    console.error('❌ generateAdCopy:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 
