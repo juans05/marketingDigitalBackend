@@ -38,6 +38,7 @@ router.post('/videos/from-url', authenticateToken, vidalisController.uploadFromU
 router.get('/gallery/:artistId', authenticateToken, authorizeArtist, vidalisController.getGallery);
 
 // authorizeVideo verifica que el video pertenezca al agency del token
+router.get('/video/:videoId', authenticateToken, authorizeVideo, vidalisController.getVideoById);
 router.patch('/video/:videoId', authenticateToken, authorizeVideo, vidalisController.updateVideo);
 router.post('/video/:videoId/retry', authenticateToken, authorizeVideo, vidalisController.retryVideo);
 router.delete('/video/:videoId', authenticateToken, authorizeVideo, vidalisController.deleteVideo);

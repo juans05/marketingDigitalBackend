@@ -264,6 +264,26 @@ exports.publishToSocial = async (req, res) => {
   }
 };
 
+exports.getVideoById = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
+    );
+    const { data, error } = await supabase
+      .from('videos')
+      .select('id, artist_id, title, status, viral_score, viral_score_real, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at, thumbnail_url')
+      .eq('id', videoId)
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Video no encontrado' });
+    res.status(200).json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.updateVideo = async (req, res) => {
   try {
     const { videoId } = req.params;
