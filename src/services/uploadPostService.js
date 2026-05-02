@@ -2,7 +2,7 @@
  * UPLOAD-POST SERVICE - Vidalis.AI
  * 
  * Servicio para la API de upload-post.com.
- * Reemplaza a Ayrshare con una arquitectura API-first para agencias.
+ * Servicio principal de publicación a redes sociales (API-first para agencias).
  * 
  * Base URL: https://api.upload-post.com/api
  * Auth: Authorization: Apikey YOUR_API_KEY

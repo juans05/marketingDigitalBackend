@@ -1,17 +1,16 @@
 /**
  * SOCIAL PUBLISHER — Vidalis.AI
  *
- * Router de publicación: decide si usar Ayrshare o la Meta API directa
+ * Router de publicación: decide si usar Upload-Post o la Meta API directa
  * según el campo `publish_mode` del artista.
  *
- *   publish_mode = 'ayrshare'  → usa ayrshareService (comportamiento actual)
- *   publish_mode = 'direct'    → usa instagramService + facebookService (Meta API)
+ *   publish_mode = 'upload-post' (default) → usa uploadPostService
+ *   publish_mode = 'direct'                → usa instagramService (Meta API)
  *
- * Todos los módulos que antes llamaban a ayrshareService directamente
- * deben pasar por aquí para soportar ambos modos de forma transparente.
+ * Nota: la columna DB `ayrshare_profile_key` se reutiliza ahora para guardar
+ * el profileKey de Upload-Post — no se renombró para evitar migración.
  */
 
-const ayrshareService = require('./ayrshareService');
 const uploadPostService = require('./uploadPostService');
 const instagramService = require('./instagramService');
 
@@ -19,21 +18,10 @@ const instagramService = require('./instagramService');
 // PUBLICAR AHORA
 // ============================================================
 
-/**
- * Publica inmediatamente en todas las plataformas del artista.
- *
- * @param {object} artist     - Fila completa de artists (necesita publish_mode, tokens, etc.)
- * @param {string} text       - Caption / hashtags
- * @param {string[]} platforms - Plataformas destino ['instagram','facebook','tiktok',...]
- * @param {string[]} mediaUrls - URLs de Cloudinary
- * @param {object} options    - Opciones por plataforma (para Ayrshare)
- */
 exports.publishPost = async (artist, text, platforms, mediaUrls = [], options = {}) => {
   if (artist.publish_mode === 'direct') {
     return publishDirect(artist, text, platforms, mediaUrls, null);
   }
-  // Default: Upload-Post (Replacing Ayrshare)
-  console.log('artist.ayrshare_profile_key', artist.ayrshare_profile_key);
   return uploadPostService.publishPost(text, platforms, mediaUrls, artist.ayrshare_profile_key, options);
 };
 
@@ -41,21 +29,10 @@ exports.publishPost = async (artist, text, platforms, mediaUrls = [], options = 
 // PROGRAMAR
 // ============================================================
 
-/**
- * Programa una publicación para una fecha futura.
- *
- * @param {object} artist    - Fila completa de artists
- * @param {string} text      - Caption / hashtags
- * @param {string[]} platforms
- * @param {string[]} mediaUrls
- * @param {string} scheduleDate - ISO string (ej: "2026-04-01T15:00:00Z")
- * @param {object} options   - Opciones por plataforma (para Ayrshare)
- */
 exports.schedulePost = async (artist, text, platforms, mediaUrls = [], scheduleDate, options = {}) => {
   if (artist.publish_mode === 'direct') {
     return publishDirect(artist, text, platforms, mediaUrls, scheduleDate);
   }
-  // Default: Upload-Post (Replacing Ayrshare)
   return uploadPostService.schedulePost(text, platforms, mediaUrls, scheduleDate, artist.ayrshare_profile_key, options);
 };
 
@@ -63,29 +40,18 @@ exports.schedulePost = async (artist, text, platforms, mediaUrls = [], scheduleD
 // CONECTAR REDES SOCIALES
 // ============================================================
 
-/**
- * Devuelve la URL para que el artista conecte sus redes sociales.
- *
- * Ayrshare:  devuelve { url } — abre el portal de Ayrshare
- * Direct:    devuelve { url } — abre el OAuth de Meta
- */
 exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase) => {
-  console.log("artist mode", artist.publish_mode);
   if (artist.publish_mode === 'direct') {
     const url = instagramService.getAuthUrl(artist.id);
     return { url, mode: 'direct' };
   }
 
-  // Default to Upload-Post (Replacing Ayrshare)
   let profileId = artist.ayrshare_profile_key;
-
-  // Si tiene un profileId de Ayrshare (ID alfanumérico largo), forzamos creación en Upload-Post
-  const isAyrshareKey = profileId && (profileId.startsWith('profile-') || profileId.length > 50);
   const shortId = artist.id.toString().split('-')[0];
-  const isOldFormat = profileId && !profileId.includes(shortId) && !isAyrshareKey;
+  const isOldFormat = profileId && !profileId.includes(shortId);
 
-  if (!profileId || artist.publish_mode === 'ayrshare' || isAyrshareKey || isOldFormat) {
-    console.log("🚀 Migrando/Creando perfil en Upload-Post para:", artist.name);
+  if (!profileId || isOldFormat) {
+    console.log('🚀 Creando perfil Upload-Post para:', artist.name);
     profileId = await uploadPostService.createProfile(artist.name, artist.id);
 
     try {
@@ -93,14 +59,12 @@ exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase) => {
         ayrshare_profile_key: profileId,
         publish_mode: 'upload-post'
       }).eq('id', artist.id);
-      console.log("✅ DB actualizada con nuevo profileId:", profileId);
     } catch (e) {
-      console.warn("⚠️ No se pudo actualizar la DB (¿falta la columna publish_mode?):", e.message);
+      console.warn('⚠️ No se pudo actualizar DB:', e.message);
     }
   }
 
   const connectUrl = await uploadPostService.generateConnectUrl(profileId, allowedPlatforms);
-  console.log("🔗 Portal Connection URL:", connectUrl);
   return { url: connectUrl, mode: 'upload-post', profileKey: profileId };
 };
 
@@ -108,17 +72,10 @@ exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase) => {
 // PLATAFORMAS ACTIVAS
 // ============================================================
 
-/**
- * Devuelve las plataformas conectadas del artista (según su publish_mode).
- */
 exports.getActivePlatforms = async (artist) => {
-  if (artist.publish_mode === 'upload-post' || !artist.publish_mode || artist.publish_mode === 'ayrshare') {
-    if (!artist.ayrshare_profile_key) return [];
-    return uploadPostService.getActivePlatforms(artist.ayrshare_profile_key);
-  }
-  // Fallback for legacy Ayrshare if needed (Optional)
-  // return ayrshareService.getActivePlatforms(artist.ayrshare_profile_key);
-  return [];
+  if (artist.publish_mode === 'direct') return [];
+  if (!artist.ayrshare_profile_key) return [];
+  return uploadPostService.getActivePlatforms(artist.ayrshare_profile_key);
 };
 
 // ============================================================
@@ -140,21 +97,18 @@ async function publishDirect(artist, text, platforms, mediaUrls, scheduleAt) {
       } else if (platform === 'facebook') {
         const r = await instagramService.publishToFacebook(artist, text, mediaUrl, isVideo, scheduleAt);
         results.push({ platform: 'facebook', id: r.id });
+      } else if (artist.ayrshare_profile_key) {
+        // TikTok, YouTube, LinkedIn → caen a Upload-Post aunque el modo sea 'direct'
+        const r = await uploadPostService.publishPost(text, [platform], mediaUrls, artist.ayrshare_profile_key, {});
+        results.push({ platform, id: r.id });
       } else {
-        // TikTok, YouTube, etc. → redirigir a Ayrshare si tiene profileKey
-        if (artist.ayrshare_profile_key) {
-          const r = await ayrshareService.publishPost(text, [platform], mediaUrls, artist.ayrshare_profile_key, {});
-          results.push({ platform, id: r.id });
-        } else {
-          results.push({ platform, skipped: true, reason: 'Solo Instagram/Facebook disponible en modo directo' });
-        }
+        results.push({ platform, skipped: true, reason: 'Solo Instagram/Facebook disponible en modo directo sin profileKey' });
       }
     } catch (err) {
       results.push({ platform, error: err.response?.data?.error?.message || err.message });
     }
   }
 
-  // Devolver formato compatible con el resultado de Ayrshare
   const firstId = results.find(r => r.id)?.id;
   return { id: firstId, postIds: results.map(r => r.id).filter(Boolean), details: results };
 }

@@ -1,7 +1,7 @@
 /**
  * INSTAGRAM / FACEBOOK SERVICE — Vidalis.AI
  *
- * Publicación directa vía Meta Graph API sin Ayrshare.
+ * Publicación directa vía Meta Graph API.
  * Cada artista tiene su propio access_token guardado en la tabla artists.
  *
  * Flujo de publicación Instagram:

@@ -788,7 +788,7 @@ exports.getVideoAnalytics = async (videoId) => {
   const metrics = uploadPostService.normalizeMetrics(finalMetricsSource);
   
   console.log(`[Analytics] Info enviada al frontend para video ${videoId}:`, {
-    hasAyrshareId: !!video.ayrshare_post_id,
+    hasPostId: !!video.ayrshare_post_id,
     hasRealTime: !!realTimeMetrics,
     metricsFound: metrics.views > 0
   });
@@ -1077,7 +1077,7 @@ exports.connectSocialAccounts = async (artistId) => {
 
 // --- VERIFICAR PLATAFORMAS CONECTADAS (por ARTISTA) ---
 // refresh=false → lee de DB (carga rápida)
-// refresh=true  → consulta Ayrshare API y actualiza DB
+// refresh=true  → consulta Upload-Post API y actualiza DB
 exports.getSocialStatus = async (artistId, refresh = false) => {
   const { data: artist, error } = await supabase
     .from('artists')
@@ -1132,7 +1132,7 @@ exports.analyzeViralPotential = async (videoUrl) => {
 };
 
 // --- ACTUALIZAR CONFIGURACIÓN DE VIDEO ---
-// Si viene scheduled_at, programa el post en Ayrshare y guarda el post_id
+// Si viene scheduled_at, programa el post en Upload-Post y guarda el post_id
 exports.updateVideoSettings = async (videoId, updateData) => {
   // 1. Obtener datos actuales del video y del artista
   console.log("updateData.data", updateData);

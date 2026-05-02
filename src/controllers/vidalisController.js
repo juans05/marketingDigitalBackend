@@ -1,6 +1,5 @@
 const vidalisService = require('../services/vidalisService');
 const cloudinaryService = require('../services/cloudinaryService');
-const ayrshareService = require('../services/ayrshareService');
 const instagramService = require('../services/instagramService');
 const uploadPostService = require('../services/uploadPostService');
 const { generateInsights } = require('../services/aiService');
@@ -238,9 +237,9 @@ exports.getSocialStatus = async (req, res) => {
 exports.publishToSocial = async (req, res) => {
   try {
     const {
-      text, platforms, mediaUrls, profileKey, isPreview,
+      text, platforms, mediaUrls, profileKey,
       facebookOptions, instagramOptions, tiktokOptions, youtubeOptions,
-      linkedinOptions, twitterOptions, publish_mode
+      linkedinOptions, twitterOptions
     } = req.body;
 
     if (!text || !platforms || platforms.length === 0) {
@@ -248,15 +247,7 @@ exports.publishToSocial = async (req, res) => {
     }
 
     const options = { facebookOptions, instagramOptions, tiktokOptions, youtubeOptions, linkedinOptions, twitterOptions };
-
-    let result;
-    if (publish_mode === 'upload-post') {
-      const uploadPostService = require('../services/uploadPostService');
-      result = await uploadPostService.publishPost(text, platforms, mediaUrls || [], profileKey || null, options);
-    } else {
-      result = await ayrshareService.publishPost(text, platforms, mediaUrls || [], profileKey || null, options, isPreview || false);
-    }
-
+    const result = await uploadPostService.publishPost(text, platforms, mediaUrls || [], profileKey || null, options);
     res.status(200).json(result);
   } catch (error) {
     const status = error.status || error.response?.status || 500;
@@ -406,9 +397,9 @@ exports.instagramCallback = async (req, res) => {
 exports.setPublishMode = async (req, res) => {
   try {
     const { artistId } = req.params;
-    const { publish_mode } = req.body; // 'ayrshare' | 'direct' | 'upload-post'
-    if (!['ayrshare', 'direct', 'upload-post'].includes(publish_mode)) {
-      return res.status(400).json({ error: "publish_mode debe ser 'ayrshare', 'direct' o 'upload-post'" });
+    const { publish_mode } = req.body; // 'direct' | 'upload-post'
+    if (!['direct', 'upload-post'].includes(publish_mode)) {
+      return res.status(400).json({ error: "publish_mode debe ser 'direct' o 'upload-post'" });
     }
     const { error } = await supabase.from('artists').update({ publish_mode }).eq('id', artistId);
     if (error) throw error;
