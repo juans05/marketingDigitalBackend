@@ -341,30 +341,30 @@ async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
   const { base64, mimeType } = await fetchAsBase64(imageUrl);
   const prompt = VISUAL_ANALYSIS_PROMPT(title);
 
-  // 1. Intento principal: Gemini 2.5 Pro (máxima calidad)
+  // 1. Intento principal: Gemini 2.5 Flash (rápido y disponible en free tier)
   try {
-    const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-pro' });
+    const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
     const result = await withTimeout(
       model.generateContent([{ inlineData: { data: base64, mimeType } }, prompt]),
-      60000, 'Gemini 2.5 Pro'
+      45000, 'Gemini 2.5 Flash'
     );
     return result.response.text();
   } catch (error) {
     if (!isGeminiUnavailable(error) && !error.message?.includes('Timeout')) throw error;
-    logDebug(`⚠️ Gemini 2.5 Pro no disponible (${error.message}). Probando gemini-2.5-flash...`);
+    logDebug(`⚠️ Gemini 2.5 Flash no disponible (${error.message}). Probando gemini-2.0-flash...`);
   }
 
-  // 2. Fallback: Gemini 2.5 Flash
+  // 2. Fallback: Gemini 2.0 Flash
   try {
-    const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.0-flash' });
     const fallbackResult = await withTimeout(
       fallbackModel.generateContent([{ inlineData: { data: base64, mimeType } }, prompt]),
-      45000, 'Gemini 2.5 Flash'
+      45000, 'Gemini 2.0 Flash'
     );
     return fallbackResult.response.text();
   } catch (error) {
     if (!isGeminiUnavailable(error) && !error.message?.includes('Timeout')) throw error;
-    logDebug(`⚠️ Gemini 2.5 Flash tampoco disponible (${error.message}). Usando Claude Vision...`);
+    logDebug(`⚠️ Gemini 2.0 Flash tampoco disponible (${error.message}). Usando Claude Vision...`);
   }
 
   // 3. Último recurso: Claude Vision

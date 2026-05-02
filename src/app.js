@@ -17,8 +17,11 @@ const vidalisRoutes = require('./routes/vidalisRoutes');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust Railway/Vercel proxy para que rate-limit identifique IPs reales
+app.set('trust proxy', 1);
+
 // Seguridad Base
-app.use(helmet()); 
+app.use(helmet());
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
   max: 100, // Límite de 100 peticiones por IP por ventana
