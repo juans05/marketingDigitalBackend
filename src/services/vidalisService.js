@@ -131,12 +131,12 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       console.warn(`🔐 Contraseña hasheada automáticamente para el usuario: ${email}`);
     }
 
-    // Normalizar valor — 'individual' (legacy del frontend) cuenta como 'artist'
-    let resolvedType = user.account_type || 'artist';
-    if (resolvedType === 'individual') resolvedType = 'artist';
+    // 'individual' y 'artist' significan lo mismo (cuenta de creador individual)
+    let resolvedType = user.account_type || 'individual';
+    const isArtistType = resolvedType === 'individual' || resolvedType === 'artist';
 
     let artist_id = null;
-    if (resolvedType === 'artist') {
+    if (isArtistType) {
       const { data: artists } = await supabase
         .from('artists')
         .select('id')
@@ -181,10 +181,10 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
   const salt = await bcrypt.genSalt(10);
   const password_hash = await bcrypt.hash(password, salt);
 
-  // Normalizar 'individual' → 'artist' (consistencia)
-  let normalizedType = accountType || 'artist';
-  if (normalizedType === 'individual') normalizedType = 'artist';
-  console.log(`📝 [REGISTER] email=${email} | accountType recibido="${accountType}" → normalizedType="${normalizedType}"`);
+  // 'individual' o 'artist' = cuenta de creador. Solo 'agency' es agencia.
+  const normalizedType = accountType || 'individual';
+  const isArtistType = normalizedType === 'individual' || normalizedType === 'artist';
+  console.log(`📝 [REGISTER] email=${email} | accountType recibido="${accountType}" → normalizedType="${normalizedType}" | isArtistType=${isArtistType}`);
 
   const { data: newAgencies, error: agencyErr } = await supabase
     .from('agencies')
@@ -207,7 +207,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
   const newAgency = newAgencies[0];
   logger.log('success', 'USER_REGISTERED', { email, plan: 'Mini' }, newAgency.id);
 
-  if (normalizedType === 'artist') {
+  if (isArtistType) {
     const { data: newArtists, error: artistErr } = await supabase
       .from('artists')
       .insert([{ agency_id: newAgency.id, name }])
@@ -219,7 +219,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       email,
       name,
       plan: newAgency.plan_type,
-      account_type: 'artist',
+      account_type: normalizedType, // mantiene 'individual' si así llegó
       artist_id: newArtists[0].id,
     };
   }
