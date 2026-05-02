@@ -306,8 +306,10 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
 
       // --- TikTok ---
       if (platforms.includes('tiktok')) {
-        // privacy_level: PUBLIC | PRIVATE | FRIENDS — default PUBLIC
-        form.append('privacy_level', options.tiktokPrivacy || 'PUBLIC');
+        // privacy_level (TikTok API): SELF_ONLY | MUTUAL_FOLLOW_FRIENDS | FOLLOWER_OF_CREATOR | PUBLIC_TO_EVERYONE
+        // Default SELF_ONLY: las cuentas no auditadas SÓLO pueden subir como privado.
+        // Subirlo público desde una cuenta nueva resulta en upload silencioso sin publicación visible.
+        form.append('privacy_level', options.tiktokPrivacy || 'SELF_ONLY');
         // post_mode: FEED | STORY — default FEED
         form.append('post_mode', postType === 'STORIES' ? 'STORY' : 'FEED');
         form.append('tiktok_title', (text || '').slice(0, 150)); // TikTok limita el título
@@ -376,7 +378,23 @@ exports.publishPost = async (text, platforms, mediaUrls = [], userId, options = 
       }
     });
 
-    console.log('✅ Upload-Post Response:', response.data);
+    console.log('✅ Upload-Post Response:', JSON.stringify(response.data, null, 2));
+
+    // Detección de errores por plataforma — Upload-Post puede aceptar el upload
+    // pero fallar internamente en TikTok/Instagram/etc. después.
+    const data = response.data || {};
+    const results = data.results || data.platforms || data.platform_results || {};
+    Object.entries(results).forEach(([platform, info]) => {
+      const ok = info?.success === true || info?.status === 'published' || info?.status === 'success';
+      if (!ok) {
+        console.warn(`⚠️ [${platform.toUpperCase()}] Posible error: ${JSON.stringify(info)}`);
+      } else {
+        console.log(`✅ [${platform.toUpperCase()}] Publicado correctamente`);
+      }
+    });
+    if (data.errors) {
+      console.error('❌ Errores reportados por Upload-Post:', JSON.stringify(data.errors, null, 2));
+    }
 
     return {
       id: response.data.request_id || response.data.id,
@@ -480,6 +498,34 @@ exports.getProfile = async (username) => {
 // ============================================================
 // 5. ANALÍTICAS POR POST
 // ============================================================
+
+/**
+ * Verifica el estado de un upload (asíncrono) en Upload-Post.
+ * Devuelve el estado por plataforma — útil para saber si TikTok publicó o falló.
+ * @param {string} requestId
+ * @returns {{ status, platforms: { tiktok?: {...}, instagram?: {...} } }}
+ */
+exports.getPostStatus = async (requestId) => {
+  try {
+    const response = await axios.get(`${UPLOAD_POST_BASE}/uploadposts/posts/${requestId}`, {
+      headers: buildHeaders()
+    });
+    return response.data;
+  } catch (err) {
+    // Si el endpoint /posts/:id no existe, intentar con post-analytics
+    if (err.response?.status === 404) {
+      try {
+        const altResponse = await axios.get(`${UPLOAD_POST_BASE}/uploadposts/post-analytics/${requestId}`, {
+          headers: buildHeaders()
+        });
+        return altResponse.data;
+      } catch (altErr) {
+        return { status: 'unknown', error: altErr.response?.data?.message || altErr.message };
+      }
+    }
+    return { status: 'error', error: err.response?.data?.message || err.message };
+  }
+};
 
 /**
  * Obtener métricas reales de un post publicado (likes, comments, views, shares).

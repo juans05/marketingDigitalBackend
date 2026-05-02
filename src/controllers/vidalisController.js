@@ -284,6 +284,47 @@ exports.getVideoById = async (req, res) => {
   }
 };
 
+exports.getPublishStatus = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
+    );
+    const { data: video, error } = await supabase
+      .from('videos')
+      .select('id, status, platforms, ayrshare_post_id, published_at, error_log')
+      .eq('id', videoId)
+      .single();
+    if (error || !video) return res.status(404).json({ error: 'Video no encontrado' });
+
+    if (!video.ayrshare_post_id) {
+      return res.status(200).json({
+        video_id: videoId,
+        status: video.status,
+        message: 'Aún no se ha publicado este video',
+        platforms: {}
+      });
+    }
+
+    const uploadPostService = require('../services/uploadPostService');
+    const remote = await uploadPostService.getPostStatus(video.ayrshare_post_id);
+
+    res.status(200).json({
+      video_id: videoId,
+      request_id: video.ayrshare_post_id,
+      status: video.status,
+      published_at: video.published_at,
+      platforms_requested: video.platforms || [],
+      remote_status: remote,
+      error_log: video.error_log
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.updateVideo = async (req, res) => {
   try {
     const { videoId } = req.params;
@@ -380,8 +421,8 @@ exports.setPublishMode = async (req, res) => {
 exports.publishNow = async (req, res) => {
   try {
     const { videoId } = req.params;
-    const { platforms, postType } = req.body || {};
-    const result = await vidalisService.publishVideoNow(videoId, { platforms, postType });
+    const { platforms, postType, tiktokPrivacy } = req.body || {};
+    const result = await vidalisService.publishVideoNow(videoId, { platforms, postType, tiktokPrivacy });
     res.status(200).json(result);
   } catch (error) {
     console.error('❌ Error en publishNow:', error.message);

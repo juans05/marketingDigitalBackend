@@ -1338,6 +1338,11 @@ exports.publishVideoNow = async (videoId, frontendOptions = {}) => {
   // Agregar postType a las opciones para que uploadPostService lo use
   options.postType = postType === 'story' ? 'STORIES' : 'REELS';
 
+  // Override de privacy si llega del frontend (ej. cuentas TikTok nuevas que requieren PRIVATE/SELF_ONLY)
+  if (frontendOptions.tiktokPrivacy) {
+    options.tiktokPrivacy = frontendOptions.tiktokPrivacy;
+  }
+
   const result = await socialPublisher.publishPost(
     artist, postText, platforms, [cloudinaryUrl], options
   );
