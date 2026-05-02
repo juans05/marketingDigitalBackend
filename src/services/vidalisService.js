@@ -184,6 +184,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
   // Normalizar 'individual' → 'artist' (consistencia)
   let normalizedType = accountType || 'artist';
   if (normalizedType === 'individual') normalizedType = 'artist';
+  console.log(`📝 [REGISTER] email=${email} | accountType recibido="${accountType}" → normalizedType="${normalizedType}"`);
 
   const { data: newAgencies, error: agencyErr } = await supabase
     .from('agencies')
