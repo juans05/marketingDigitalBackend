@@ -35,6 +35,7 @@ const ALLOWED_ORIGINS = [
   'https://vidalis-frontend-production.up.railway.app',
   'http://localhost:3000',
   'http://localhost:8080',
+  'http://localhost:5174',
 ];
 
 app.use((req, res, next) => {
