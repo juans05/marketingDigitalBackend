@@ -16,6 +16,7 @@ const supabase = createClient(
 const fs = require('fs');
 const path = require('path');
 const debugLogPath = path.join(process.cwd(), 'debug_ai.log');
+const logger = require('./loggerService');
 
 function logDebug(message) {
   const timestamp = new Date().toISOString();

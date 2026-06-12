@@ -2,13 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const logger = require('./services/loggerService');
 
 // Validación de variables de entorno críticas
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'CLOUDINARY_URL'];
 const missing = REQUIRED_ENV.filter(key => !process.env[key]);
 if (missing.length > 0) {
-  console.error(`\x1b[31m%s\x1b[0m`, `❌ ERROR CRÍTICO: Faltan variables de entorno: ${missing.join(', ')}`);
-  console.error(`\x1b[33m%s\x1b[0m`, `   Asegúrate de configurar el archivo .env correctamente.`);
+  logger.error('CRITICAL: Missing environment variables', { missing });
+  logger.warn('Asegúrate de configurar el archivo .env correctamente');
   if (process.env.NODE_ENV === 'production') process.exit(1);
 }
 const { jsonrepair } = require('jsonrepair');
@@ -19,6 +20,23 @@ const PORT = process.env.PORT || 3001;
 
 // Trust Railway/Vercel proxy para que rate-limit identifique IPs reales
 app.set('trust proxy', 1);
+
+// Middleware de logging para API calls
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  const originalSend = res.send;
+
+  res.send = function(data) {
+    const duration = Date.now() - startTime;
+    logger.apiCall(req.method, req.path, res.statusCode, duration, {
+      ip: req.ip,
+      userId: req.user?.id || 'anonymous',
+    });
+    return originalSend.call(this, data);
+  };
+
+  next();
+});
 
 // Seguridad Base
 app.use(helmet());
@@ -72,7 +90,7 @@ app.use((req, res, next) => {
     } catch {
       try {
         req.body = JSON.parse(jsonrepair(raw));
-        console.warn('⚠️  JSON reparado automáticamente en body parser');
+        logger.debug('JSON repaired automatically', { bodySize: raw.length });
       } catch {
         return res.status(400).json({ error: 'Invalid JSON body' });
       }
@@ -83,7 +101,7 @@ app.use((req, res, next) => {
 });
 
 // Rutas de la API
-console.log("🛠️ Registrando rutas en /api/vidalis...");
+logger.info('Registering routes', { path: '/api/vidalis' });
 app.use('/api/vidalis', vidalisRoutes);
 
 app.get('/', (req, res) => {
@@ -91,5 +109,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  logger.info('Server started', { port: PORT, env: process.env.NODE_ENV || 'development' });
 });

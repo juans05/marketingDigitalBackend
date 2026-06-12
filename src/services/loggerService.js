@@ -1,45 +1,97 @@
-require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
+const winston = require('winston');
+const path = require('path');
+const fs = require('fs');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
-);
+// Crear directorio de logs si no existe
+const logsDir = path.join(process.cwd(), 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
 
-/**
- * Registra un evento en la base de datos de logs.
- * @param {string} level - 'info' | 'success' | 'warn' | 'error'
- * @param {string} event_type - Categoría del evento
- * @param {object} details - Información relevante (mensajes de error, IDs, etc)
- * @param {string} agency_id - (Opcional) ID de la agencia relacionada
- * @param {string} source - (Opcional) Origen del log
- */
-exports.log = async (level, event_type, details = {}, agency_id = null, source = 'backend') => {
-  try {
-    const cleanDetails = { ...details };
-    delete cleanDetails.password;
-    delete cleanDetails.password_hash;
-    delete cleanDetails.token;
-    delete cleanDetails.secret;
+// Definir niveles personalizados
+const customLevels = {
+  levels: {
+    fatal: 0,
+    error: 1,
+    warn: 2,
+    info: 3,
+    debug: 4,
+    trace: 5,
+  },
+  colors: {
+    fatal: 'red',
+    error: 'red',
+    warn: 'yellow',
+    info: 'green',
+    debug: 'blue',
+    trace: 'gray',
+  },
+};
 
-    const { error } = await supabase
-      .from('system_logs')
-      .insert([{
-        level,
-        event_type,
-        details: cleanDetails,
-        agency_id,
-        source
-      }]);
+// Logger principal
+const logger = winston.createLogger({
+  levels: customLevels.levels,
+  defaultMeta: { service: 'vidalis-backend', env: process.env.NODE_ENV || 'development' },
+  transports: [
+    // Error logs
+    new winston.transports.File({
+      filename: path.join(logsDir, 'error.log'),
+      level: 'error',
+      maxsize: 5242880,
+      maxFiles: 5,
+      format: winston.format.combine(
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.errors({ stack: true }),
+        winston.format.json()
+      ),
+    }),
 
-    const icon = level === 'error' ? '🔴' : level === 'warn' ? '🟡' : '🟢';
-    if (error) {
-       console.error(`❌ [Log Failed] ${event_type}:`, error.message);
-    } else {
-       console.log(`${icon} [Log Saved] ${event_type}`);
-    }
+    // Combined logs
+    new winston.transports.File({
+      filename: path.join(logsDir, 'combined.log'),
+      maxsize: 5242880,
+      maxFiles: 10,
+      format: winston.format.combine(
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.json()
+      ),
+    }),
 
-  } catch (err) {
-    console.error('⚠️ [loggerService Exception]:', err.message);
-  }
+    // Console en desarrollo
+    ...(process.env.NODE_ENV !== 'production'
+      ? [
+          new winston.transports.Console({
+            format: winston.format.combine(
+              winston.format.colorize({ colors: customLevels.colors }),
+              winston.format.printf(({ timestamp, level, message, ...meta }) => {
+                const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+                return `${timestamp} [${level}]: ${message}${metaStr}`;
+              })
+            ),
+          }),
+        ]
+      : []),
+  ],
+  exceptionHandlers: [
+    new winston.transports.File({ filename: path.join(logsDir, 'exceptions.log') }),
+  ],
+  rejectionHandlers: [
+    new winston.transports.File({ filename: path.join(logsDir, 'rejections.log') }),
+  ],
+});
+
+module.exports = {
+  error: (msg, data = {}) => logger.error(msg, data),
+  warn: (msg, data = {}) => logger.warn(msg, data),
+  info: (msg, data = {}) => logger.info(msg, data),
+  debug: (msg, data = {}) => logger.debug(msg, data),
+  perf: (action, ms, success = true, data = {}) => {
+    logger.info(`[PERF] ${action}`, { action, duration_ms: ms, success, ...data });
+  },
+  apiCall: (method, path, status, ms, data = {}) => {
+    logger.info(`[API] ${method} ${path}`, { method, path, status, duration_ms: ms, ...data });
+  },
+  aiCost: (service, model, tokens, cost, data = {}) => {
+    logger.info('[AI_COST]', { service, model, tokens, cost_usd: cost, ...data });
+  },
 };
