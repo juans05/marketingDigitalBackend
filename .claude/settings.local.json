@@ -6,7 +6,9 @@
       "Bash(ls d:/Github/marketingDigitalBackend/supabase*)",
       "Bash(git add:*)",
       "Bash(git commit -m 'fix: strip unknown '\\\\''genre'\\\\'' field before inserting artist to avoid Supabase schema cache error:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git --no-pager show abe6895^:src/services/loggerService.js)",
+      "Bash(node *)"
     ]
   },
   "enabledPlugins": {

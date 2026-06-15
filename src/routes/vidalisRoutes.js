@@ -81,4 +81,22 @@ router.post('/videos/:videoId/ab-variants', authenticateToken, authorizeVideo, v
 router.get('/videos/:videoId/ab-result', authenticateToken, authorizeVideo, vidalisController.getABResult);
 router.post('/videos/:videoId/ad-copy', authenticateToken, authorizeVideo, vidalisController.generateAdCopy);
 
+// ── Zernio: Comentarios & Inbox ──────────────────────────────────────────────
+router.get('/comments/:artistId', authenticateToken, authorizeArtist, vidalisController.getArtistComments);
+router.get('/comments/:postId/replies', authenticateToken, vidalisController.getPostComments);
+router.post('/comments/:postId/reply', authenticateToken, vidalisController.replyToComment);
+router.post('/comments/:postId/:commentId/hide', authenticateToken, vidalisController.hideCommentToggle);
+router.post('/comments/:postId/:commentId/like', authenticateToken, vidalisController.likeCommentToggle);
+router.delete('/comments/:postId', authenticateToken, vidalisController.deleteComment);
+
+// ── Zernio: Automatizaciones (Comment-to-DM) ─────────────────────────────────
+router.get('/automations/:artistId', authenticateToken, authorizeArtist, vidalisController.getAutomations);
+router.post('/automations/:artistId', authenticateToken, authorizeArtist, vidalisController.createAutomation);
+router.get('/automations/details/:automationId', authenticateToken, vidalisController.getAutomationDetails);
+router.patch('/automations/:automationId', authenticateToken, vidalisController.updateAutomation);
+router.delete('/automations/:automationId', authenticateToken, vidalisController.deleteAutomation);
+
+// ── Zernio: Webhook Receptor (raw body — protegido con HMAC en controller) ──
+router.post('/webhooks/zernio', vidalisController.zernioWebhook);
+
 module.exports = router;

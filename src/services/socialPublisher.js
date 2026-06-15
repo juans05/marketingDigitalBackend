@@ -13,6 +13,7 @@
 
 const uploadPostService = require('./uploadPostService');
 const instagramService = require('./instagramService');
+const zernioService = require('./zernioService');
 
 // ============================================================
 // PUBLICAR AHORA
@@ -21,6 +22,12 @@ const instagramService = require('./instagramService');
 exports.publishPost = async (artist, text, platforms, mediaUrls = [], options = {}) => {
   if (artist.publish_mode === 'direct') {
     return publishDirect(artist, text, platforms, mediaUrls, null);
+  }
+  if (artist.publish_mode === 'zernio') {
+    return zernioService.publishPost(
+      text, platforms, mediaUrls, artist.ayrshare_profile_key,
+      { ...options, accounts: artist.social_keys || {} }
+    );
   }
   return uploadPostService.publishPost(text, platforms, mediaUrls, artist.ayrshare_profile_key, options);
 };
@@ -33,6 +40,12 @@ exports.schedulePost = async (artist, text, platforms, mediaUrls = [], scheduleD
   if (artist.publish_mode === 'direct') {
     return publishDirect(artist, text, platforms, mediaUrls, scheduleDate);
   }
+  if (artist.publish_mode === 'zernio') {
+    return zernioService.schedulePost(
+      text, platforms, mediaUrls, scheduleDate, artist.ayrshare_profile_key,
+      { ...options, accounts: artist.social_keys || {} }
+    );
+  }
   return uploadPostService.schedulePost(text, platforms, mediaUrls, scheduleDate, artist.ayrshare_profile_key, options);
 };
 
@@ -44,6 +57,23 @@ exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase) => {
   if (artist.publish_mode === 'direct') {
     const url = instagramService.getAuthUrl(artist.id);
     return { url, mode: 'direct' };
+  }
+
+  if (artist.publish_mode === 'zernio') {
+    let profileId = artist.ayrshare_profile_key;
+    if (!zernioService.isZernioProfile(profileId)) {
+      profileId = await zernioService.createProfile(artist.name, artist.id);
+      try {
+        await supabase.from('artists')
+          .update({ ayrshare_profile_key: profileId, publish_mode: 'zernio' })
+          .eq('id', artist.id);
+      } catch (e) {
+        console.warn('⚠️ No se pudo actualizar DB (Zernio profile):', e.message);
+      }
+    }
+    const platform = allowedPlatforms[0] || 'instagram';
+    const res = await zernioService.generateConnectUrl(profileId, platform);
+    return { url: res.authUrl, mode: 'zernio', profileKey: profileId };
   }
 
   let profileId = artist.ayrshare_profile_key;
@@ -74,6 +104,10 @@ exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase) => {
 
 exports.getActivePlatforms = async (artist) => {
   if (artist.publish_mode === 'direct') return [];
+  if (artist.publish_mode === 'zernio') {
+    if (!zernioService.isZernioProfile(artist.ayrshare_profile_key)) return [];
+    return zernioService.getActivePlatforms(artist.ayrshare_profile_key);
+  }
   if (!artist.ayrshare_profile_key) return [];
   return uploadPostService.getActivePlatforms(artist.ayrshare_profile_key);
 };

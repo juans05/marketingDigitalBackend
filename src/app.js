@@ -85,6 +85,7 @@ app.use((req, res, next) => {
   req.on('data', chunk => { raw += chunk.toString('utf8'); });
   req.on('end', () => {
     if (!raw) { req.body = {}; return next(); }
+    req.rawBody = raw; // preservar para verificación HMAC en webhooks
     try {
       req.body = JSON.parse(raw);
     } catch {

@@ -1,7 +1,9 @@
+const crypto = require('crypto');
 const vidalisService = require('../services/vidalisService');
 const cloudinaryService = require('../services/cloudinaryService');
 const instagramService = require('../services/instagramService');
 const uploadPostService = require('../services/uploadPostService');
+const zernioService = require('../services/zernioService');
 const { generateInsights } = require('../services/aiService');
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
@@ -397,9 +399,9 @@ exports.instagramCallback = async (req, res) => {
 exports.setPublishMode = async (req, res) => {
   try {
     const { artistId } = req.params;
-    const { publish_mode } = req.body; // 'direct' | 'upload-post'
-    if (!['direct', 'upload-post'].includes(publish_mode)) {
-      return res.status(400).json({ error: "publish_mode debe ser 'direct' o 'upload-post'" });
+    const { publish_mode } = req.body; // 'direct' | 'upload-post' | 'zernio'
+    if (!['direct', 'upload-post', 'zernio'].includes(publish_mode)) {
+      return res.status(400).json({ error: "publish_mode debe ser 'direct', 'upload-post' o 'zernio'" });
     }
     const { error } = await supabase.from('artists').update({ publish_mode }).eq('id', artistId);
     if (error) throw error;
@@ -853,6 +855,235 @@ exports.generateAdCopy = async (req, res) => {
   } catch (err) {
     console.error('❌ generateAdCopy:', err.message);
     res.status(500).json({ error: err.message });
+  }
+};
+
+// ================================================================
+// ZERNIO: Comentarios & Inbox
+// ================================================================
+
+exports.getArtistComments = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const { data: artist } = await supabase
+      .from('artists')
+      .select('ayrshare_profile_key')
+      .eq('id', artistId)
+      .single();
+    if (!artist?.ayrshare_profile_key) {
+      return res.status(400).json({ error: 'El artista no tiene perfil de Zernio conectado' });
+    }
+    const { limit, cursor, platform } = req.query;
+    const result = await zernioService.getProfileComments(
+      artist.ayrshare_profile_key,
+      parseInt(limit) || 20,
+      cursor || null,
+      platform || null
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getPostComments = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { accountId, limit, cursor } = req.query;
+    if (!accountId) return res.status(400).json({ error: 'Se requiere accountId' });
+    const result = await zernioService.getPostComments(
+      postId, accountId, parseInt(limit) || 50, cursor || null
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.replyToComment = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { accountId, message, commentId, isPrivate, buttons, quickReplies } = req.body;
+    if (!accountId || !message) {
+      return res.status(400).json({ error: 'Se requiere accountId y message' });
+    }
+    let result;
+    if (isPrivate) {
+      result = await zernioService.sendPrivateReply(postId, commentId, accountId, message, buttons, quickReplies);
+    } else {
+      result = await zernioService.postCommentReply(postId, accountId, message, commentId);
+    }
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.hideCommentToggle = async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const { accountId, hide } = req.body;
+    if (!accountId) return res.status(400).json({ error: 'Se requiere accountId' });
+    const result = await zernioService.hideComment(postId, commentId, accountId, hide !== false);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.likeCommentToggle = async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const { accountId, like, cid } = req.body;
+    if (!accountId) return res.status(400).json({ error: 'Se requiere accountId' });
+    const result = await zernioService.likeComment(postId, commentId, accountId, like !== false, cid || null);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.deleteComment = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { accountId, commentId } = req.query;
+    if (!accountId || !commentId) {
+      return res.status(400).json({ error: 'Se requiere accountId y commentId' });
+    }
+    const result = await zernioService.deleteComment(postId, commentId, accountId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ================================================================
+// ZERNIO: Automatizaciones Comment-to-DM
+// ================================================================
+
+exports.getAutomations = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const { data: artist } = await supabase
+      .from('artists')
+      .select('ayrshare_profile_key')
+      .eq('id', artistId)
+      .single();
+    if (!artist?.ayrshare_profile_key) {
+      return res.status(400).json({ error: 'El artista no tiene perfil de Zernio conectado' });
+    }
+    const result = await zernioService.listCommentAutomations(artist.ayrshare_profile_key);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.createAutomation = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const { accountId, ...autoData } = req.body;
+    if (!accountId) return res.status(400).json({ error: 'Se requiere accountId' });
+    const { data: artist } = await supabase
+      .from('artists')
+      .select('ayrshare_profile_key')
+      .eq('id', artistId)
+      .single();
+    if (!artist?.ayrshare_profile_key) {
+      return res.status(400).json({ error: 'El artista no tiene perfil de Zernio conectado' });
+    }
+    const result = await zernioService.createCommentAutomation(artist.ayrshare_profile_key, accountId, autoData);
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getAutomationDetails = async (req, res) => {
+  try {
+    const { automationId } = req.params;
+    const result = await zernioService.getCommentAutomationDetails(automationId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.updateAutomation = async (req, res) => {
+  try {
+    const { automationId } = req.params;
+    const result = await zernioService.updateCommentAutomation(automationId, req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.deleteAutomation = async (req, res) => {
+  try {
+    const { automationId } = req.params;
+    const result = await zernioService.deleteCommentAutomation(automationId);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ================================================================
+// ZERNIO: Webhook Receptor
+// ================================================================
+
+exports.zernioWebhook = async (req, res) => {
+  try {
+    const signature = req.headers['x-zernio-signature'];
+    const secret = process.env.ZERNIO_WEBHOOK_SECRET;
+
+    if (secret && signature) {
+      const rawBody = req.rawBody || JSON.stringify(req.body);
+      const expectedSig = crypto
+        .createHmac('sha256', secret)
+        .update(rawBody)
+        .digest('hex');
+      const receivedSig = signature.startsWith('sha256=') ? signature.slice(7) : signature;
+
+      if (!crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(receivedSig))) {
+        return res.status(401).json({ error: 'Firma de webhook inválida' });
+      }
+    }
+
+    const event = req.body;
+    const eventType = event.event || event.type;
+
+    if (eventType === 'post.published') {
+      const postId = event.post?._id || event._id || event.id;
+      const platformPostUrl = event.platformPostUrl || event.post?.url || null;
+
+      if (postId) {
+        await supabase
+          .from('videos')
+          .update({
+            status: 'published',
+            published_at: new Date().toISOString(),
+            ...(platformPostUrl ? { platform_post_url: platformPostUrl } : {}),
+          })
+          .eq('ayrshare_post_id', postId);
+      }
+    } else if (eventType === 'post.failed') {
+      const postId = event.post?._id || event._id || event.id;
+      const errorMsg = event.error || event.message || 'Error desconocido en publicación Zernio';
+
+      if (postId) {
+        await supabase
+          .from('videos')
+          .update({ status: 'failed', error_log: errorMsg })
+          .eq('ayrshare_post_id', postId);
+      }
+    }
+
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('❌ zernioWebhook:', error.message);
+    res.status(200).json({ received: true });
   }
 };
 

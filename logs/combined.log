@@ -1,0 +1,9 @@
+{"a":1,"env":"production","level":"info","message":"EVENT_INFO","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
+{"a":1,"env":"production","level":"warn","message":"EVENT_WARN","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
+{"e":"x","env":"production","level":"error","message":"EVENT_ERROR","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
+{"a":1,"env":"production","level":"info","message":"EVENT_SUCCESS","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
+{"agency_id":"agency-123","email":"a@b.c","env":"production","level":"info","message":"USER_LOGIN","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
+{"env":"production","error":"x","level":"error","message":"PUBLISH_API_LIMIT","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
+{"env":"development","error":"rate","level":"error","message":"PUBLISH_API_LIMIT","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:25:36","userId":7}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-13 18:20:13"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-13 18:20:13"}

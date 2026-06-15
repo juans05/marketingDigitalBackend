@@ -1103,12 +1103,25 @@ exports.getSocialStatus = async (artistId, refresh = false) => {
   const socialPublisher = require('./socialPublisher');
   const { data: artistFull } = await supabase
     .from('artists')
-    .select('id, publish_mode, ayrshare_profile_key, instagram_user_id, instagram_access_token, facebook_page_id, facebook_access_token')
+    .select('id, publish_mode, ayrshare_profile_key, social_keys, instagram_user_id, instagram_access_token, facebook_page_id, facebook_access_token')
     .eq('id', artistId)
     .single();
   const platforms = await socialPublisher.getActivePlatforms(artistFull || artist);
 
-  const socialKeys = {};
+  let socialKeys = {};
+  if (artistFull?.publish_mode === 'zernio') {
+    // Zernio: guardar accountId real en lugar de 'linked'
+    platforms.forEach(p => {
+      socialKeys[p.platform] = p.accountId;
+    });
+    const platformNames = platforms.map(p => p.platform);
+    await supabase
+      .from('artists')
+      .update({ active_platforms: platformNames, social_keys: socialKeys })
+      .eq('id', artistId);
+    return { platforms: platformNames, accounts: platforms };
+  }
+
   platforms.forEach(p => { socialKeys[p] = 'linked'; });
 
   await supabase

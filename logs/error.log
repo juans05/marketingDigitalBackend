@@ -1,0 +1,3 @@
+{"e":"x","env":"production","level":"error","message":"EVENT_ERROR","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
+{"env":"production","error":"x","level":"error","message":"PUBLISH_API_LIMIT","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
+{"env":"development","error":"rate","level":"error","message":"PUBLISH_API_LIMIT","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:25:36","userId":7}
