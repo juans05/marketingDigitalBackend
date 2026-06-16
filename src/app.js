@@ -21,33 +21,10 @@ const PORT = process.env.PORT || 3001;
 // Trust Railway/Vercel proxy para que rate-limit identifique IPs reales
 app.set('trust proxy', 1);
 
-// Middleware de logging para API calls
-app.use((req, res, next) => {
-  const startTime = Date.now();
-  const originalSend = res.send;
-
-  res.send = function(data) {
-    const duration = Date.now() - startTime;
-    logger.apiCall(req.method, req.path, res.statusCode, duration, {
-      ip: req.ip,
-      userId: req.user?.id || 'anonymous',
-    });
-    return originalSend.call(this, data);
-  };
-
-  next();
-});
-
-// Seguridad Base
-app.use(helmet());
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // Límite de 100 peticiones por IP por ventana
-  message: { error: 'Demasiadas peticiones desde esta IP, por favor intenta más tarde.' }
-});
-app.use('/api/', limiter);
-
 // CORS - Configuración fija de URLs y Métodos
+// Debe ir antes del rate limiter: si el límite corta la respuesta primero,
+// esa respuesta (429) sale sin cabeceras CORS y el navegador lo reporta
+// como error de CORS en vez de "demasiadas peticiones".
 const ALLOWED_ORIGINS = [
   'https://vidalis.up.railway.app',
   'https://vidalis-frontend-production.up.railway.app',
@@ -78,6 +55,32 @@ app.use((req, res, next) => {
 
   next();
 });
+
+// Middleware de logging para API calls
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  const originalSend = res.send;
+
+  res.send = function(data) {
+    const duration = Date.now() - startTime;
+    logger.apiCall(req.method, req.path, res.statusCode, duration, {
+      ip: req.ip,
+      userId: req.user?.id || 'anonymous',
+    });
+    return originalSend.call(this, data);
+  };
+
+  next();
+});
+
+// Seguridad Base
+app.use(helmet());
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // Límite de 100 peticiones por IP por ventana
+  message: { error: 'Demasiadas peticiones desde esta IP, por favor intenta más tarde.' }
+});
+app.use('/api/', limiter);
 
 // Body parser con auto-reparación para JSON malformado (ej: n8n con newlines o comillas sin escapar)
 app.use((req, res, next) => {

@@ -75,7 +75,7 @@ async function createProfile(name, artistId) {
     logger.error('ZERNIO_createProfile', {
       artistId,
       status: error.response?.status,
-      message: error.response?.data || error.message,
+      responseData: error.response?.data || error.message,
     });
     throw new Error(`Error creando perfil Zernio: ${error.response?.data?.message || error.message}`);
   }
@@ -92,7 +92,7 @@ async function generateConnectUrl(profileId, platform) {
       profileId,
       platform,
       status: error.response?.status,
-      message: error.response?.data || error.message,
+      responseData: error.response?.data || error.message,
     });
     throw new Error(`Error generando URL de conexión Zernio: ${error.response?.data?.message || error.message}`);
   }
@@ -118,7 +118,7 @@ async function getActivePlatforms(profileId) {
     logger.error('ZERNIO_getActivePlatforms', {
       profileId,
       status: error.response?.status,
-      message: error.response?.data || error.message,
+      responseData: error.response?.data || error.message,
     });
     throw new Error(`Error obteniendo plataformas activas: ${error.response?.data?.message || error.message}`);
   }
@@ -180,7 +180,7 @@ async function publishPost(text, platforms, mediaUrls, profileId, options = {}) 
       profileId,
       platforms,
       status: error.response?.status,
-      message: error.response?.data || error.message,
+      responseData: error.response?.data || error.message,
     });
     throw new Error(`Error publicando post en Zernio: ${error.response?.data?.message || error.message}`);
   }
@@ -229,7 +229,7 @@ async function schedulePost(text, platforms, mediaUrls, scheduleDate, profileId,
       platforms,
       scheduleDate,
       status: error.response?.status,
-      message: error.response?.data || error.message,
+      responseData: error.response?.data || error.message,
     });
     throw new Error(`Error programando post en Zernio: ${error.response?.data?.message || error.message}`);
   }
