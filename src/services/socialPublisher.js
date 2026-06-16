@@ -53,7 +53,7 @@ exports.schedulePost = async (artist, text, platforms, mediaUrls = [], scheduleD
 // CONECTAR REDES SOCIALES
 // ============================================================
 
-exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase) => {
+exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase, requestedPlatform = null) => {
   if (artist.publish_mode === 'direct') {
     const url = instagramService.getAuthUrl(artist.id);
     return { url, mode: 'direct' };
@@ -71,9 +71,17 @@ exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase) => {
         console.warn('⚠️ No se pudo actualizar DB (Zernio profile):', e.message);
       }
     }
-    const platform = allowedPlatforms[0] || 'instagram';
+
+    // Zernio no tiene un portal multi-red como Upload-Post: cada plataforma
+    // requiere su propia URL de conexión. Si no se especifica cuál, devolvemos
+    // la lista de plataformas permitidas para que el frontend deje elegir.
+    if (!requestedPlatform) {
+      return { mode: 'zernio', profileKey: profileId, needsPlatformSelection: true, allowedPlatforms };
+    }
+
+    const platform = allowedPlatforms.includes(requestedPlatform) ? requestedPlatform : allowedPlatforms[0];
     const res = await zernioService.generateConnectUrl(profileId, platform);
-    return { url: res.authUrl, mode: 'zernio', profileKey: profileId };
+    return { url: res.authUrl, mode: 'zernio', profileKey: profileId, platform };
   }
 
   let profileId = artist.ayrshare_profile_key;

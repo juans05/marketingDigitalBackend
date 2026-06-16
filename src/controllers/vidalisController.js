@@ -208,7 +208,8 @@ exports.getViralScore = async (req, res) => {
 exports.connectSocial = async (req, res) => {
   try {
     const { artistId } = req.params;
-    const result = await vidalisService.connectSocialAccounts(artistId);
+    const { platform } = req.query;
+    const result = await vidalisService.connectSocialAccounts(artistId, platform || null);
     res.status(200).json(result);
   } catch (error) {
     if (error.profileLimitReached) {

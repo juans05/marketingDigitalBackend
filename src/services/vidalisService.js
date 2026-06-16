@@ -1068,7 +1068,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
 };
 
 // --- CONECTAR REDES SOCIALES (por ARTISTA) ---
-exports.connectSocialAccounts = async (artistId) => {
+exports.connectSocialAccounts = async (artistId, requestedPlatform = null) => {
   const socialPublisher = require('./socialPublisher');
 
   // Obtener artista y el plan de su agencia vinculada
@@ -1091,7 +1091,7 @@ exports.connectSocialAccounts = async (artistId) => {
   const planType = artist.agencies?.plan_type || 'Mini';
   const allowedPlatforms = PLAN_CONFIG[planType]?.platforms || ['instagram', 'tiktok'];
 
-  return socialPublisher.getConnectUrl(artist, allowedPlatforms, supabase);
+  return socialPublisher.getConnectUrl(artist, allowedPlatforms, supabase, requestedPlatform);
 };
 
 // --- VERIFICAR PLATAFORMAS CONECTADAS (por ARTISTA) ---
