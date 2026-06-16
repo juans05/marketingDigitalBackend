@@ -1,3 +1,5 @@
 {"e":"x","env":"production","level":"error","message":"EVENT_ERROR","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
 {"env":"production","error":"x","level":"error","message":"PUBLISH_API_LIMIT","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:22:28"}
 {"env":"development","error":"rate","level":"error","message":"PUBLISH_API_LIMIT","service":"vidalis-backend","source":"backend","timestamp":"2026-06-13 17:25:36","userId":7}
+{"artistId":"74350d72-4cfb-4de2-94cf-a0cfc5ad521f","env":"development","level":"error","message":"ZERNIO_createProfile [object Object]","service":"vidalis-backend","status":401,"timestamp":"2026-06-15 21:10:49"}
+{"artistId":"74350d72-4cfb-4de2-94cf-a0cfc5ad521f","env":"development","level":"error","message":"ZERNIO_createProfile [object Object]","service":"vidalis-backend","status":401,"timestamp":"2026-06-15 21:11:00"}

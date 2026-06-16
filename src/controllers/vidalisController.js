@@ -1078,6 +1078,24 @@ exports.zernioWebhook = async (req, res) => {
           .update({ status: 'failed', error_log: errorMsg })
           .eq('ayrshare_post_id', postId);
       }
+    } else if (eventType === 'post.scheduled') {
+      const postId = event.post?._id || event._id || event.id;
+
+      if (postId) {
+        await supabase
+          .from('videos')
+          .update({ status: 'scheduled' })
+          .eq('ayrshare_post_id', postId);
+      }
+    } else if (eventType === 'post.cancelled') {
+      const postId = event.post?._id || event._id || event.id;
+
+      if (postId) {
+        await supabase
+          .from('videos')
+          .update({ status: 'cancelled' })
+          .eq('ayrshare_post_id', postId);
+      }
     }
 
     res.status(200).json({ received: true });

@@ -207,10 +207,17 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
   const newAgency = newAgencies[0];
   logger.log('success', 'USER_REGISTERED', { email, plan: 'Mini' }, newAgency.id);
 
+  // Firmar Token JWT para el usuario recién registrado (mismo formato que el login)
+  const newToken = jwt.sign(
+    { sub: newAgency.id, id: newAgency.id, email, account_type: isArtistType ? normalizedType : 'agency' },
+    process.env.JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+
   if (isArtistType) {
     const { data: newArtists, error: artistErr } = await supabase
       .from('artists')
-      .insert([{ agency_id: newAgency.id, name }])
+      .insert([{ agency_id: newAgency.id, name, publish_mode: 'zernio' }])
       .select();
     if (artistErr) throw new Error('Error al crear perfil de artista');
 
@@ -221,6 +228,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       plan: newAgency.plan_type,
       account_type: normalizedType, // mantiene 'individual' si así llegó
       artist_id: newArtists[0].id,
+      token: newToken,
     };
   }
 
@@ -234,6 +242,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
     artist_id: null,
     birth_date: newAgency.birth_date,
     onboarding_completed: false,
+    token: newToken,
   };
 };
 
@@ -393,6 +402,7 @@ exports.completeOnboarding = async (data) => {
           .insert([{
             agency_id: userId,
             name: firstArtist.name,
+            publish_mode: 'zernio',
             creative_dna: {
               style_notes: firstArtist.style_notes,
               preferred_hooks: firstArtist.preferred_hooks,
@@ -423,6 +433,7 @@ exports.completeOnboarding = async (data) => {
           .insert([{
             agency_id: userId,
             name: artistName,
+            publish_mode: 'zernio',
             creative_dna: {
               style_notes: firstArtist?.style_notes || '',
               preferred_hooks: firstArtist?.preferred_hooks || '',
@@ -460,6 +471,7 @@ exports.createArtist = async (artistData) => {
   const row = {
     agency_id,
     name,
+    publish_mode: 'zernio',
     ai_genre: ai_genre ?? genre ?? null,
     ai_audience: ai_audience ?? null,
     ai_tone: ai_tone ?? null,
