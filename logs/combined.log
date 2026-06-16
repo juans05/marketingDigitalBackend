@@ -951,3 +951,13 @@
 {"duration_ms":1058,"env":"development","ip":"::1","level":"info","message":"[API] GET /gallery/74350d72-4cfb-4de2-94cf-a0cfc5ad521f","method":"GET","path":"/gallery/74350d72-4cfb-4de2-94cf-a0cfc5ad521f","service":"vidalis-backend","status":200,"timestamp":"2026-06-15 22:35:36","userId":"2086aba3-2134-432c-a4f5-e18515a4a460"}
 {"duration_ms":728,"env":"development","ip":"::1","level":"info","message":"[API] GET /gallery/74350d72-4cfb-4de2-94cf-a0cfc5ad521f","method":"GET","path":"/gallery/74350d72-4cfb-4de2-94cf-a0cfc5ad521f","service":"vidalis-backend","status":200,"timestamp":"2026-06-15 22:35:53","userId":"2086aba3-2134-432c-a4f5-e18515a4a460"}
 {"duration_ms":471,"env":"development","ip":"::1","level":"info","message":"[API] GET /gallery/74350d72-4cfb-4de2-94cf-a0cfc5ad521f","method":"GET","path":"/gallery/74350d72-4cfb-4de2-94cf-a0cfc5ad521f","service":"vidalis-backend","status":200,"timestamp":"2026-06-15 22:35:54","userId":"2086aba3-2134-432c-a4f5-e18515a4a460"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-15 22:42:32"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-15 22:42:32"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-15 22:42:33"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-15 22:45:33"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-15 22:45:33"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-15 22:45:33"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-15 22:45:44"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-15 22:45:44"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-15 22:45:44"}
+{"duration_ms":1,"env":"development","ip":"::1","level":"info","message":"[API] GET /","method":"GET","path":"/","service":"vidalis-backend","status":200,"timestamp":"2026-06-15 22:48:14","userId":"anonymous"}

@@ -69,7 +69,7 @@ async function createProfile(name, artistId) {
       name,
       description: `Vidalis.AI Artist ID: ${artistId}`,
     });
-    return data._id;
+    return data.profile?._id || data._id;
   } catch (error) {
     logger.error('ZERNIO_createProfile', {
       artistId,
