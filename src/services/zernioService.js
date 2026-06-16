@@ -59,7 +59,8 @@ function createAxiosInstance() {
 
 const api = createAxiosInstance();
 
-const isZernioProfile = (key) => typeof key === 'string' && key.startsWith('prof_');
+// Zernio devuelve IDs de perfil como ObjectId de Mongo (24 hex), no con prefijo 'prof_'
+const isZernioProfile = (key) => typeof key === 'string' && /^[a-f0-9]{24}$/i.test(key);
 
 // ========== A. Perfiles y Conexión OAuth ==========
 
