@@ -965,8 +965,15 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
           totalShares += (pData.shares || pData.share_count || pData.retweets || 0);
           totalSaves += (pData.saves || pData.save_count || pData.bookmarks || 0);
 
-          const metricValue = pViews > 0 ? pViews : pReach;
-          platformBreakdown[platform] = (platformBreakdown[platform] || 0) + metricValue;
+          if (!platformBreakdown[platform]) {
+            platformBreakdown[platform] = { followers: 0, reach: 0, likes: 0, comments: 0, shares: 0, posts: 0 };
+          }
+          platformBreakdown[platform].followers += followers;
+          platformBreakdown[platform].reach += pViews > 0 ? pViews : pReach;
+          platformBreakdown[platform].likes += (pData.likes || pData.like_count || pData.heart || 0);
+          platformBreakdown[platform].comments += (pData.comments || pData.comment_count || 0);
+          platformBreakdown[platform].shares += (pData.shares || pData.share_count || pData.retweets || 0);
+          platformBreakdown[platform].posts += pPosts;
 
           if (Array.isArray(pData.reach_timeseries)) {
             pData.reach_timeseries.forEach(item => {
