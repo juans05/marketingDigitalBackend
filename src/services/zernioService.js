@@ -136,11 +136,24 @@ async function publishPost(text, platforms, mediaUrls, profileId, options = {}) 
     throw new Error('Ninguna de las plataformas solicitadas tiene una cuenta de Zernio conectada (social_keys vacío o desactualizado).');
   }
 
+  const urls = mediaUrls || [];
+  const hasVideo = urls.some(url =>
+    url.includes('/video/') || /\.(mp4|mov|webm|ogv)(\?|$)/i.test(url)
+  );
+
+  // TikTok solo acepta video vía API — bloquear imágenes antes de llamar a Zernio
+  if (resolved.some(p => p.platform === 'tiktok') && !hasVideo && urls.length > 0) {
+    const err = new Error('TikTok solo acepta videos. Sube un archivo .mp4 o .mov para publicar en TikTok.');
+    err.details = { reason: 'tiktok_requires_video', mediaUrls: urls };
+    err.status = 400;
+    throw err;
+  }
+
   const payload = {
     content: text,
     publishNow: true,
     platforms: resolved,
-    mediaUrls: mediaUrls || [],
+    mediaUrls: urls,
   };
 
   if (platforms.includes('youtube')) {
@@ -203,10 +216,22 @@ async function schedulePost(text, platforms, mediaUrls, scheduleDate, profileId,
     throw new Error('Ninguna de las plataformas solicitadas tiene una cuenta de Zernio conectada.');
   }
 
+  const urls = mediaUrls || [];
+  const hasVideo = urls.some(url =>
+    url.includes('/video/') || /\.(mp4|mov|webm|ogv)(\?|$)/i.test(url)
+  );
+
+  if (resolved.some(p => p.platform === 'tiktok') && !hasVideo && urls.length > 0) {
+    const err = new Error('TikTok solo acepta videos. Sube un archivo .mp4 o .mov para publicar en TikTok.');
+    err.details = { reason: 'tiktok_requires_video', mediaUrls: urls };
+    err.status = 400;
+    throw err;
+  }
+
   const payload = {
     content: text,
     platforms: resolved,
-    mediaUrls: mediaUrls || [],
+    mediaUrls: urls,
     scheduledFor: new Date(scheduleDate).toISOString(),
     timezone: 'UTC',
   };
