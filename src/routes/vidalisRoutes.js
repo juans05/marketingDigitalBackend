@@ -7,6 +7,7 @@ const {
   authorizeArtist,
   authorizeVideo,
   verifyWebhookSecret,
+  requireFeature,
 } = require('../middleware/authMiddleware');
 
 // ── Config pública (sin auth) ─────────────────────────────────────────────────
@@ -25,6 +26,7 @@ router.delete('/artists/:artistId', authenticateToken, authorizeArtist, vidalisC
 router.post('/artists/:artistId/sync', authenticateToken, authorizeArtist, vidalisController.syncSocialAccounts);
 router.post('/artists/:artistId/sync-analytics', authenticateToken, authorizeArtist, vidalisController.syncZernioAnalytics);
 router.patch('/artists/:artistId/style', authenticateToken, authorizeArtist, vidalisController.updateArtistStyle);
+router.patch('/profile', authenticateToken, requireFeature('profile_update'), vidalisController.updateProfile);
 router.post('/artists/:artistId/audit', authenticateToken, authorizeArtist, vidalisController.runDeepAudit);
 
 // Requería auth — añadida

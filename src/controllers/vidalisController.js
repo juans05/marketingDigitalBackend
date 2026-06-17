@@ -780,6 +780,55 @@ exports.syncSocialAccounts = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+/**
+ * PATCH /profile
+ * Actualiza nombre, bio, handle y avatar_url.
+ * Todos los tipos (agency, individual, artist) viven en la tabla agencies.
+ * Para cuentas individual/artist también sincroniza el name al registro de artists.
+ */
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    const accountType = req.user?.account_type;
+    if (!userId) return res.status(401).json({ error: 'No autorizado' });
+
+    const allowed = ['name', 'bio', 'handle', 'avatar_url'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No hay campos para actualizar' });
+    }
+
+    updates.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('agencies')
+      .update(updates)
+      .eq('id', userId)
+      .select('id, name, bio, handle, avatar_url, email, account_type')
+      .single();
+
+    if (error) throw error;
+
+    // Para cuentas individuales/artist sincronizar el nombre al perfil de artista
+    const resolvedType = accountType || data.account_type;
+    if (updates.name && (resolvedType === 'individual' || resolvedType === 'artist')) {
+      await supabase
+        .from('artists')
+        .update({ name: updates.name })
+        .eq('agency_id', userId);
+    }
+
+    res.status(200).json({ ok: true, user: data });
+  } catch (err) {
+    console.error('❌ updateProfile:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.updateArtistStyle = async (req, res) => {
   try {
     const { artistId } = req.params;

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
+const { hasFeature } = require('../config/featureFlags');
 
 // Cliente admin: usa service role key para verificaciones de ownership sin que RLS interfiera.
 const supabaseAdmin = createClient(
@@ -111,10 +112,26 @@ const verifyWebhookSecret = (req, res, next) => {
   next();
 };
 
+/**
+ * Verifica que el account_type del token tenga acceso al feature indicado.
+ * Uso: router.patch('/profile', authenticateToken, requireFeature('profile_update'), ...)
+ */
+const requireFeature = (featureName) => (req, res, next) => {
+  const accountType = req.user?.account_type;
+  if (!hasFeature(accountType, featureName)) {
+    return res.status(403).json({
+      error: 'Esta función no está disponible para tu tipo de cuenta.',
+      feature: featureName,
+    });
+  }
+  next();
+};
+
 module.exports = {
   authenticateToken,
   authorizeAgency,
   authorizeArtist,
   authorizeVideo,
   verifyWebhookSecret,
+  requireFeature,
 };
