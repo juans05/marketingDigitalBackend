@@ -830,7 +830,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
 
   let artistQuery = supabase
     .from('artists')
-    .select('id, ayrshare_profile_key, active_platforms, facebook_page_id, instagram_user_id, agency_id');
+    .select('id, ayrshare_profile_key, active_platforms, facebook_page_id, instagram_user_id, agency_id, publish_mode');
 
   if (artistId) {
     artistQuery = artistQuery.eq('id', artistId);
@@ -898,11 +898,14 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
   const historyMap = {};
   const platformBreakdown = {};
 
-  // Recolectar estadísticas reales de Upload-Post en paralelo
+  // Recolectar estadísticas reales de Upload-Post en paralelo (solo mode upload-post)
   const analyticsPromises = artistsData.map(async (artist) => {
     if (!artist.ayrshare_profile_key) {
       console.warn(`⚠️ getDashboardStats: artista ${artist.id} sin ayrshare_profile_key, saltando analytics`);
       return null;
+    }
+    if (artist.publish_mode && artist.publish_mode !== 'upload-post') {
+      return null; // zernio/direct usan sus propias APIs, no Upload-Post
     }
     const platforms = (artist.active_platforms && artist.active_platforms.length > 0)
       ? artist.active_platforms
