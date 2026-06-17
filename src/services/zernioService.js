@@ -291,10 +291,79 @@ async function getPostAnalytics(postId) {
     });
     return data;
   } catch (error) {
-    logger.error('ZERNIO_getPostAnalytics', {
-      postId,
-      status: error.response?.status,
+    logger.error('ZERNIO_getPostAnalytics', { postId, status: error.response?.status });
+    return null;
+  }
+}
+
+// GET /v1/analytics — lista de posts con sus métricas
+async function getAnalyticsPosts(profileId, fromDate, toDate, limit = 100) {
+  try {
+    const { data } = await api.get('/analytics', {
+      params: { profileId, fromDate, toDate, limit, sortBy: 'engagement', order: 'desc' },
     });
+    return data;
+  } catch (error) {
+    logger.error('ZERNIO_getAnalyticsPosts', { profileId, status: error.response?.status, msg: error.response?.data?.message });
+    return null;
+  }
+}
+
+// GET /v1/analytics/daily-metrics — métricas diarias + platformBreakdown
+async function getDailyMetrics(profileId, fromDate, toDate) {
+  try {
+    const { data } = await api.get('/analytics/daily-metrics', {
+      params: { profileId, fromDate, toDate },
+    });
+    return data;
+  } catch (error) {
+    logger.error('ZERNIO_getDailyMetrics', { profileId, status: error.response?.status, msg: error.response?.data?.message });
+    return null;
+  }
+}
+
+// GET /v1/analytics/best-time — mejor hora/día para publicar
+async function getBestPostingTimes(profileId, platform = null) {
+  try {
+    const params = { profileId };
+    if (platform) params.platform = platform;
+    const { data } = await api.get('/analytics/best-time', { params });
+    return data;
+  } catch (error) {
+    logger.error('ZERNIO_getBestPostingTimes', { profileId, status: error.response?.status });
+    return null;
+  }
+}
+
+// GET /v1/analytics/instagram/account-insights — métricas de cuenta Instagram
+async function getInstagramAccountInsights(accountId, since, until) {
+  try {
+    const { data } = await api.get('/analytics/instagram/account-insights', {
+      params: {
+        accountId, since, until,
+        metrics: 'reach,views,accounts_engaged,total_interactions,likes,saves,shares,follows_and_unfollows',
+      },
+    });
+    return data;
+  } catch (error) {
+    logger.error('ZERNIO_getInstagramInsights', { accountId, status: error.response?.status });
+    return null;
+  }
+}
+
+// GET /v1/analytics/youtube/channel-insights — métricas de canal YouTube
+async function getYouTubeChannelInsights(accountId, since, until) {
+  try {
+    const { data } = await api.get('/analytics/youtube/channel-insights', {
+      params: {
+        accountId, since, until,
+        metrics: 'views,estimatedMinutesWatched,subscribersGained,subscribersLost',
+        metricType: 'total_value',
+      },
+    });
+    return data;
+  } catch (error) {
+    logger.error('ZERNIO_getYouTubeInsights', { accountId, status: error.response?.status });
     return null;
   }
 }
@@ -542,6 +611,11 @@ module.exports = {
   schedulePost,
   getPostStatus,
   getPostAnalytics,
+  getAnalyticsPosts,
+  getDailyMetrics,
+  getBestPostingTimes,
+  getInstagramAccountInsights,
+  getYouTubeChannelInsights,
   getProfileComments,
   getPostComments,
   postCommentReply,

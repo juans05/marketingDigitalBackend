@@ -4,6 +4,7 @@ const cloudinaryService = require('../services/cloudinaryService');
 const instagramService = require('../services/instagramService');
 const uploadPostService = require('../services/uploadPostService');
 const zernioService = require('../services/zernioService');
+const { syncArtistAnalytics } = require('../jobs/syncZernioAnalytics');
 const { generateInsights } = require('../services/aiService');
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
@@ -518,26 +519,63 @@ exports.getAnalyticsInsights = async (req, res) => {
   try {
     const { data: artist, error } = await supabase
       .from('artists')
-      .select('name, ayrshare_profile_key, active_platforms')
+      .select('name, ayrshare_profile_key, active_platforms, publish_mode, plan_type')
       .eq('id', artistId)
       .single();
 
     if (error || !artist) return res.status(404).json({ error: 'Artista no encontrado' });
 
-    // 1. Analytics de perfil (seguidores, reach por plataforma)
+    const isZernio = artist.publish_mode === 'zernio';
+
+    // ── 1. Analytics de perfil ────────────────────────────────────────────────
     let profileAnalytics = {};
-    if (artist.ayrshare_profile_key && artist.active_platforms?.length) {
-      try {
-        profileAnalytics = await uploadPostService.getAnalytics(
-          artist.ayrshare_profile_key,
-          artist.active_platforms
-        );
-      } catch (e) {
-        console.warn('⚠️ No se pudieron obtener analytics de perfil:', e.message);
+
+    if (isZernio) {
+      // Leer platform_snapshots (último snapshot por plataforma)
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const { data: snapshots } = await supabase
+        .from('platform_snapshots')
+        .select('platform, followers, reach, impressions, likes, comments, shares, saves, views, posts_count, engagement_rate, snapshot_date')
+        .eq('artist_id', artistId)
+        .gte('snapshot_date', thirtyDaysAgo)
+        .order('snapshot_date', { ascending: false });
+
+      // Tomar el snapshot más reciente por plataforma
+      const latestByPlatform = {};
+      for (const snap of snapshots || []) {
+        if (!latestByPlatform[snap.platform]) {
+          latestByPlatform[snap.platform] = snap;
+        }
+      }
+      profileAnalytics = latestByPlatform;
+
+      // Leer datos adicionales del cache (best times, ig/yt insights)
+      const { data: cacheRows } = await supabase
+        .from('zernio_sync_cache')
+        .select('cache_key, data, synced_at')
+        .eq('artist_id', artistId);
+
+      const cacheMap = {};
+      for (const row of cacheRows || []) cacheMap[row.cache_key] = row.data;
+
+      if (cacheMap.best_posting_times) profileAnalytics._best_times = cacheMap.best_posting_times;
+      if (cacheMap.instagram_insights) profileAnalytics._ig_insights = cacheMap.instagram_insights;
+      if (cacheMap.youtube_insights) profileAnalytics._yt_insights = cacheMap.youtube_insights;
+    } else {
+      // Upload-Post flow original
+      if (artist.ayrshare_profile_key && artist.active_platforms?.length) {
+        try {
+          profileAnalytics = await uploadPostService.getAnalytics(
+            artist.ayrshare_profile_key,
+            artist.active_platforms
+          );
+        } catch (e) {
+          console.warn('⚠️ No se pudieron obtener analytics de perfil:', e.message);
+        }
       }
     }
 
-    // 2. Últimos posts con métricas reales (incluye viral_score_real guardado)
+    // ── 2. Últimos posts con métricas ─────────────────────────────────────────
     const { data: videos } = await supabase
       .from('videos')
       .select('id, title, platforms, published_at, created_at, viral_score, viral_score_real, ayrshare_post_id, status, analytics_4h')
@@ -546,7 +584,6 @@ exports.getAnalyticsInsights = async (req, res) => {
       .limit(15);
 
     const postsWithMetrics = await Promise.all((videos || []).map(async (video) => {
-      // Usar datos ya guardados en analytics_4h si existen (evita llamadas redundantes)
       const cached = video.analytics_4h;
       if (cached && (cached.likes > 0 || cached.views > 0)) {
         return {
@@ -560,7 +597,9 @@ exports.getAnalyticsInsights = async (req, res) => {
         };
       }
 
-      if (!video.ayrshare_post_id) return { ...video, likes: 0, comments: 0, views: 0, shares: 0, engagement_rate: 0 };
+      if (!video.ayrshare_post_id || isZernio) {
+        return { ...video, likes: 0, comments: 0, views: 0, shares: 0, engagement_rate: 0 };
+      }
 
       const rawMetrics = await uploadPostService.getPostAnalytics(video.ayrshare_post_id);
       if (!rawMetrics) return { ...video, likes: 0, comments: 0, views: 0, shares: 0, engagement_rate: 0 };
@@ -570,7 +609,7 @@ exports.getAnalyticsInsights = async (req, res) => {
       return { ...video, ...normalized };
     }));
 
-    // 3. Leer historial de análisis anteriores (últimos 3) para que Claude aprenda
+    // ── 3. Historial de análisis anteriores ───────────────────────────────────
     const { data: prevInsights } = await supabase
       .from('analytics_insights_log')
       .select('generated_at, insights, decisions, engagement_rate, followers_total, best_platform')
@@ -578,7 +617,7 @@ exports.getAnalyticsInsights = async (req, res) => {
       .order('generated_at', { ascending: false })
       .limit(3);
 
-    // 4. Generar insights con Claude (con contexto histórico)
+    // ── 4. Generar insights con Claude ────────────────────────────────────────
     const insights = await generateInsights(
       profileAnalytics,
       postsWithMetrics,
@@ -586,29 +625,27 @@ exports.getAnalyticsInsights = async (req, res) => {
       prevInsights || []
     );
 
-    // 5. Guardar este análisis en el log para futuras comparaciones
-    const followersTotal = Object.values(profileAnalytics || {})
-      .reduce((acc, p) => acc + (p?.followers || 0), 0);
-    const totalReach = Object.values(profileAnalytics || {})
-      .reduce((acc, p) => acc + (p?.reach || 0), 0);
+    // ── 5. Guardar log para comparaciones futuras ─────────────────────────────
+    const followersTotal = isZernio
+      ? Object.values(profileAnalytics).reduce((acc, p) => acc + (p?.followers || 0), 0)
+      : Object.values(profileAnalytics || {}).reduce((acc, p) => acc + (p?.followers || 0), 0);
+    const totalReach = isZernio
+      ? Object.values(profileAnalytics).reduce((acc, p) => acc + (p?.reach || 0), 0)
+      : Object.values(profileAnalytics || {}).reduce((acc, p) => acc + (p?.reach || 0), 0);
 
-    const { error: logErr } = await supabase
-      .from('analytics_insights_log')
-      .insert({
-        artist_id: artistId,
-        insights: insights.insights || [],
-        decisions: insights.decisions || [],
-        best_platform: insights.best_platform || null,
-        best_post_title: insights.best_post_title || null,
-        engagement_rate: insights.engagement_rate || 0,
-        followers_total: followersTotal,
-        total_reach: totalReach,
-        profile_data: profileAnalytics
-      });
+    await supabase.from('analytics_insights_log').insert({
+      artist_id: artistId,
+      insights: insights.insights || [],
+      decisions: insights.decisions || [],
+      best_platform: insights.best_platform || null,
+      best_post_title: insights.best_post_title || null,
+      engagement_rate: insights.engagement_rate || 0,
+      followers_total: followersTotal,
+      total_reach: totalReach,
+      profile_data: profileAnalytics
+    }).then(() => {}).catch(e => console.warn('⚠️ analytics_insights_log:', e.message));
 
-    if (logErr) console.warn('⚠️ No se pudo guardar analytics_insights_log:', logErr.message);
-
-    // 6. Obtener uso mensual y límites
+    // ── 6. Uso mensual ────────────────────────────────────────────────────────
     const firstDayOfMonth = new Date();
     firstDayOfMonth.setDate(1);
     firstDayOfMonth.setHours(0, 0, 0, 0);
@@ -619,7 +656,7 @@ exports.getAnalyticsInsights = async (req, res) => {
       .eq('artist_id', artistId)
       .gte('created_at', firstDayOfMonth.toISOString());
 
-    const planType = (artist.agencies?.plan_type || artist.plan_type || 'Mini').trim();
+    const planType = (artist.plan_type || 'Mini').trim();
     const PLAN_CONFIG = {
       'Mini': { videos: 5 },
       'Artista': { videos: 20 },
@@ -628,16 +665,39 @@ exports.getAnalyticsInsights = async (req, res) => {
     };
     const config = PLAN_CONFIG[planType] || PLAN_CONFIG['Mini'];
 
-    res.json({ 
-      ...insights, 
-      profile: profileAnalytics, 
+    res.json({
+      ...insights,
+      profile: profileAnalytics,
       posts: postsWithMetrics,
       monthly_usage: usageCount || 0,
       monthly_limit: config.videos === Infinity ? 9999 : config.videos,
-      plan_name: planType
+      plan_name: planType,
+      data_source: isZernio ? 'zernio_supabase' : 'upload_post',
     });
   } catch (err) {
     console.error('❌ getAnalyticsInsights:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /artists/:artistId/sync-analytics
+ * Dispara la sincronización de analytics Zernio → Supabase para un artista.
+ * Llamado por el botón "Sincronizar" del dashboard.
+ */
+exports.syncZernioAnalytics = async (req, res) => {
+  const { artistId } = req.params;
+  try {
+    const result = await syncArtistAnalytics(artistId);
+    if (!result.ok && result.reason === 'artist_not_found') {
+      return res.status(404).json({ error: 'Artista no encontrado' });
+    }
+    if (!result.ok && result.reason === 'not_zernio_artist') {
+      return res.status(400).json({ error: 'Este artista no usa Zernio como modo de publicación' });
+    }
+    res.status(200).json(result);
+  } catch (err) {
+    console.error('❌ syncZernioAnalytics:', err.message);
     res.status(500).json({ error: err.message });
   }
 };

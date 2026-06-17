@@ -23,6 +23,7 @@ router.post('/artists', authenticateToken, vidalisController.createArtist);
 router.get('/artists/:agencyId', authenticateToken, authorizeAgency, vidalisController.getArtists);
 router.delete('/artists/:artistId', authenticateToken, authorizeArtist, vidalisController.deleteArtist);
 router.post('/artists/:artistId/sync', authenticateToken, authorizeArtist, vidalisController.syncSocialAccounts);
+router.post('/artists/:artistId/sync-analytics', authenticateToken, authorizeArtist, vidalisController.syncZernioAnalytics);
 router.patch('/artists/:artistId/style', authenticateToken, authorizeArtist, vidalisController.updateArtistStyle);
 router.post('/artists/:artistId/audit', authenticateToken, authorizeArtist, vidalisController.runDeepAudit);
 
