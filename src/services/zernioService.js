@@ -172,14 +172,35 @@ async function publishPost(text, platforms, mediaUrls, profileId, options = {}) 
     };
   }
 
+  logger.info('ZERNIO_publishPost_REQUEST', {
+    profileId,
+    platforms,
+    mediaUrls,
+    payload,
+  });
+
   try {
-    const { data } = await api.post('/posts', payload);
-    return { id: data.post?._id || data._id || data.id, status: data.post?.status || data.status };
-  } catch (error) {
-    logger.error('ZERNIO_publishPost', {
+    const response = await api.post('/posts', payload);
+    logger.info('ZERNIO_publishPost_RESPONSE', {
       profileId,
       platforms,
-      status: error.response?.status,
+      httpStatus: response.status,
+      data: response.data,
+    });
+    const { data } = response;
+    return { id: data.post?._id || data._id || data.id, status: data.post?.status || data.status };
+  } catch (error) {
+    logger.error('ZERNIO_publishPost_ERROR', {
+      profileId,
+      platforms,
+      mediaUrls,
+      payloadSent: payload,
+      httpStatus: error.response?.status,
+      responseHeaders: {
+        'content-type': error.response?.headers?.['content-type'],
+        'x-request-id': error.response?.headers?.['x-request-id'],
+        'retry-after': error.response?.headers?.['retry-after'],
+      },
       responseData: error.response?.data || error.message,
     });
     throw new Error(`Error publicando post en Zernio: ${error.response?.data?.message || error.message}`);
@@ -220,15 +241,38 @@ async function schedulePost(text, platforms, mediaUrls, scheduleDate, profileId,
     };
   }
 
+  logger.info('ZERNIO_schedulePost_REQUEST', {
+    profileId,
+    platforms,
+    mediaUrls,
+    scheduleDate,
+    payload,
+  });
+
   try {
-    const { data } = await api.post('/posts', payload);
-    return { id: data.post?._id || data._id || data.id, status: data.post?.status || data.status };
-  } catch (error) {
-    logger.error('ZERNIO_schedulePost', {
+    const response = await api.post('/posts', payload);
+    logger.info('ZERNIO_schedulePost_RESPONSE', {
       profileId,
       platforms,
       scheduleDate,
-      status: error.response?.status,
+      httpStatus: response.status,
+      data: response.data,
+    });
+    const { data } = response;
+    return { id: data.post?._id || data._id || data.id, status: data.post?.status || data.status };
+  } catch (error) {
+    logger.error('ZERNIO_schedulePost_ERROR', {
+      profileId,
+      platforms,
+      mediaUrls,
+      scheduleDate,
+      payloadSent: payload,
+      httpStatus: error.response?.status,
+      responseHeaders: {
+        'content-type': error.response?.headers?.['content-type'],
+        'x-request-id': error.response?.headers?.['x-request-id'],
+        'retry-after': error.response?.headers?.['retry-after'],
+      },
       responseData: error.response?.data || error.message,
     });
     throw new Error(`Error programando post en Zernio: ${error.response?.data?.message || error.message}`);

@@ -7,3 +7,6 @@
 {"artistId":"74350d72-4cfb-4de2-94cf-a0cfc5ad521f","env":"development","level":"error","message":"ZERNIO_createProfile [object Object]","service":"vidalis-backend","status":400,"timestamp":"2026-06-15 22:15:15"}
 {"artistId":"74350d72-4cfb-4de2-94cf-a0cfc5ad521f","env":"development","level":"error","message":"ZERNIO_createProfile [object Object]","service":"vidalis-backend","status":400,"timestamp":"2026-06-15 22:20:53"}
 {"artistId":"74350d72-4cfb-4de2-94cf-a0cfc5ad521f","env":"development","level":"error","message":"ZERNIO_createProfile [object Object]","service":"vidalis-backend","status":400,"timestamp":"2026-06-15 22:25:20"}
+{"artistId":"test","env":"development","level":"error","message":"ZERNIO_createProfile [object Object]","service":"vidalis-backend","status":401,"timestamp":"2026-06-15 23:26:01"}
+{"artistId":"test","env":"development","level":"error","message":"ZERNIO_createProfile_test","responseData":{"detail":"invalid api key","error":"Unauthorized"},"service":"vidalis-backend","status":401,"timestamp":"2026-06-15 23:28:07"}
+{"artistId":"74350d72-4cfb-4de2-94cf-a0cfc5ad521f","env":"development","level":"error","message":"ZERNIO_createProfile","responseData":{"error":"A profile with this name already exists"},"service":"vidalis-backend","status":400,"timestamp":"2026-06-15 23:29:24"}
