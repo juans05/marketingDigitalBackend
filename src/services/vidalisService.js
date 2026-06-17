@@ -875,7 +875,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
 
   const { data: videos, error } = await supabase
     .from('videos')
-    .select('id, viral_score, status, hashtags, published_at, created_at, platforms, title')
+    .select('id, viral_score, status, hashtags, published_at, created_at, platforms, title, analytics_4h, artist_id')
     .in('artist_id', targetArtistIds);
 
   if (error) throw error;
@@ -1009,6 +1009,79 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     }
   });
 
+  // Para artistas Zernio/direct: agregar analytics_4h de cada post al platform_breakdown
+  const zernioArtistIds = new Set(
+    artistsData.filter(a => a.publish_mode !== 'upload-post').map(a => a.id)
+  );
+
+  // Mapa para calcular mejor hora/día de publicación
+  const bestTimeMap = {};
+
+  videos.forEach(video => {
+    const a = video.analytics_4h;
+    const vPlatforms = Array.isArray(video.platforms) ? video.platforms : [];
+
+    // Mejor hora para publicar (todos los artistas, posts publicados con engagement)
+    if (video.published_at && a && vPlatforms.length > 0) {
+      const vEng = (a.likes || 0) + (a.comments || 0) + (a.shares || 0);
+      if (vEng > 0) {
+        const d = new Date(video.published_at);
+        const key = `${d.getDay()}_${d.getHours()}`;
+        if (!bestTimeMap[key]) bestTimeMap[key] = { day: d.getDay(), hour: d.getHours(), engagement: 0, count: 0 };
+        bestTimeMap[key].engagement += vEng;
+        bestTimeMap[key].count += 1;
+      }
+    }
+
+    // Agregar analytics_4h al breakdown para artistas Zernio/direct
+    if (!zernioArtistIds.has(video.artist_id) || !a || vPlatforms.length === 0) return;
+
+    const primaryPlatform = vPlatforms[0];
+    const vLikes    = a.likes    || 0;
+    const vComments = a.comments || 0;
+    const vShares   = a.shares   || 0;
+    const vViews    = a.views    || 0;
+    const vSaves    = a.saves    || 0;
+    if (vLikes === 0 && vComments === 0 && vViews === 0) return;
+
+    if (!platformBreakdown[primaryPlatform]) {
+      platformBreakdown[primaryPlatform] = { followers: 0, reach: 0, likes: 0, comments: 0, shares: 0, saves: 0, posts: 0 };
+    }
+    platformBreakdown[primaryPlatform].likes    += vLikes;
+    platformBreakdown[primaryPlatform].comments += vComments;
+    platformBreakdown[primaryPlatform].shares   += vShares;
+    platformBreakdown[primaryPlatform].reach    += vViews;
+    platformBreakdown[primaryPlatform].saves    += vSaves;
+    platformBreakdown[primaryPlatform].posts    += 1;
+
+    totalLikes    += vLikes;
+    totalComments += vComments;
+    totalShares   += vShares;
+    totalViews    += vViews;
+    totalSaves    += vSaves;
+  });
+
+  // Calcular engagement_rate por plataforma
+  Object.keys(platformBreakdown).forEach(p => {
+    const b = platformBreakdown[p];
+    const eng = (b.likes || 0) + (b.comments || 0) + (b.shares || 0) + (b.saves || 0);
+    const reach = b.reach || 0;
+    b.engagement_rate = eng > 0 && reach > 0 ? Math.round((eng / reach) * 1000) / 10 : 0;
+  });
+
+  // Top 7 mejores momentos para publicar (día + hora con más engagement promedio)
+  const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const bestPostingTimes = Object.values(bestTimeMap)
+    .sort((a, b) => (b.engagement / b.count) - (a.engagement / a.count))
+    .slice(0, 7)
+    .map(t => ({
+      label: `${DAYS_ES[t.day]} ${String(t.hour).padStart(2, '0')}:00`,
+      day: DAYS_ES[t.day],
+      hour: t.hour,
+      avg_engagement: Math.round(t.engagement / t.count),
+      posts: t.count,
+    }));
+
   // Si la red social reporta más videos que nuestra DB local, usamos esa cifra
   const finalTotalVideos = Math.max(total, totalPostsSocial);
 
@@ -1026,15 +1099,27 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
   const followersPerPost = finalTotalVideos > 0 ? Math.round(followersTotal / finalTotalVideos) : 0;
   const trend = totalReach > 0 ? '+inc' : '0%';
 
-  const postList = videos.slice(0, 10).map(v => ({
-    id: v.id,
-    title: v.title,
-    date: v.published_at || v.created_at,
-    platforms: v.platforms || [],
-    viral_score: v.viral_score || 0,
-    hashtags: v.hashtags || [],
-    status: v.status
-  }));
+  const postList = videos
+    .sort((a, b) => new Date(b.published_at || b.created_at) - new Date(a.published_at || a.created_at))
+    .slice(0, 20)
+    .map(v => {
+      const a = v.analytics_4h || {};
+      return {
+        id: v.id,
+        title: v.title,
+        date: v.published_at || v.created_at,
+        platforms: v.platforms || [],
+        viral_score: v.viral_score || 0,
+        hashtags: v.hashtags || [],
+        status: v.status,
+        likes: a.likes || 0,
+        comments: a.comments || 0,
+        views: a.views || 0,
+        shares: a.shares || 0,
+        saves: a.saves || 0,
+        engagement_rate: a.engagement_rate || 0,
+      };
+    });
 
   // Distribuir followersTotal en el historial (último día = total, días anteriores proporcional)
   const growthData = history.map((h, idx) => ({
@@ -1071,6 +1156,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     avg_viral_score: avgScore,
     growth_data: growthData,
     platform_breakdown: platformBreakdown,
+    best_posting_times: bestPostingTimes,
     monthly_usage: monthlyUsage || 0,
     monthly_limit: monthlyLimit,
     plan_name: planType,

@@ -473,17 +473,28 @@ exports.getPostMetrics = async (req, res) => {
 
     if (vErr) throw vErr;
 
-    // Consultar métricas reales y guardar snapshots en paralelo
+    // Consultar métricas reales — usa analytics_4h como fuente primaria para Zernio artists
     const withMetrics = await Promise.all((videos || []).map(async (video) => {
+      const cached = video.analytics_4h;
+      if (cached && (cached.likes > 0 || cached.views > 0 || cached.comments > 0)) {
+        return {
+          ...video,
+          likes: cached.likes || 0,
+          comments: cached.comments || 0,
+          views: cached.views || 0,
+          shares: cached.shares || 0,
+          saves: cached.saves || 0,
+          engagement_rate: cached.engagement_rate || 0,
+          metrics: cached,
+        };
+      }
+
       if (!video.ayrshare_post_id) return { ...video, metrics: null };
 
       const rawMetrics = await uploadPostService.getPostAnalytics(video.ayrshare_post_id);
       if (!rawMetrics) return { ...video, metrics: null };
 
-      // Detectar plataforma principal del post
       const platform = Array.isArray(video.platforms) ? video.platforms[0] : 'unknown';
-
-      // Guardar snapshot + actualizar viral_score_real en el video
       const normalized = await uploadPostService.saveMetricsSnapshot(
         video.id, artistId, platform, rawMetrics
       );

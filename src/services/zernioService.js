@@ -126,62 +126,69 @@ async function getActivePlatforms(profileId) {
 
 // ========== B. Publicación y Programación ==========
 
+function detectMediaType(url) {
+  return url.includes('/video/') || /\.(mp4|mov|webm|ogv)(\?|$)/i.test(url) ? 'video' : 'image';
+}
+
+// Builds a platform entry with platformSpecificData nested inside (Zernio API requirement).
+// TikTok is excluded here — it uses a top-level tiktokSettings object instead.
+function buildPlatformEntry(platform, accountId, hasVideo, options) {
+  const entry = { platform, accountId };
+  const psd = {};
+
+  if (platform === 'instagram') {
+    if (options.contentType) psd.contentType = options.contentType; // 'story' | 'reels'
+    if (options.shareToFeed !== undefined) psd.shareToFeed = options.shareToFeed;
+  }
+
+  if (platform === 'facebook') {
+    const fbContentType = options.contentType || (hasVideo ? 'reel' : null);
+    if (fbContentType) psd.contentType = fbContentType;
+    if (options.title) psd.title = options.title;
+  }
+
+  if (platform === 'youtube') {
+    psd.title = (options.title || '').slice(0, 100) || 'Video';
+    psd.visibility = options.visibility || 'public';
+  }
+
+  if (Object.keys(psd).length > 0) entry.platformSpecificData = psd;
+  return entry;
+}
+
 async function publishPost(text, platforms, mediaUrls, profileId, options = {}) {
   const accounts = options.accounts || {};
+  const urls = mediaUrls || [];
+  const hasVideo = urls.some(url => detectMediaType(url) === 'video');
+
   const resolved = platforms
     .filter(p => accounts[p])
-    .map(p => ({ platform: p, accountId: accounts[p] }));
+    .map(p => buildPlatformEntry(p, accounts[p], hasVideo, options));
 
   if (resolved.length === 0) {
     throw new Error('Ninguna de las plataformas solicitadas tiene una cuenta de Zernio conectada (social_keys vacío o desactualizado).');
   }
 
-  const urls = mediaUrls || [];
-  const hasVideo = urls.some(url =>
-    url.includes('/video/') || /\.(mp4|mov|webm|ogv)(\?|$)/i.test(url)
-  );
-
-  // TikTok solo acepta video vía API — bloquear imágenes antes de llamar a Zernio
-  if (resolved.some(p => p.platform === 'tiktok') && !hasVideo && urls.length > 0) {
-    const err = new Error('TikTok solo acepta videos. Sube un archivo .mp4 o .mov para publicar en TikTok.');
-    err.details = { reason: 'tiktok_requires_video', mediaUrls: urls };
-    err.status = 400;
-    throw err;
-  }
+  // Zernio requires mediaItems as [{type, url}] objects, not a plain URL array
+  const mediaItems = urls.map(url => ({ type: detectMediaType(url), url }));
 
   const payload = {
     content: text,
     publishNow: true,
     platforms: resolved,
-    mediaUrls: urls,
   };
 
-  if (platforms.includes('youtube')) {
-    payload.title = options.title || text.replace(/#\S+/g, '').trim().slice(0, 100);
-  }
+  if (mediaItems.length > 0) payload.mediaItems = mediaItems;
 
-  if (platforms.includes('tiktok')) {
-    payload.platformSpecificData = {
-      ...payload.platformSpecificData,
-      tiktok: {
-        privacyLevel: 'PUBLIC',
-        allowComment: true,
-        allowDuet: true,
-        allowStitch: true,
-      },
-    };
-  }
-
-  const isReel = platforms.some(p => ['instagram', 'facebook'].includes(p)) &&
-    mediaUrls.some(url => url.includes('video') || /\.(mp4|mov|webm)(\?|$)/i.test(url));
-
-  if (platforms.includes('facebook') && isReel) {
-    payload.platformSpecificData = {
-      ...payload.platformSpecificData,
-      facebook: {
-        contentType: 'reel',
-        title: options.title || 'Nuevo Reel',
-      },
+  // TikTok uses a top-level tiktokSettings key (snake_case), not platformSpecificData
+  if (platforms.includes('tiktok') && accounts['tiktok']) {
+    payload.tiktokSettings = {
+      privacy_level: 'PUBLIC_TO_EVERYONE',
+      allow_comment: true,
+      allow_duet: hasVideo,
+      allow_stitch: hasVideo,
+      content_preview_confirmed: true, // legally required by TikTok API
+      express_consent_given: true,     // legally required by TikTok API
     };
   }
 
@@ -208,47 +215,38 @@ async function publishPost(text, platforms, mediaUrls, profileId, options = {}) 
 
 async function schedulePost(text, platforms, mediaUrls, scheduleDate, profileId, options = {}) {
   const accounts = options.accounts || {};
+  const urls = mediaUrls || [];
+  const hasVideo = urls.some(url => detectMediaType(url) === 'video');
+
   const resolved = platforms
     .filter(p => accounts[p])
-    .map(p => ({ platform: p, accountId: accounts[p] }));
+    .map(p => buildPlatformEntry(p, accounts[p], hasVideo, options));
 
   if (resolved.length === 0) {
     throw new Error('Ninguna de las plataformas solicitadas tiene una cuenta de Zernio conectada.');
   }
 
-  const urls = mediaUrls || [];
-  const hasVideo = urls.some(url =>
-    url.includes('/video/') || /\.(mp4|mov|webm|ogv)(\?|$)/i.test(url)
-  );
-
-  if (resolved.some(p => p.platform === 'tiktok') && !hasVideo && urls.length > 0) {
-    const err = new Error('TikTok solo acepta videos. Sube un archivo .mp4 o .mov para publicar en TikTok.');
-    err.details = { reason: 'tiktok_requires_video', mediaUrls: urls };
-    err.status = 400;
-    throw err;
-  }
+  // Zernio requires mediaItems as [{type, url}] objects, not a plain URL array
+  const mediaItems = urls.map(url => ({ type: detectMediaType(url), url }));
 
   const payload = {
     content: text,
     platforms: resolved,
-    mediaUrls: urls,
     scheduledFor: new Date(scheduleDate).toISOString(),
     timezone: 'UTC',
   };
 
-  if (platforms.includes('youtube')) {
-    payload.title = options.title || text.replace(/#\S+/g, '').trim().slice(0, 100);
-  }
+  if (mediaItems.length > 0) payload.mediaItems = mediaItems;
 
-  if (platforms.includes('tiktok')) {
-    payload.platformSpecificData = {
-      ...payload.platformSpecificData,
-      tiktok: {
-        privacyLevel: 'PUBLIC',
-        allowComment: true,
-        allowDuet: true,
-        allowStitch: true,
-      },
+  // TikTok uses a top-level tiktokSettings key (snake_case), not platformSpecificData
+  if (platforms.includes('tiktok') && accounts['tiktok']) {
+    payload.tiktokSettings = {
+      privacy_level: 'PUBLIC_TO_EVERYONE',
+      allow_comment: true,
+      allow_duet: hasVideo,
+      allow_stitch: hasVideo,
+      content_preview_confirmed: true,
+      express_consent_given: true,
     };
   }
 

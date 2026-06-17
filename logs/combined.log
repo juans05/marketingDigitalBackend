@@ -1084,3 +1084,15 @@
 {"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-16 22:31:19"}
 {"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-16 23:10:31"}
 {"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-16 23:10:31"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-16 23:46:11"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-16 23:46:11"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 00:05:26"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 00:05:26"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 00:05:46"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 00:05:46"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 00:05:54"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 00:05:54"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 00:06:00"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 00:06:00"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 00:06:11"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 00:06:11"}
