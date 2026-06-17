@@ -113,6 +113,10 @@ async function getActivePlatforms(profileId) {
         platform: acc.platform,
         username: acc.username || acc.name || '',
         accountId: acc.accountId || acc.id || acc._id || '',
+        // Zernio puede devolver followers con distintos nombres según la plataforma
+        followers: acc.followers ?? acc.follower_count ?? acc.subscribers ??
+                   acc.subscriber_count ?? acc.fans ?? acc.stats?.followers ?? 0,
+        profile_picture: acc.profilePicture || acc.profile_picture || acc.avatar || null,
       }));
   } catch (error) {
     logger.error('ZERNIO_getActivePlatforms', {

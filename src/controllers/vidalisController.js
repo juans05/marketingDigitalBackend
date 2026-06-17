@@ -708,12 +708,22 @@ exports.syncSocialAccounts = async (req, res) => {
     // 1. Obtener el artista
     const { data: artist, error: artistError } = await supabase
       .from('artists')
-      .select('*')
+      .select('id, name, ayrshare_profile_key, active_platforms, social_keys, publish_mode, facebook_page_id')
       .eq('id', artistId)
       .single();
 
     if (artistError || !artist) {
       return res.status(404).json({ error: 'Artista no encontrado' });
+    }
+
+    // Artistas Zernio no usan Upload-Post — sus cuentas se sincronizan via sync-analytics
+    if (artist.publish_mode === 'zernio') {
+      return res.json({
+        success: true,
+        active_platforms: artist.active_platforms || [],
+        social_keys: artist.social_keys || {},
+        note: 'Artista Zernio — usa /sync-analytics para sincronizar métricas'
+      });
     }
 
     const profileKey = artist.ayrshare_profile_key;

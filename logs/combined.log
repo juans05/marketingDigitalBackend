@@ -1112,3 +1112,9 @@
 {"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 08:28:59"}
 {"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 08:30:03"}
 {"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 08:30:03"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 08:40:03"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 08:40:03"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 08:40:10"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 08:40:10"}
+{"env":"development","level":"info","message":"Registering routes","path":"/api/vidalis","service":"vidalis-backend","timestamp":"2026-06-17 08:53:32"}
+{"env":"development","level":"info","message":"Server started","port":"3001","service":"vidalis-backend","timestamp":"2026-06-17 08:53:32"}
