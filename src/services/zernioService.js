@@ -172,38 +172,24 @@ async function publishPost(text, platforms, mediaUrls, profileId, options = {}) 
     };
   }
 
-  logger.info('ZERNIO_publishPost_REQUEST', {
-    profileId,
-    platforms,
-    mediaUrls,
-    payload,
-  });
+  console.log('[ZERNIO] publishPost REQUEST', JSON.stringify({ profileId, platforms, mediaUrls, payload }, null, 2));
 
   try {
     const response = await api.post('/posts', payload);
-    logger.info('ZERNIO_publishPost_RESPONSE', {
-      profileId,
-      platforms,
-      httpStatus: response.status,
-      data: response.data,
-    });
+    console.log('[ZERNIO] publishPost RESPONSE', JSON.stringify({ httpStatus: response.status, data: response.data }, null, 2));
     const { data } = response;
     return { id: data.post?._id || data._id || data.id, status: data.post?.status || data.status };
   } catch (error) {
-    logger.error('ZERNIO_publishPost_ERROR', {
-      profileId,
-      platforms,
-      mediaUrls,
-      payloadSent: payload,
+    const zernioData = error.response?.data;
+    console.error('[ZERNIO] publishPost ERROR', JSON.stringify({
       httpStatus: error.response?.status,
-      responseHeaders: {
-        'content-type': error.response?.headers?.['content-type'],
-        'x-request-id': error.response?.headers?.['x-request-id'],
-        'retry-after': error.response?.headers?.['retry-after'],
-      },
-      responseData: error.response?.data || error.message,
-    });
-    throw new Error(`Error publicando post en Zernio: ${error.response?.data?.message || error.message}`);
+      payloadSent: payload,
+      responseData: zernioData,
+    }, null, 2));
+    const err = new Error(`Error publicando post en Zernio: ${zernioData?.message || error.message}`);
+    err.details = zernioData;
+    err.status = error.response?.status;
+    throw err;
   }
 }
 
@@ -241,41 +227,24 @@ async function schedulePost(text, platforms, mediaUrls, scheduleDate, profileId,
     };
   }
 
-  logger.info('ZERNIO_schedulePost_REQUEST', {
-    profileId,
-    platforms,
-    mediaUrls,
-    scheduleDate,
-    payload,
-  });
+  console.log('[ZERNIO] schedulePost REQUEST', JSON.stringify({ profileId, platforms, mediaUrls, scheduleDate, payload }, null, 2));
 
   try {
     const response = await api.post('/posts', payload);
-    logger.info('ZERNIO_schedulePost_RESPONSE', {
-      profileId,
-      platforms,
-      scheduleDate,
-      httpStatus: response.status,
-      data: response.data,
-    });
+    console.log('[ZERNIO] schedulePost RESPONSE', JSON.stringify({ httpStatus: response.status, data: response.data }, null, 2));
     const { data } = response;
     return { id: data.post?._id || data._id || data.id, status: data.post?.status || data.status };
   } catch (error) {
-    logger.error('ZERNIO_schedulePost_ERROR', {
-      profileId,
-      platforms,
-      mediaUrls,
-      scheduleDate,
-      payloadSent: payload,
+    const zernioData = error.response?.data;
+    console.error('[ZERNIO] schedulePost ERROR', JSON.stringify({
       httpStatus: error.response?.status,
-      responseHeaders: {
-        'content-type': error.response?.headers?.['content-type'],
-        'x-request-id': error.response?.headers?.['x-request-id'],
-        'retry-after': error.response?.headers?.['retry-after'],
-      },
-      responseData: error.response?.data || error.message,
-    });
-    throw new Error(`Error programando post en Zernio: ${error.response?.data?.message || error.message}`);
+      payloadSent: payload,
+      responseData: zernioData,
+    }, null, 2));
+    const err = new Error(`Error programando post en Zernio: ${zernioData?.message || error.message}`);
+    err.details = zernioData;
+    err.status = error.response?.status;
+    throw err;
   }
 }
 
