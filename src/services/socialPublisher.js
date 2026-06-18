@@ -80,8 +80,19 @@ exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase, requeste
     }
 
     const platform = allowedPlatforms.includes(requestedPlatform) ? requestedPlatform : allowedPlatforms[0];
-    const res = await zernioService.generateConnectUrl(profileId, platform);
-    return { url: res.authUrl, mode: 'zernio', profileKey: profileId, platform };
+    
+    const redirectUrl = process.env.FRONTEND_URL
+      ? `${process.env.FRONTEND_URL}/social-callback`
+      : 'http://localhost:5173/social-callback';
+
+    const res = await zernioService.generateConnectUrl(profileId, platform, redirectUrl);
+    
+    let finalUrl = res.authUrl;
+    if (finalUrl && !finalUrl.includes('redirect')) {
+      finalUrl += (finalUrl.includes('?') ? '&' : '?') + `redirect=${encodeURIComponent(redirectUrl)}&redirectUrl=${encodeURIComponent(redirectUrl)}`;
+    }
+    
+    return { url: finalUrl, mode: 'zernio', profileKey: profileId, platform };
   }
 
   let profileId = artist.ayrshare_profile_key;

@@ -869,9 +869,9 @@ exports.updateProfile = async (req, res) => {
 
     const { data, error } = await supabase
       .from('agencies')
-      .update(updates)
+      .update({ ...updates, onboarding_completed: true })
       .eq('id', userId)
-      .select('id, name, bio, handle, avatar_url, email, account_type')
+      .select('id, name, bio, handle, avatar_url, email, account_type, onboarding_completed')
       .single();
 
     if (error) throw error;
