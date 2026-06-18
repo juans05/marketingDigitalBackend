@@ -319,7 +319,7 @@ function calibrateScore(rawScore, learningContext, platform) {
     if (learningContext?._globalFallback) {
       // Ya tiene datos globales inyectados, continuar con la calibración
     } else {
-      return { score: rawScore, raw: rawScore, confidence: 'low', adjustments: ['Sin datos históricos — se usará calibración global en próximo análisis'] };
+      return { score: Math.round(rawScore), raw: rawScore, confidence: 'low', adjustments: ['Sin datos históricos — se usará calibración global en próximo análisis'] };
     }
   }
 
