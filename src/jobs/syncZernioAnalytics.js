@@ -120,14 +120,45 @@ async function syncArtistAnalytics(artistId) {
       const engRate = typeof a.engagementRate === 'number' ? a.engagementRate : 0;
 
       // Buscar el video por su Zernio post ID
-      const { data: video } = await supabase
+      let { data: video } = await supabase
         .from('videos')
         .select('id')
         .eq('ayrshare_post_id', zernioPostId)
         .eq('artist_id', artistId)
         .maybeSingle();
 
-      if (!video) continue;
+      // Si no existe, crear entrada automática para posts descubiertos desde Zernio
+      if (!video) {
+        const platform = post.platform || 'unknown';
+        const postTitle = post.title || post.caption || post.body || '';
+        const displayTitle = postTitle.length > 80
+          ? postTitle.slice(0, 80) + '…'
+          : postTitle || `Post ${platform} ${(post.publishDate || post.createdAt || '').split('T')[0] || ''}`;
+        const postUrl = post.postUrl || post.permalink || post.url || null;
+        const publishedAt = post.publishDate || post.createdAt || new Date().toISOString();
+
+        const { data: created, error: createErr } = await supabase
+          .from('videos')
+          .insert({
+            artist_id: artistId,
+            title: displayTitle.trim(),
+            ayrshare_post_id: zernioPostId,
+            platforms: [platform],
+            status: 'published',
+            source_url: postUrl,
+            published_at: publishedAt,
+            created_at: publishedAt,
+          })
+          .select('id')
+          .single();
+
+        if (createErr) {
+          console.warn(`  ⚠️ No se pudo crear video para post ${zernioPostId}:`, createErr.message);
+          continue;
+        }
+        video = created;
+        results.posts_discovered = (results.posts_discovered || 0) + 1;
+      }
 
       const likes = a.likes || 0;
       const comments = a.comments || 0;
@@ -180,6 +211,7 @@ async function syncArtistAnalytics(artistId) {
       results.post_analytics++;
     }
 
+    if (results.posts_discovered) console.log(`  🆕 ${results.posts_discovered} posts nuevos descubiertos desde Zernio`);
     console.log(`  ✅ post_analytics: ${results.post_analytics} posts actualizados`);
   } catch (e) {
     results.errors.push(`post_analytics: ${e.message}`);
