@@ -1,0 +1,125 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e10]: Vidalis
+    - button [ref=e12] [cursor=pointer]:
+      - img [ref=e13]
+  - generic [ref=e16]:
+    - main [ref=e17]:
+      - generic [ref=e18]:
+        - heading "Mercado de Energía" [level=1] [ref=e327]
+        - generic [ref=e238]: "Editando: Juan Saavedra"
+      - generic [ref=e328]:
+        - generic [ref=e329]:
+          - generic [ref=e330]: Centro de Energía Vidalis
+          - heading "Potencia tu Contenido con Sparks" [level=2] [ref=e331]
+          - paragraph [ref=e332]: Los Sparks son la unidad de energía que utiliza nuestra IA para procesar, programar y viralizar tus contenidos en todas las redes sociales.
+          - generic [ref=e333]:
+            - img [ref=e334]
+            - generic [ref=e336]: "RECARGAS ÚNICAS: No caducan, se acumulan y se suman a los Sparks base de tu plan."
+        - generic [ref=e337]:
+          - generic [ref=e338]:
+            - img [ref=e340]
+            - heading "Pack Individual" [level=3] [ref=e342]
+            - generic [ref=e343]:
+              - generic [ref=e344]: "100"
+              - generic [ref=e345]: SPARKS
+            - generic [ref=e346]: Plan Base
+            - list [ref=e347]:
+              - listitem [ref=e348]:
+                - img [ref=e349]
+                - text: 10 Publicaciones Virales
+              - listitem [ref=e352]:
+                - img [ref=e353]
+                - text: Análisis IA Básico
+              - listitem [ref=e356]:
+                - img [ref=e357]
+                - text: Soporte vía WhatsApp
+              - listitem [ref=e360]:
+                - img [ref=e361]
+                - text: Válido de por vida
+            - button "Recargar Ahora" [ref=e364] [cursor=pointer]:
+              - text: Recargar Ahora
+              - img [ref=e365]
+          - generic [ref=e367]:
+            - generic [ref=e368]: RECOMENDADO
+            - img [ref=e370]
+            - heading "Plan Viral" [level=3] [ref=e375]
+            - generic [ref=e376]:
+              - generic [ref=e377]: "500"
+              - generic [ref=e378]: SPARKS
+            - generic [ref=e379]: Crecimiento
+            - list [ref=e380]:
+              - listitem [ref=e381]:
+                - img [ref=e382]
+                - text: 50 Publicaciones Estratégicas
+              - listitem [ref=e385]:
+                - img [ref=e386]
+                - text: Análisis Realtime
+              - listitem [ref=e389]:
+                - img [ref=e390]
+                - text: Sincronización Multi
+              - listitem [ref=e393]:
+                - img [ref=e394]
+                - text: Auditoría Gratis
+            - button "Recargar Ahora" [ref=e397] [cursor=pointer]:
+              - text: Recargar Ahora
+              - img [ref=e398]
+          - generic [ref=e400]:
+            - img [ref=e402]
+            - heading "Elite Pro" [level=3] [ref=e404]
+            - generic [ref=e405]:
+              - generic [ref=e406]: "1500"
+              - generic [ref=e407]: SPARKS
+            - generic [ref=e408]: Alto Impacto
+            - list [ref=e409]:
+              - listitem [ref=e410]:
+                - img [ref=e411]
+                - text: 150 Posts de Alto Valor
+              - listitem [ref=e414]:
+                - img [ref=e415]
+                - text: Análisis de Competencia IA
+              - listitem [ref=e418]:
+                - img [ref=e419]
+                - text: IA Predictiva
+              - listitem [ref=e422]:
+                - img [ref=e423]
+                - text: Manager Dedicado
+            - button "Recargar Ahora" [ref=e426] [cursor=pointer]:
+              - text: Recargar Ahora
+              - img [ref=e427]
+        - generic [ref=e429]:
+          - generic [ref=e430]:
+            - heading "¿Diferencia entre Planes y Recargas?" [level=4] [ref=e431]:
+              - img [ref=e432]
+              - text: ¿Diferencia entre Planes y Recargas?
+            - paragraph [ref=e435]:
+              - text: Tu
+              - strong [ref=e436]: Plan
+              - text: (Pro, Elite) te da las herramientas y una carga mensual base.
+              - text: Las
+              - strong [ref=e437]: Recargas
+              - text: son combustible extra que compras cuando lo necesitas; nunca vencen y te permiten seguir produciendo sin subir de plan.
+          - button "Hablar con Ventas" [ref=e438] [cursor=pointer]
+        - generic [ref=e439]:
+          - paragraph [ref=e440]: Métodos de Pago Soportados
+          - generic [ref=e441]:
+            - generic [ref=e442]: YAPE
+            - generic [ref=e443]: BIZUM
+            - generic [ref=e444]: VISA
+            - generic [ref=e445]: MASTER
+            - generic [ref=e446]: PAYPAL
+    - navigation [ref=e25]:
+      - button [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+      - button [ref=e29] [cursor=pointer]:
+        - img [ref=e30]
+      - button [active] [ref=e32] [cursor=pointer]:
+        - img [ref=e33]
+      - button [ref=e35] [cursor=pointer]:
+        - img [ref=e36]
+      - button [ref=e38] [cursor=pointer]:
+        - img [ref=e39]
+      - button [ref=e45] [cursor=pointer]:
+        - img [ref=e46]

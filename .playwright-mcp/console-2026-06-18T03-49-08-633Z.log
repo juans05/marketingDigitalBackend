@@ -1,0 +1,466 @@
+[     110ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:14336
+[     126ms] [LOG] ⚡ OnboardingWizard Module Loaded @ http://localhost:5174/src/components/OnboardingWizard.jsx:5
+[     135ms] [LOG] 🚀 Dashboard initializing... @ http://localhost:5174/src/pages/Dashboard.jsx:27
+[     136ms] [LOG] 👤 User loaded: juans0520@gmail.com | Type: artist @ http://localhost:5174/src/pages/Dashboard.jsx:36
+[     136ms] [LOG] 🔍 Fetching individual artist for user: test-123 @ http://localhost:5174/src/pages/Dashboard.jsx:67
+[     137ms] [LOG] 🚀 Dashboard initializing... @ http://localhost:5174/src/pages/Dashboard.jsx:27
+[     137ms] [LOG] 👤 User loaded: juans0520@gmail.com | Type: artist @ http://localhost:5174/src/pages/Dashboard.jsx:36
+[     137ms] [LOG] 🔍 Fetching individual artist for user: test-123 @ http://localhost:5174/src/pages/Dashboard.jsx:67
+[    2473ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/artists/test-123:0
+[    2474ms] [ERROR] ❌ Error fetching individual artist: TypeError: Failed to fetch
+    at fetchIndividualArtist (http://localhost:5174/src/pages/Dashboard.jsx:70:22)
+    at http://localhost:5174/src/pages/Dashboard.jsx:54:5
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7617:22)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7671:14)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5) @ http://localhost:5174/@vite/client:509
+[    2475ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/artists/test-123:0
+[    2475ms] [ERROR] ❌ Error fetching individual artist: TypeError: Failed to fetch
+    at fetchIndividualArtist (http://localhost:5174/src/pages/Dashboard.jsx:70:22)
+    at http://localhost:5174/src/pages/Dashboard.jsx:54:5
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7700:6)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7712:14)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5) @ http://localhost:5174/@vite/client:509
+[    2534ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[    2535ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23)
+    at http://localhost:5174/src/components/AIStatusIndicator.jsx:26:3
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7617:22)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7671:14)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5) @ http://localhost:5174/@vite/client:509
+[    2535ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/stats/test-123?artistId=artist-123:0
+[    2536ms] [ERROR] Analytics Fetch Error: TypeError: Failed to fetch
+    at fetchStats (http://localhost:5174/src/components/AnalyticsView.jsx:681:22)
+    at http://localhost:5174/src/components/AnalyticsView.jsx:669:3
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7617:22)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7671:14)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5) @ http://localhost:5174/@vite/client:509
+[    2536ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/analytics-posts/artist-123:0
+[    2536ms] [ERROR] Post metrics error: TypeError: Failed to fetch
+    at fetchPostMetrics (http://localhost:5174/src/components/AnalyticsView.jsx:694:22)
+    at http://localhost:5174/src/components/AnalyticsView.jsx:671:4
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7617:22)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7671:14)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5) @ http://localhost:5174/@vite/client:509
+[    2537ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[    2537ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23)
+    at http://localhost:5174/src/components/AIStatusIndicator.jsx:26:3
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7700:6)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7712:14)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5) @ http://localhost:5174/@vite/client:509
+[    4814ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/stats/test-123?artistId=artist-123:0
+[    4815ms] [ERROR] Analytics Fetch Error: TypeError: Failed to fetch
+    at fetchStats (http://localhost:5174/src/components/AnalyticsView.jsx:681:22)
+    at http://localhost:5174/src/components/AnalyticsView.jsx:669:3
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7700:6)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7712:14)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5) @ http://localhost:5174/@vite/client:509
+[    4815ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/analytics-posts/artist-123:0
+[    4815ms] [ERROR] Post metrics error: TypeError: Failed to fetch
+    at fetchPostMetrics (http://localhost:5174/src/components/AnalyticsView.jsx:694:22)
+    at http://localhost:5174/src/components/AnalyticsView.jsx:671:4
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7700:6)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7712:14)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5) @ http://localhost:5174/@vite/client:509
+[    7529ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[    7529ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   12531ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   12531ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   17541ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   17541ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   22552ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   22552ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   27549ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   27550ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   32550ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   32550ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   37514ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   37514ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   42545ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   42546ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   47524ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   47524ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   52554ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   52554ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   55544ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   55545ms] [ERROR] Gallery error: TypeError: Failed to fetch
+    at fetchGallery (http://localhost:5174/src/components/VideoGallery.jsx:357:3)
+    at http://localhost:5174/src/components/VideoGallery.jsx:405:3
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7617:22)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5)
+    at commitPassiveMountOnFiber (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7671:14)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7605:5) @ http://localhost:5174/@vite/client:509
+[   55546ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   55546ms] [ERROR] Gallery error: TypeError: Failed to fetch
+    at fetchGallery (http://localhost:5174/src/components/VideoGallery.jsx:357:3)
+    at http://localhost:5174/src/components/VideoGallery.jsx:405:3
+    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:12903:13)
+    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:850:66)
+    at commitHookEffectListMount (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6616:153)
+    at commitHookPassiveMountEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:6651:55)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7700:6)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5)
+    at reconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7712:14)
+    at recursivelyTraverseReconnectPassiveEffects (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:7687:5) @ http://localhost:5174/@vite/client:509
+[   55807ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   55807ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   62550ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   62551ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   67535ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   67535ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   72556ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   72556ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   77543ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   77543ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   82542ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   82542ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   87545ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   87545ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   92540ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   92541ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[   97525ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[   97525ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  102544ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  102544ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  107555ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  107555ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  112548ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  112548ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  117442ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/social-status/artist-123:0
+[  117442ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/social-status/artist-123:0
+[  117535ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  117535ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  122553ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  122553ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  127557ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  127557ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  132530ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  132530ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  137533ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  137534ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  142527ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  142527ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  147519ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  147519ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  152540ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  152540ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  157548ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  157549ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  162532ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  162533ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  167551ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  167551ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  172551ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  172551ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  177541ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  177542ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  182519ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  182520ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  187555ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  187555ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  192530ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  192530ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  197521ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  197522ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  202517ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  202517ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  207524ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  207524ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  212527ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  212527ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  217522ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  217522ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  222541ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  222541ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  227536ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  227536ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  232548ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  232549ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  237530ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  237531ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  242549ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  242550ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  247557ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  247557ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  252537ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  252537ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  257528ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  257529ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  262529ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  262529ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  267555ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  267555ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  272523ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  272524ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  277555ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  277555ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  282531ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  282531ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  287541ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  287541ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  292528ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  292529ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  297521ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  297521ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  302499ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  302499ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  307530ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  307530ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  312507ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  312507ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  317518ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  317518ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  322539ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  322539ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  327502ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  327502ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  332519ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  332519ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  337504ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  337505ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  342529ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  342529ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  347497ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  347497ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  352512ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  352512ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  357496ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  357497ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  362512ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  362512ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  367501ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  367501ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  372516ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  372517ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  377526ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  377526ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  382520ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  382520ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  387518ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  387519ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  392523ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  392523ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  397523ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  397524ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  402496ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  402497ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  407521ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  407521ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  412521ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  412521ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  417528ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  417528ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  422521ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  422522ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  427520ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  427520ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  432523ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  432523ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  437519ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  437520ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  442511ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  442511ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  447511ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  447511ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  452507ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  452508ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  457519ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  457519ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  462528ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  462528ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  467529ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  467529ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  472513ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  472513ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  477548ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  477548ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  482532ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  482532ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  487519ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  487519ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  492520ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  492520ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  497512ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  497513ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  502535ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  502535ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  507510ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  507511ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  512523ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  512524ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  517496ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  517496ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  522519ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  522519ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  527522ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  527522ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  532535ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  532535ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  537512ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  537513ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  542498ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  542498ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  547518ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  547518ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  552539ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  552539ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  557536ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  557536ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  562526ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  562526ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509

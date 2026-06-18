@@ -1,0 +1,28 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e10]: Vidalis
+    - button [ref=e12] [cursor=pointer]:
+      - img [ref=e13]
+  - generic [ref=e16]:
+    - main [ref=e17]:
+      - generic [ref=e18]:
+        - heading "Dashboard de Analítica" [level=1] [ref=e19]
+        - generic [ref=e20]: "Editando: Juan Saavedra"
+      - generic [ref=e21]:
+        - img [ref=e22]
+        - paragraph [ref=e24]: Actualizando métricas...
+    - navigation [ref=e25]:
+      - button [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+      - button [ref=e29] [cursor=pointer]:
+        - img [ref=e30]
+      - button [ref=e32] [cursor=pointer]:
+        - img [ref=e33]
+      - button [ref=e35] [cursor=pointer]:
+        - img [ref=e36]
+      - button [ref=e38] [cursor=pointer]:
+        - img [ref=e39]
+      - button [ref=e45] [cursor=pointer]:
+        - img [ref=e46]

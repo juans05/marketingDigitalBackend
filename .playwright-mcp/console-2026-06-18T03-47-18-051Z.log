@@ -1,0 +1,4 @@
+[     220ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=c1c6f592:14336
+[     245ms] [LOG] ⚡ OnboardingWizard Module Loaded @ http://localhost:5174/src/components/OnboardingWizard.jsx:5
+[     359ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:5174/login:0
+[   62737ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/login:0

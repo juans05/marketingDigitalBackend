@@ -1,0 +1,124 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5] [cursor=pointer]:
+      - img [ref=e7]
+      - generic [ref=e10]: Vidalis
+    - generic [ref=e11]:
+      - link "Ver funciones" [ref=e12] [cursor=pointer]:
+        - /url: "#features"
+        - text: Funciones
+      - link "Sobre Vidalis" [ref=e13] [cursor=pointer]:
+        - /url: "#about"
+        - text: Nosotros
+      - button "Acceso Directo" [ref=e14] [cursor=pointer]:
+        - img [ref=e15]
+        - generic [ref=e18]: Acceso Directo
+  - main [ref=e19]:
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - img [ref=e22]
+        - generic [ref=e24]: SOCIAL MEDIA INTELLIGENCE
+      - heading "Multiplica tu Impacto Visual en segundos." [level=1] [ref=e25]
+      - paragraph [ref=e26]: La plataforma de gestión y distribución impulsada por IA creada para agencias y creadores que buscan dominar las tendencias mundiales.
+      - generic [ref=e27]:
+        - generic [ref=e28]:
+          - button "Empezar Gratis" [ref=e29] [cursor=pointer]:
+            - img [ref=e30]
+            - text: Empezar Gratis
+          - button "Ver Demo" [ref=e35] [cursor=pointer]:
+            - img [ref=e36]
+            - text: Ver Demo
+        - generic [ref=e38]:
+          - generic [ref=e39]:
+            - img [ref=e40]
+            - generic [ref=e43]: +800% Retención Media
+          - generic [ref=e44]:
+            - img [ref=e45]
+            - generic [ref=e48]: Distribución Multi-Canal
+          - generic [ref=e49]:
+            - img [ref=e50]
+            - generic [ref=e53]: AI-Driven Analysis
+    - generic [ref=e54]:
+      - generic [ref=e55]:
+        - heading "Inversión en Resultados" [level=2] [ref=e56]
+        - paragraph [ref=e57]: Planes diseñados para proyectar autoridad y maximizar tu impacto digital.
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - generic [ref=e60]:
+            - img [ref=e62]
+            - heading "Creator" [level=3] [ref=e64]
+            - generic [ref=e65]: $29/mes
+          - list [ref=e66]:
+            - listitem [ref=e67]:
+              - img [ref=e69]
+              - text: 10 Videos / mes (4K Ready)
+            - listitem [ref=e71]:
+              - img [ref=e73]
+              - text: Análisis de Virilidad IA
+            - listitem [ref=e75]:
+              - img [ref=e77]
+              - text: Distribución Instantánea
+            - listitem [ref=e79]:
+              - img [ref=e81]
+              - text: Soporte Prioritario
+          - button "Empieza a Escalar" [ref=e83] [cursor=pointer]
+        - generic [ref=e84]:
+          - generic [ref=e85]: MÁS SOLICITADO
+          - generic [ref=e86]:
+            - img [ref=e88]
+            - heading "Business Elite" [level=3] [ref=e90]
+            - generic [ref=e91]: $79/mes
+          - list [ref=e92]:
+            - listitem [ref=e93]:
+              - img [ref=e95]
+              - text: 50 Videos / mes
+            - listitem [ref=e97]:
+              - img [ref=e99]
+              - text: Optimización Multi-Modelo
+            - listitem [ref=e101]:
+              - img [ref=e103]
+              - text: Estrategia de Retención IA
+            - listitem [ref=e105]:
+              - img [ref=e107]
+              - text: Métricas de Autoridad
+            - listitem [ref=e109]:
+              - img [ref=e111]
+              - text: Vidalis Prime Support
+          - button "Domina el Mercado" [ref=e113] [cursor=pointer]
+        - generic [ref=e114]:
+          - generic [ref=e115]:
+            - img [ref=e117]
+            - heading "Agency Pro" [level=3] [ref=e119]
+            - generic [ref=e120]: $199/mes
+          - list [ref=e121]:
+            - listitem [ref=e122]:
+              - img [ref=e124]
+              - text: Videos Ilimitados
+            - listitem [ref=e126]:
+              - img [ref=e128]
+              - text: Multi-Perfil & Artistas
+            - listitem [ref=e130]:
+              - img [ref=e132]
+              - text: Marca Blanca (White Label)
+            - listitem [ref=e134]:
+              - img [ref=e136]
+              - text: API Access Premium
+            - listitem [ref=e138]:
+              - img [ref=e140]
+              - text: Dedicated Account Manager
+          - button "Infraestructura Total" [ref=e142] [cursor=pointer]
+  - contentinfo [ref=e143]:
+    - generic [ref=e144]:
+      - link "Síguenos en Twitter" [ref=e145] [cursor=pointer]:
+        - /url: "#"
+        - img [ref=e146]
+      - link "Síguenos en Instagram" [ref=e148] [cursor=pointer]:
+        - /url: "#"
+        - img [ref=e149]
+      - link "Nuestro repositorio en GitHub" [ref=e152] [cursor=pointer]:
+        - /url: "#"
+        - img [ref=e153]
+      - link "Envíanos un email" [ref=e156] [cursor=pointer]:
+        - /url: "#"
+        - img [ref=e157]
+    - paragraph [ref=e160]: © 2026 VIDALIS.AI - Automatización Viral para Músicos de Élite.

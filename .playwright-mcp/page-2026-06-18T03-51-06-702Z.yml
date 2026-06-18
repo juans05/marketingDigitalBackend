@@ -1,0 +1,40 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e10]: Vidalis
+    - button [ref=e12] [cursor=pointer]:
+      - img [ref=e13]
+  - generic [ref=e16]:
+    - main [ref=e17]:
+      - generic [ref=e18]:
+        - heading "Redes Sociales" [level=1] [ref=e447]
+        - generic [ref=e238]: "Editando: Juan Saavedra"
+      - generic [ref=e448]:
+        - heading "Canales Conectados" [level=2] [ref=e449]
+        - generic [ref=e450]:
+          - heading "Conecta tus redes sociales" [level=2] [ref=e451]
+          - paragraph [ref=e452]: Vincula tu cuenta de Vidalis con tus redes sociales. Podés modificarlo más adelante.
+          - button "CONECTAR REDES SOCIALES" [ref=e453] [cursor=pointer]:
+            - img [ref=e454]
+            - text: CONECTAR REDES SOCIALES
+          - generic [ref=e457]:
+            - generic [ref=e458]: COMPATIBLE CON
+            - img [ref=e459]
+            - img [ref=e462]
+            - img [ref=e464]
+            - img [ref=e467]
+            - img [ref=e470]
+    - navigation [ref=e25]:
+      - button [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+      - button [ref=e29] [cursor=pointer]:
+        - img [ref=e30]
+      - button [ref=e32] [cursor=pointer]:
+        - img [ref=e33]
+      - button [ref=e35] [cursor=pointer]:
+        - img [ref=e36]
+      - button [active] [ref=e38] [cursor=pointer]:
+        - img [ref=e39]
+      - button [ref=e45] [cursor=pointer]:
+        - img [ref=e46]

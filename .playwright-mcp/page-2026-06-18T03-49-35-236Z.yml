@@ -1,0 +1,111 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e10]: Vidalis
+    - button [ref=e12] [cursor=pointer]:
+      - img [ref=e13]
+  - generic [ref=e16]:
+    - main [ref=e17]:
+      - heading "Configuración" [level=1] [ref=e125]
+      - generic [ref=e126]:
+        - generic [ref=e127]:
+          - heading "Profile & Branding" [level=2] [ref=e128]
+          - generic [ref=e129]:
+            - generic [ref=e130]:
+              - generic [ref=e131] [cursor=pointer]:
+                - generic [ref=e132]: J
+                - generic [ref=e134]: Cambiar
+              - button [ref=e135] [cursor=pointer]:
+                - img [ref=e136]
+            - generic [ref=e138]:
+              - generic [ref=e139]:
+                - generic [ref=e140]:
+                  - generic [ref=e141]: Display Name
+                  - textbox [ref=e142]: Juan Saavedra
+                - generic [ref=e143]:
+                  - generic [ref=e144]: Handle
+                  - generic [ref=e145]:
+                    - generic: "@"
+                    - textbox [ref=e146]: juans0520
+              - generic [ref=e147]:
+                - generic [ref=e148]: Bio
+                - textbox "Describe tu marca o perfil..." [ref=e149]
+              - button "Guardar cambios" [ref=e151] [cursor=pointer]
+        - generic [ref=e152]:
+          - generic [ref=e153]:
+            - heading "Cuentas Conectadas" [level=2] [ref=e154]
+            - generic [ref=e155]:
+              - generic [ref=e156]:
+                - generic [ref=e157]:
+                  - img [ref=e159]
+                  - generic [ref=e163]:
+                    - generic [ref=e164]: Instagram
+                    - generic [ref=e165]: No conectado
+                - button "CONECTAR" [ref=e166] [cursor=pointer]
+              - generic [ref=e167]:
+                - generic [ref=e168]:
+                  - img [ref=e170]
+                  - generic [ref=e174]:
+                    - generic [ref=e175]: TikTok
+                    - generic [ref=e176]: No conectado
+                - button "CONECTAR" [ref=e177] [cursor=pointer]
+              - generic [ref=e178]:
+                - generic [ref=e179]:
+                  - img [ref=e181]
+                  - generic [ref=e185]:
+                    - generic [ref=e186]: YouTube
+                    - generic [ref=e187]: No conectado
+                - button "CONECTAR" [ref=e188] [cursor=pointer]
+              - generic [ref=e189]:
+                - generic [ref=e190]:
+                  - img [ref=e192]
+                  - generic [ref=e195]:
+                    - generic [ref=e196]: Facebook
+                    - generic [ref=e197]: No conectado
+                - button "CONECTAR" [ref=e198] [cursor=pointer]
+          - generic [ref=e199]:
+            - heading "Reglas de Automatización" [level=2] [ref=e200]
+            - generic [ref=e201]:
+              - generic [ref=e202]:
+                - generic [ref=e203]:
+                  - generic [ref=e204]: 🤖
+                  - generic [ref=e205]:
+                    - generic [ref=e206]: Smart Reply
+                    - generic [ref=e207]: La IA genera respuestas contextuales a comentarios
+                - button "Desactivar" [ref=e208] [cursor=pointer]
+              - generic [ref=e210]:
+                - generic [ref=e211]:
+                  - generic [ref=e212]: ✉️
+                  - generic [ref=e213]:
+                    - generic [ref=e214]: Auto-DM
+                    - generic [ref=e215]: Saludo automático para nuevos seguidores
+                - button "Activar" [ref=e216] [cursor=pointer]
+              - generic [ref=e218]:
+                - img [ref=e219]
+                - generic [ref=e221]: Las automatizaciones aplican en todas las plataformas conectadas.
+        - generic [ref=e222]:
+          - heading "Suscripción" [level=2] [ref=e223]
+          - generic [ref=e225]:
+            - generic [ref=e226]:
+              - generic [ref=e229]: Plan Activo
+              - heading "Mini" [level=3] [ref=e230]
+              - paragraph [ref=e231]: Acceso básico a publicación y análisis de contenido.
+            - generic [ref=e232]:
+              - generic [ref=e233]: Gratis
+              - generic [ref=e234]:
+                - button "Administrar Facturación" [ref=e235] [cursor=pointer]
+                - button "Cambiar Plan" [ref=e236] [cursor=pointer]
+    - navigation [ref=e25]:
+      - button [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+      - button [ref=e29] [cursor=pointer]:
+        - img [ref=e30]
+      - button [ref=e32] [cursor=pointer]:
+        - img [ref=e33]
+      - button [ref=e35] [cursor=pointer]:
+        - img [ref=e36]
+      - button [ref=e38] [cursor=pointer]:
+        - img [ref=e39]
+      - button [active] [ref=e45] [cursor=pointer]:
+        - img [ref=e46]

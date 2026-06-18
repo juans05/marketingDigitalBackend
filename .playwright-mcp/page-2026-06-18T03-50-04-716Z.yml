@@ -1,0 +1,102 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e10]: Vidalis
+    - button [ref=e12] [cursor=pointer]:
+      - img [ref=e13]
+  - generic [ref=e16]:
+    - main [ref=e17]:
+      - generic [ref=e18]:
+        - heading "AI Content Copilot" [level=1] [ref=e237]
+        - generic [ref=e238]: "Editando: Juan Saavedra"
+      - generic [ref=e239]:
+        - generic [ref=e241]:
+          - generic [ref=e242]:
+            - generic [ref=e243]:
+              - generic [ref=e244]: Input Content
+              - generic [ref=e245]:
+                - textbox "Pega tu link de video o el script aquí..." [ref=e246]
+                - button "Pegar URL" [ref=e247] [cursor=pointer]:
+                  - img [ref=e248]
+                  - text: Pegar URL
+              - generic [ref=e251]:
+                - button "Subir Video" [ref=e252] [cursor=pointer]:
+                  - img [ref=e253]
+                  - generic [ref=e255]: Subir Video
+                - button "Subir Imagen" [ref=e256] [cursor=pointer]:
+                  - img [ref=e257]
+                  - generic [ref=e261]: Subir Imagen
+            - generic [ref=e262]:
+              - generic [ref=e263]:
+                - generic [ref=e264]: Tono objetivo
+                - generic [ref=e265]:
+                  - button "🎉 Fun" [ref=e266] [cursor=pointer]:
+                    - generic [ref=e267]: 🎉
+                    - text: Fun
+                  - button "📢 Controversial" [ref=e268] [cursor=pointer]:
+                    - generic [ref=e269]: 📢
+                    - text: Controversial
+                  - button "🎓 Educational" [ref=e270] [cursor=pointer]:
+                    - generic [ref=e271]: 🎓
+                    - text: Educational
+                  - button "📈 Inspirational" [ref=e272] [cursor=pointer]:
+                    - generic [ref=e273]: 📈
+                    - text: Inspirational
+              - generic [ref=e274]:
+                - generic [ref=e275]: Plataforma
+                - generic [ref=e276]:
+                  - generic [ref=e277] [cursor=pointer]:
+                    - generic [ref=e278]: ⚡
+                    - generic [ref=e279]:
+                      - paragraph [ref=e280]: TikTok / Reels
+                      - paragraph [ref=e281]: Optimizado para alta retención
+                  - generic [ref=e284] [cursor=pointer]:
+                    - generic [ref=e285]: ▶
+                    - generic [ref=e286]:
+                      - paragraph [ref=e287]: YouTube Shorts
+                      - paragraph [ref=e288]: Optimizado para alcance & SEO
+            - button "⚡ Analizar Estrategia de Contenido" [disabled] [ref=e290]:
+              - generic [ref=e291]: ⚡
+              - text: Analizar Estrategia de Contenido
+          - generic [ref=e293]:
+            - generic [ref=e296]: Potencial Viral
+            - generic [ref=e297]:
+              - img [ref=e298]
+              - generic [ref=e301]:
+                - generic [ref=e302]: —
+                - generic [ref=e303]: / 100
+            - paragraph [ref=e304]: Ingresa tu contenido y presiona analizar
+        - generic [ref=e305]:
+          - heading "Biblioteca de Medios" [level=2] [ref=e306]
+          - generic [ref=e307]:
+            - generic [ref=e308]:
+              - generic [ref=e309]:
+                - img [ref=e311]
+                - generic [ref=e313]:
+                  - heading "Catálogo Viral" [level=2] [ref=e314]
+                  - paragraph [ref=e315]:
+                    - generic [ref=e316]: 0 piezas
+                    - text: activas en tu biblioteca.
+              - generic [ref=e317]:
+                - button "Ver Todo" [ref=e318] [cursor=pointer]
+                - button "Enviando... (5-10m)" [ref=e319] [cursor=pointer]
+                - button "Pendiente de Enviar" [ref=e320] [cursor=pointer]
+                - button "Estrategia IA" [ref=e321] [cursor=pointer]
+            - generic [ref=e322]:
+              - img [ref=e323]
+              - heading "Sin resultados" [level=3] [ref=e325]
+              - paragraph [ref=e326]: Inicia tu legado subiendo tu primer contenido vertical.
+    - navigation [ref=e25]:
+      - button [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+      - button [active] [ref=e29] [cursor=pointer]:
+        - img [ref=e30]
+      - button [ref=e32] [cursor=pointer]:
+        - img [ref=e33]
+      - button [ref=e35] [cursor=pointer]:
+        - img [ref=e36]
+      - button [ref=e38] [cursor=pointer]:
+        - img [ref=e39]
+      - button [ref=e45] [cursor=pointer]:
+        - img [ref=e46]

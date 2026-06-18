@@ -1,0 +1,28 @@
+- generic [ref=e6]:
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - img [ref=e10]
+      - generic [ref=e13]: Vidalis.ai
+    - paragraph [ref=e14]: Estrategia Viral con Inteligencia Artificial
+  - generic [ref=e15]:
+    - button "Ingresar" [ref=e16] [cursor=pointer]:
+      - img [ref=e17]
+      - text: Ingresar
+    - button "Registrarse" [ref=e20] [cursor=pointer]:
+      - img [ref=e21]
+      - text: Registrarse
+  - generic [ref=e24]:
+    - generic [ref=e25]:
+      - generic [ref=e26]: Email Profesional
+      - generic [ref=e27]:
+        - img [ref=e28]
+        - textbox "nombre@compania.com" [ref=e31]: juans0520@gmail.com
+    - generic [ref=e32]:
+      - generic [ref=e33]: Contraseña de Seguridad
+      - generic [ref=e34]:
+        - img [ref=e35]
+        - textbox "••••••••" [ref=e38]: "123456"
+    - generic [ref=e42]: Failed to fetch
+    - button "Ingresar al Dashboard" [ref=e39] [cursor=pointer]
+  - link "← Retornar al Portal Principal" [ref=e41] [cursor=pointer]:
+    - /url: /
