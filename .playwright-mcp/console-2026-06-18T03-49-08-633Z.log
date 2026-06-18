@@ -464,3 +464,6 @@
 [  562526ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
 [  562526ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
     at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
+[  567531ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/api/vidalis/gallery/artist-123:0
+[  567532ms] [ERROR] Error fetching AI status: TypeError: Failed to fetch
+    at checkStatus (http://localhost:5174/src/components/AIStatusIndicator.jsx:15:23) @ http://localhost:5174/@vite/client:509
