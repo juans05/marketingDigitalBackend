@@ -172,13 +172,42 @@ async function fetchArtistLearningContext(artistId) {
       .slice(0, 25)
       .map(h => h.tag);
 
-    // --- Calibración: sesgo del modelo (predicho vs real) ---
+    // --- Calibración avanzada: sesgo global + por plataforma + desviación estándar ---
     const calibrationPosts = (topPosts || []).filter(p => p.viral_score && p.viral_score_real);
     let scoreBias = 0;
+    let biasStdDev = 0;
+    const platformBias = {};
+    const allRealScores = calibrationPosts.map(p => p.viral_score_real);
+    const historicalAvg = allRealScores.length > 0
+      ? parseFloat((allRealScores.reduce((a, b) => a + b, 0) / allRealScores.length).toFixed(1))
+      : 5;
+
     if (calibrationPosts.length > 0) {
-      const totalBias = calibrationPosts.reduce((acc, p) => acc + (p.viral_score - p.viral_score_real), 0);
-      scoreBias = parseFloat((totalBias / calibrationPosts.length).toFixed(1));
+      const errors = calibrationPosts.map(p => p.viral_score - p.viral_score_real);
+      scoreBias = parseFloat((errors.reduce((a, b) => a + b, 0) / errors.length).toFixed(2));
+      const variance = errors.reduce((acc, e) => acc + Math.pow(e - scoreBias, 2), 0) / errors.length;
+      biasStdDev = parseFloat(Math.sqrt(variance).toFixed(2));
+
+      calibrationPosts.forEach(p => {
+        const plats = Array.isArray(p.platforms) ? p.platforms : (p.platforms || '').split(',').map(s => s.trim()).filter(Boolean);
+        plats.forEach(pl => {
+          if (!platformBias[pl]) platformBias[pl] = { errors: [], realScores: [] };
+          platformBias[pl].errors.push(p.viral_score - p.viral_score_real);
+          platformBias[pl].realScores.push(p.viral_score_real);
+        });
+      });
     }
+
+    const platformCalibration = {};
+    Object.entries(platformBias).forEach(([pl, data]) => {
+      const avg = data.errors.reduce((a, b) => a + b, 0) / data.errors.length;
+      const realAvg = data.realScores.reduce((a, b) => a + b, 0) / data.realScores.length;
+      platformCalibration[pl] = {
+        bias: parseFloat(avg.toFixed(2)),
+        avgRealScore: parseFloat(realAvg.toFixed(1)),
+        sampleSize: data.errors.length,
+      };
+    });
 
     // --- Top copies que funcionaron (score real >= 6) ---
     const topCopies = (topPosts || [])
@@ -186,14 +215,17 @@ async function fetchArtistLearningContext(artistId) {
       .slice(0, 3)
       .map(p => ({ copy: p.ai_copy_short, score: p.viral_score_real, platforms: p.platforms }));
 
-    logDebug(`📚 [Learning] Artista ${artistId}: ${topHashtags.length} hashtags aprendidos, bias=${scoreBias}, best platform=${platformPerformance[0]?.platform || 'N/A'}`);
+    logDebug(`📚 [Learning] Artista ${artistId}: ${topHashtags.length} hashtags, bias=${scoreBias}±${biasStdDev}, avg_real=${historicalAvg}, best=${platformPerformance[0]?.platform || 'N/A'}`);
 
     return {
-      topHashtags,          // hashtags que históricamente generan más engagement
-      platformPerformance,  // plataformas ordenadas por engagement
+      topHashtags,
+      platformPerformance,
       bestPlatform: platformPerformance[0]?.platform || null,
-      scoreBias,            // si > 0 la IA sobreestima; si < 0 subestima
-      topCopies,            // ejemplos de copy que funcionaron
+      scoreBias,
+      biasStdDev,
+      historicalAvg,
+      platformCalibration,
+      topCopies,
       totalPostsAnalyzed: calibrationPosts.length,
       recentInsights: (insightsLog || []).flatMap(i => i.decisions || []).slice(0, 3),
       creativeDNA: artistProfile?.creative_dna || artistProfile?.branding_data?.creative_dna || null,
@@ -203,6 +235,161 @@ async function fetchArtistLearningContext(artistId) {
     logDebug(`⚠️ [Learning] No se pudo obtener contexto de aprendizaje: ${err.message}`);
     return null;
   }
+}
+
+let _globalCalibrationCache = null;
+let _globalCalibrationExpiry = 0;
+
+async function fetchGlobalCalibration() {
+  if (_globalCalibrationCache && Date.now() < _globalCalibrationExpiry) return _globalCalibrationCache;
+
+  try {
+    const { data: allPosts } = await supabase
+      .from('videos')
+      .select('viral_score, viral_score_real, platforms')
+      .not('viral_score', 'is', null)
+      .not('viral_score_real', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (!allPosts?.length || allPosts.length < 3) {
+      _globalCalibrationCache = null;
+      _globalCalibrationExpiry = Date.now() + 5 * 60 * 1000;
+      return null;
+    }
+
+    const errors = allPosts.map(p => p.viral_score - p.viral_score_real);
+    const bias = errors.reduce((a, b) => a + b, 0) / errors.length;
+    const variance = errors.reduce((acc, e) => acc + Math.pow(e - bias, 2), 0) / errors.length;
+    const stdDev = Math.sqrt(variance);
+    const realScores = allPosts.map(p => p.viral_score_real);
+    const avg = realScores.reduce((a, b) => a + b, 0) / realScores.length;
+
+    const platformBias = {};
+    allPosts.forEach(p => {
+      const plats = Array.isArray(p.platforms) ? p.platforms : (p.platforms || '').split(',').map(s => s.trim()).filter(Boolean);
+      plats.forEach(pl => {
+        if (!platformBias[pl]) platformBias[pl] = [];
+        platformBias[pl].push(p.viral_score - p.viral_score_real);
+      });
+    });
+
+    const platformCalibration = {};
+    Object.entries(platformBias).forEach(([pl, errs]) => {
+      if (errs.length >= 3) {
+        platformCalibration[pl] = {
+          bias: parseFloat((errs.reduce((a, b) => a + b, 0) / errs.length).toFixed(2)),
+          sampleSize: errs.length,
+        };
+      }
+    });
+
+    _globalCalibrationCache = {
+      scoreBias: parseFloat(bias.toFixed(2)),
+      biasStdDev: parseFloat(stdDev.toFixed(2)),
+      historicalAvg: parseFloat(avg.toFixed(1)),
+      platformCalibration,
+      totalPostsAnalyzed: allPosts.length,
+    };
+    _globalCalibrationExpiry = Date.now() + 10 * 60 * 1000;
+
+    logDebug(`🌍 [Global Calibration] ${allPosts.length} posts, bias=${_globalCalibrationCache.scoreBias}, avg=${_globalCalibrationCache.historicalAvg}`);
+    return _globalCalibrationCache;
+  } catch (err) {
+    logDebug(`⚠️ [Global Calibration] Error: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Post-procesa el score crudo del LLM con corrección matemática real.
+ * Si el artista no tiene datos, usa la calibración global de toda la plataforma.
+ *
+ * @param {number} rawScore - Score 1-10 que devolvió el LLM
+ * @param {object|null} learningContext - Contexto de fetchArtistLearningContext
+ * @param {string} platform - Plataforma principal del contenido
+ * @returns {{ score: number, raw: number, confidence: string, adjustments: string[] }}
+ */
+function calibrateScore(rawScore, learningContext, platform) {
+  if (!rawScore) {
+    return { score: rawScore, raw: rawScore, confidence: 'none', adjustments: [] };
+  }
+
+  if (!learningContext || learningContext.totalPostsAnalyzed < 2) {
+    if (learningContext?._globalFallback) {
+      // Ya tiene datos globales inyectados, continuar con la calibración
+    } else {
+      return { score: rawScore, raw: rawScore, confidence: 'low', adjustments: ['Sin datos históricos — se usará calibración global en próximo análisis'] };
+    }
+  }
+
+  const adjustments = [];
+  let adjusted = rawScore;
+
+  // 1. Corrección por sesgo global
+  const { scoreBias, biasStdDev, historicalAvg, platformCalibration, totalPostsAnalyzed } = learningContext;
+  if (Math.abs(scoreBias) > 0.3) {
+    adjusted -= scoreBias;
+    adjustments.push(`Bias global: ${scoreBias > 0 ? '-' : '+'}${Math.abs(scoreBias).toFixed(1)} (modelo ${scoreBias > 0 ? 'sobreestimaba' : 'subestimaba'})`);
+  }
+
+  // 2. Corrección por plataforma específica
+  const platCal = platformCalibration[platform];
+  if (platCal && platCal.sampleSize >= 2 && Math.abs(platCal.bias - scoreBias) > 0.3) {
+    const platDelta = platCal.bias - scoreBias;
+    adjusted -= platDelta;
+    adjustments.push(`Ajuste ${platform}: ${platDelta > 0 ? '-' : '+'}${Math.abs(platDelta).toFixed(1)} (${platform} ${platDelta > 0 ? 'rinde menos' : 'rinde más'} que el promedio)`);
+  }
+
+  // 3. Regresión a la media del artista (cuantos menos datos, más tira hacia la media)
+  const regressionWeight = Math.min(totalPostsAnalyzed / 15, 1);
+  const priorWeight = 1 - regressionWeight;
+  if (priorWeight > 0.1) {
+    const beforeRegression = adjusted;
+    adjusted = (adjusted * regressionWeight) + (historicalAvg * priorWeight);
+    if (Math.abs(adjusted - beforeRegression) > 0.2) {
+      adjustments.push(`Regresión a media (${historicalAvg}): peso ${(priorWeight * 100).toFixed(0)}% por ${totalPostsAnalyzed} posts analizados`);
+    }
+  }
+
+  // 4. Clamp 1-10
+  adjusted = Math.max(1, Math.min(10, parseFloat(adjusted.toFixed(1))));
+  adjusted = Math.round(adjusted);
+
+  // 5. Confidence basada en cantidad de datos + consistencia
+  let confidence;
+  const isGlobal = !!learningContext._globalFallback;
+  if (isGlobal) {
+    confidence = totalPostsAnalyzed >= 20 ? 'medium' : 'low';
+    adjustments.push(`Calibrado con datos globales (${totalPostsAnalyzed} videos de toda la plataforma)`);
+  } else if (totalPostsAnalyzed >= 10 && biasStdDev < 1.5) {
+    confidence = 'high';
+  } else if (totalPostsAnalyzed >= 5) {
+    confidence = 'medium';
+  } else {
+    confidence = 'low';
+  }
+
+  if (adjusted !== rawScore) {
+    logDebug(`🎯 [Calibration] raw=${rawScore} → calibrated=${adjusted} (bias=${scoreBias}, stddev=${biasStdDev}, confidence=${confidence})`);
+  }
+
+  return { score: Math.round(adjusted), raw: rawScore, confidence, adjustments };
+}
+
+/**
+ * Versión de calibrateScore para escala 0-100 (usado en analyzeContentStrategy).
+ * Convierte a escala 1-10, calibra, y vuelve a 0-100.
+ */
+function calibrateScore100(rawScore100, learningContext, platform) {
+  const raw10 = rawScore100 / 10;
+  const result = calibrateScore(raw10, learningContext, platform);
+  return {
+    score: Math.max(0, Math.min(100, result.score * 10)),
+    raw: rawScore100,
+    confidence: result.confidence,
+    adjustments: result.adjustments,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -442,12 +629,8 @@ ${topHashtags.join(' ')}`;
       });
     }
 
-    if (scoreBias !== 0) {
-      const direction = scoreBias > 0 ? 'optimista (sobreestimado)' : 'conservador (subestimado)';
-      const adjust = scoreBias > 0
-        ? `He notado que antes hemos sido un poco optimistas, así que voy a ajustar el viral_score UN POCO HACIA ABAJO (~${Math.abs(scoreBias)} puntos) para ser más realistas con lo que hemos visto en su audiencia.`
-        : `Nuestra audiencia está respondiendo mejor de lo que pensábamos, así que voy a ajustar el viral_score UN POCO HACIA ARRIBA (~${Math.abs(scoreBias)} puntos) para reflejar su verdadero potencial.`;
-      systemPrompt += `\n\nCALIBRACIÓN DE NUESTRO EQUIPO: En publicaciones anteriores nuestro score predicho ha sido algo ${direction}. ${adjust}`;
+    if (historicalAvg) {
+      systemPrompt += `\n\nREFERENCIA: El score real promedio de este artista históricamente es ${historicalAvg}/10. Usá eso como ancla — no inflés ni desinflés artificialmente.`;
     }
 
     if (recentInsights?.length) {
@@ -476,21 +659,36 @@ Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
 viral_score: número del 1 al 10. Basate en el análisis visual, la transcripción Y la calibración histórica del artista.
 Respondé SOLO con el JSON, sin texto adicional.`;
 
+  const mainPlatform = (platforms || [])[0] || 'tiktok';
+
+  let calibrationCtx = learningContext;
+  if (!calibrationCtx || calibrationCtx.totalPostsAnalyzed < 2) {
+    const globalCal = await fetchGlobalCalibration();
+    if (globalCal) {
+      calibrationCtx = { ...globalCal, _globalFallback: true };
+    }
+  }
+
   const parseResponse = (raw) => {
     const text = raw.trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Claude no devolvió JSON válido');
     const parsed = JSON.parse(jsonMatch[0]);
-    
-    // Fuzzy matching de posibles propiedades por si Claude traduce las llaves al español.
+
     let tags = parsed.hashtags || parsed.etiquetas || '';
     if (Array.isArray(tags)) tags = tags.join(' ');
+
+    const rawScore = typeof parsed.viral_score === 'number' ? parsed.viral_score : (parseFloat(String(parsed.viral_score)) || null);
+    const calibration = calibrateScore(rawScore, calibrationCtx, mainPlatform);
 
     return {
       ai_copy_short: parsed.ai_copy_short || parsed.copy_corto || parsed.short_copy || '',
       ai_copy_long: parsed.ai_copy_long || parsed.copy_largo || parsed.long_copy || '',
       hashtags: tags,
-      viral_score: typeof parsed.viral_score === 'number' ? Math.round(parsed.viral_score) : (parseInt(String(parsed.viral_score)) || null),
+      viral_score: calibration.score,
+      score_raw: calibration.raw,
+      score_confidence: calibration.confidence,
+      score_adjustments: calibration.adjustments,
     };
   };
 
@@ -573,13 +771,22 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
 
     await updateProgress(4, 'Envío...');
 
+    const calibrationMeta = {
+      raw: copy.score_raw,
+      calibrated: copy.viral_score,
+      confidence: copy.score_confidence,
+      adjustments: copy.score_adjustments,
+      calibrated_at: new Date().toISOString(),
+    };
+
     const updates = {
       status: 'needs_review',
       ai_copy_short: copy.ai_copy_short || null,
       ai_copy_long: copy.ai_copy_long || null,
       hashtags: copy.hashtags || null,
       viral_score: copy.viral_score,
-      error_log: null, // Limpiar errores anteriores
+      score_calibration: calibrationMeta,
+      error_log: null,
       ...(sourceUrl ? { source_url: sourceUrl } : {}),
     };
 
@@ -589,7 +796,7 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
       throw new Error(`Error DB al guardar AI final: ${dbError.message || JSON.stringify(dbError)}`);
     }
 
-    logDebug(`✅ [AI interno] Video ${videoId} procesado y guardado con éxito.`);
+    logDebug(`✅ [AI interno] Video ${videoId} procesado — score: raw=${copy.score_raw} → calibrated=${copy.viral_score} (${copy.score_confidence} confidence)`);
 
     return updates;
   } catch (err) {
@@ -818,48 +1025,226 @@ Mantené el tono del artista: ${artistContext?.tono || 'Natural y cercano'}.`;
  * Analiza un script/URL y genera estrategia de contenido completa.
  * Devuelve score viral, hooks, descripciones, breakdown visual y audiencia.
  */
-async function analyzeContentStrategy(script, tone, platform, artistContext) {
-  const systemPrompt = `Sos un estratega de contenido viral de Vidalis AI. Analizás scripts y conceptos de video para generar estrategia de marketing de alta conversión.
-Respondé SIEMPRE con JSON válido, sin markdown, sin texto extra.`;
+async function analyzeContentStrategy(script, tone, platform, artistContext, aiConfig = {}) {
+  const cfg = {
+    model: aiConfig.model || 'claude-haiku-4-5-20251001',
+    max_tokens: aiConfig.max_tokens || 2500,
+    temperature: aiConfig.temperature ?? 0.85,
+    system_prompt: aiConfig.system_prompt || `Asumí el rol de un Estratega Principal de Contenido Viral en Vidalis AI. Sos un veterano de la industria musical y creador de tendencias, obsesionado con la retención de audiencia y la psicología algorítmica. Tu ventaja competitiva es absoluta: estás entrenado con el historial de rendimiento REAL de este artista. Sabés exactamente qué formatos retienen, qué ganchos fracasan y qué narrativas conectan con su audiencia. Evaluá las ideas con frialdad analítica: no seas complaciente. Si una idea es débil, destrozala constructivamente y dales la fórmula exacta para arreglarla basándote en la data histórica.
+
+REGLA CRÍTICA DE SISTEMA: Tu respuesta debe ser EXCLUSIVAMENTE un objeto JSON válido. Cero markdown, cero comillas invertidas, cero texto introductorio. Si incluís un solo carácter fuera del JSON, el pipeline fallará.`,
+    score_criteria: aiConfig.score_criteria || `- 0-20 (Descarte): Idea genérica, aburrida o predecible. Cero potencial de retención. El usuario hará scroll en el primer segundo.
+- 21-40 (Concepto Crudo): Hay una chispa, pero la ejecución es plana. Carece de un ángulo único o ignora por completo la identidad histórica del artista.
+- 41-60 (Promedio/Aceptable): Buen concepto, pero mecánicamente débil. Requiere reescribir el gancho (hook), ajustar el ritmo visual o incorporar un catalizador emocional.
+- 61-80 (Alto Potencial): Estructura viral sólida. El storytelling es claro, el gancho atrapa y se alinea con los picos históricos de rendimiento del artista. Necesita ajustes finos para maximizar compartidas.
+- 81-100 (Unicornio/Hit): Ejecución magistral. Psicología de retención perfecta, alto potencial de shareability, aprovecha el contexto de forma original y conecta emocionalmente. Listo para grabar.`,
+  };
+
+  const systemPrompt = cfg.system_prompt;
+
+  // Traer contexto de aprendizaje real del artista (o global como fallback)
+  let learningCtx = artistContext?.artistId
+    ? await fetchArtistLearningContext(artistContext.artistId)
+    : null;
+
+  if (!learningCtx || learningCtx.totalPostsAnalyzed < 2) {
+    const globalCal = await fetchGlobalCalibration();
+    if (globalCal) learningCtx = { ...(learningCtx || {}), ...globalCal, _globalFallback: true };
+  }
+
+  // Bloque de historial de videos
+  let historyBlock = '';
+  if (artistContext?.videoHistory?.length > 0) {
+    const videoList = artistContext.videoHistory
+      .map(v => `  - "${v.title}" → score real: ${v.score}/100 (${(v.platforms || []).join(', ')})`)
+      .join('\n');
+    historyBlock = `
+HISTORIAL DE VIDEOS DE "${artistContext.nombre}":
+- Videos con métricas reales: ${artistContext.totalVideos}
+- Score promedio real: ${artistContext.avgScore}/100
+- Mejor score real: ${artistContext.bestScore}/100
+- Últimos videos:
+${videoList}`;
+  }
+
+  // Bloque de aprendizaje de datos reales
+  let learningBlock = '';
+  if (learningCtx) {
+    const parts = [];
+
+    if (learningCtx.scoreBias !== 0) {
+      const direction = learningCtx.scoreBias > 0 ? 'sobreestimás' : 'subestimás';
+      parts.push(`CALIBRACIÓN: Históricamente ${direction} por ${Math.abs(learningCtx.scoreBias)} puntos. Ajustá tu score en consecuencia.`);
+    }
+
+    if (learningCtx.platformPerformance?.length > 0) {
+      const platList = learningCtx.platformPerformance
+        .map(p => `  - ${p.platform}: engagement promedio ${p.avgEngagement}%, views promedio ${p.avgViews}, score promedio ${p.avgScore}`)
+        .join('\n');
+      parts.push(`RENDIMIENTO POR PLATAFORMA (datos reales):\n${platList}`);
+    }
+
+    if (learningCtx.topHashtags?.length > 0) {
+      parts.push(`HASHTAGS QUE MEJOR FUNCIONAN: ${learningCtx.topHashtags.slice(0, 15).join(' ')}`);
+    }
+
+    if (learningCtx.topCopies?.length > 0) {
+      const copyList = learningCtx.topCopies
+        .map(c => `  - Score ${c.score}/100: "${c.copy.substring(0, 80)}..."`)
+        .join('\n');
+      parts.push(`COPIES QUE FUNCIONARON (usá como referencia de estilo):\n${copyList}`);
+    }
+
+    if (learningCtx.recentInsights?.length > 0) {
+      parts.push(`DECISIONES ESTRATÉGICAS RECIENTES:\n${learningCtx.recentInsights.map(d => `  - ${d}`).join('\n')}`);
+    }
+
+    if (learningCtx.creativeDNA) {
+      parts.push(`ADN CREATIVO DEL ARTISTA: ${JSON.stringify(learningCtx.creativeDNA)}`);
+    }
+
+    if (parts.length > 0) {
+      learningBlock = `\n\nDATOS REALES DE RENDIMIENTO (usá esto para calibrar tu análisis):\n${parts.join('\n\n')}`;
+    }
+  }
 
   const userContent = `Analizá este contenido y generá estrategia completa:
 
 Contenido: "${script}"
 Tono objetivo: ${tone}
 Plataforma: ${platform}
-${artistContext ? `Contexto del artista: tono=${artistContext.tono || 'natural'}` : ''}
+${artistContext ? `Artista: ${artistContext.nombre || 'desconocido'}, tono preferido: ${artistContext.tono || 'natural'}` : ''}
+${historyBlock}${learningBlock}
+
+INSTRUCCIONES DE SCORING:
+${cfg.score_criteria}
+${artistContext?.avgScore ? `El promedio REAL de este artista es ${artistContext.avgScore}/100. Usá eso como ancla — no inflés ni desinflés artificialmente.` : ''}
 
 Devolvé este JSON exacto (sin markdown):
 {
-  "score": <número entero 60-98 representando potencial viral>,
-  "tags": [<exactamente 3 strings: características positivas detectadas>],
-  "hooks": [<exactamente 3 hooks virales en español, entrecomillados, basados en el contenido>],
-  "descriptions": [<exactamente 3 captions optimizadas con emojis y hashtags relevantes>],
+  "score": <número entero 0-100 calibrado con los datos reales>,
+  "diagnostico_algoritmico": "<explicación de por qué el algoritmo de ${platform} empujará o frenará esto en los primeros 3 segundos>",
+  "match_historico": "<qué dice la data previa del artista sobre este tipo de formato o temática — qué funcionó similar y qué no>",
+  "mejora_del_gancho": "<reescritura del gancho inicial para retener el 70% de la audiencia en los primeros 3 segundos>",
+  "ajuste_estrategico": "<un consejo de alto nivel para maximizar shares o comentarios>",
+  "tags": [<exactamente 3 strings: características detectadas del contenido>],
+  "hooks": [<exactamente 3 hooks virales en español basados en el contenido${learningCtx?.topHashtags?.length ? ' — incluí hashtags que históricamente funcionan para este artista' : ''}>],
+  "descriptions": [<exactamente 3 captions optimizadas con emojis y hashtags${learningCtx?.topHashtags?.length ? ' — priorizá estos hashtags probados: ' + learningCtx.topHashtags.slice(0, 8).join(' ') : ''}>],
   "visualBreakdown": [
-    {"title": "Iluminación", "desc": "<recomendación concreta de iluminación>"},
+    {"title": "Iluminación", "desc": "<recomendación concreta>"},
     {"title": "Ángulo de Cámara", "desc": "<recomendación de ángulo y encuadre>"},
     {"title": "Overlays", "desc": "<recomendación de texto/efectos visuales>"}
   ],
   "audience": {
     "demographic": "<rango de edad y perfil principal>",
-    "peakTime": "<mejor horario de publicación con zona horaria>"
-  }
+    "peakTime": "<mejor horario basado en datos reales de engagement>"
+  },
+  "improvements": [<exactamente 3 strings: mejoras específicas y accionables para subir el score, basadas en lo que SÍ funcionó antes>]
 }`;
 
   try {
     const msg = await getAnthropic().messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      temperature: 0.75,
+      model: cfg.model,
+      max_tokens: cfg.max_tokens,
+      temperature: cfg.temperature,
       system: systemPrompt,
       messages: [{ role: 'user', content: userContent }],
     });
     const raw = msg.content[0].text;
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Claude no devolvió JSON en analyzeContentStrategy');
-    return JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    const cal = calibrateScore100(parsed.score || 50, learningCtx, platform);
+    parsed.score = cal.score;
+    parsed.score_raw = cal.raw;
+    parsed.score_confidence = cal.confidence;
+    parsed.score_adjustments = cal.adjustments;
+    return parsed;
   } catch (err) {
     console.error('❌ Error en analyzeContentStrategy:', err.message);
+    throw err;
+  }
+}
+
+function applyVisualCalibration(parsed, learningCtx, platform) {
+  const cal = calibrateScore100(parsed.overall || 50, learningCtx, platform);
+  parsed.overall_raw = cal.raw;
+  parsed.overall = cal.score;
+  parsed.score_confidence = cal.confidence;
+  parsed.score_adjustments = cal.adjustments;
+  return parsed;
+}
+
+async function scoreVisualVirality(mediaUrl, mediaType, platform, artistId) {
+  const imageUrl = mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl;
+  const { base64, mimeType } = await fetchAsBase64(imageUrl);
+
+  let learningCtx = await fetchArtistLearningContext(artistId);
+  if (!learningCtx || learningCtx.totalPostsAnalyzed < 2) {
+    const globalCal = await fetchGlobalCalibration();
+    if (globalCal) learningCtx = { ...(learningCtx || {}), ...globalCal, _globalFallback: true };
+  }
+
+  let calibrationNote = '';
+  if (learningCtx?.platformPerformance?.length) {
+    const platData = learningCtx.platformPerformance.find(p => p.platform === platform);
+    if (platData) {
+      calibrationNote = `\nDatos reales de este artista en ${platform}: engagement promedio ${platData.avgEngagement}%, views promedio ${platData.avgViews}, score promedio ${platData.avgScore}.`;
+    }
+  }
+  if (learningCtx?.historicalAvg) {
+    calibrationNote += `\nReferencia: el score real promedio de este artista es ${learningCtx.historicalAvg}/10. Usá eso como ancla.`;
+  }
+
+  const prompt = `Sos un experto en viralidad de contenido en ${platform || 'redes sociales'}. Analizá esta imagen/thumbnail y puntuá su potencial viral con criterios específicos.
+${calibrationNote}
+
+Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown):
+{
+  "overall": <promedio ponderado de todas las dimensiones>,
+  "dimensions": {
+    "hook": {"score": <0-100>, "label": "Gancho Visual", "detail": "<por qué este score — qué atrapa o qué falta en los primeros 0.5 segundos>"},
+    "quality": {"score": <0-100>, "label": "Calidad Visual", "detail": "<iluminación, resolución, composición, colores>"},
+    "emotion": {"score": <0-100>, "label": "Impacto Emocional", "detail": "<qué emoción genera — curiosidad, sorpresa, risa, inspiración, nada>"},
+    "trend": {"score": <0-100>, "label": "Tendencia", "detail": "<qué tan alineado está con tendencias actuales de ${platform || 'redes'}>"},
+    "thumb": {"score": <0-100>, "label": "Thumbnail Power", "detail": "<funcionaría como miniatura? contraste, texto, cara, expresión>"},
+    "scroll": {"score": <0-100>, "label": "Stop the Scroll", "detail": "<pararía alguien de scrollear al ver esto? por qué sí o no>"}
+  },
+  "verdict": "<1 frase directa: se viraliza o no, y la razón principal>",
+  "quickFixes": [<3 mejoras concretas y rápidas que subirían el score>]
+}`;
+
+  try {
+    const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await withTimeout(
+      model.generateContent([{ inlineData: { data: base64, mimeType } }, prompt]),
+      45000, 'Gemini Visual Score'
+    );
+    const raw = result.response.text();
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Gemini no devolvió JSON en scoreVisualVirality');
+    return applyVisualCalibration(JSON.parse(jsonMatch[0]), learningCtx, platform);
+  } catch (err) {
+    if (isGeminiUnavailable(err) || err.message?.includes('Timeout')) {
+      logDebug(`⚠️ Gemini no disponible para visual score, usando Claude Vision...`);
+      const msg = await getAnthropic().messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1500,
+        temperature: 0.7,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64 } },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      });
+      const raw = msg.content[0].text;
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Claude no devolvió JSON en scoreVisualVirality');
+      return applyVisualCalibration(JSON.parse(jsonMatch[0]), learningCtx, platform);
+    }
     throw err;
   }
 }
@@ -873,4 +1258,5 @@ module.exports = {
   runDeepAuditAnalysis,
   refineCopy,
   analyzeContentStrategy,
+  scoreVisualVirality,
 };

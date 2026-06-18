@@ -36,16 +36,59 @@ exports.analyzeContentStrategy = async (req, res) => {
     const { script, tone, platform, artist_id } = req.body;
     if (!script?.trim()) return res.status(400).json({ error: 'Se requiere el script o URL del contenido' });
 
+    const [artistPromise, videosPromise, configRes] = await Promise.all([
+      artist_id ? supabase.from('artists').select('ai_tone, name').eq('id', artist_id).single() : { data: null },
+      artist_id ? supabase.from('videos')
+        .select('title, viral_score, viral_score_real, status, platforms')
+        .eq('artist_id', artist_id)
+        .not('viral_score_real', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(15) : { data: [] },
+      supabase.from('app_config').select('value').eq('key', 'content_analysis').single(),
+    ]);
+
     let artistContext = null;
-    if (artist_id) {
-      const { data } = await supabase.from('artists').select('ai_tone, name').eq('id', artist_id).single();
-      if (data) artistContext = { tono: data.ai_tone, nombre: data.name };
+    if (artistPromise.data) {
+      const videos = videosPromise.data || [];
+      const scores = videos.map(v => v.viral_score_real).filter(Boolean);
+      artistContext = {
+        artistId: artist_id,
+        tono: artistPromise.data.ai_tone,
+        nombre: artistPromise.data.name,
+        videoHistory: videos.map(v => ({
+          title: v.title,
+          score: v.viral_score_real,
+          platforms: v.platforms,
+        })),
+        avgScore: scores.length ? parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : null,
+        bestScore: scores.length ? Math.max(...scores) : null,
+        totalVideos: scores.length,
+      };
     }
 
-    const result = await aiService.analyzeContentStrategy(script, tone || 'natural', platform || 'tiktok', artistContext);
+    const aiConfig = configRes.data?.value || {};
+    const result = await aiService.analyzeContentStrategy(script, tone || 'natural', platform || 'tiktok', artistContext, aiConfig);
     res.status(200).json(result);
   } catch (error) {
     console.error('❌ analyzeContentStrategy:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// --- VISUAL VIRAL SCORE (análisis de imagen/video) ---
+exports.scoreVisualVirality = async (req, res) => {
+  try {
+    const { media_url, media_type, platform, artist_id } = req.body;
+    if (!media_url) return res.status(400).json({ error: 'Se requiere media_url' });
+    const result = await aiService.scoreVisualVirality(
+      media_url,
+      media_type || 'image',
+      platform || 'tiktok',
+      artist_id || null
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('❌ scoreVisualVirality:', error.message);
     res.status(500).json({ error: error.message });
   }
 };

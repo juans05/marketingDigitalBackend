@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const zernioService = require('../services/zernioService');
+const { calcEngagementRate, engagementToViralScore } = require('../services/uploadPostService');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -38,10 +39,18 @@ async function syncArtistAnalytics(artistId) {
 
   const profileId = artist.ayrshare_profile_key;
   const socialKeys = artist.social_keys || {};
-  const fromDate = daysAgo(30);
   const toDate = today();
 
-  console.log(`🔄 [ZernioSync] Iniciando sync para "${artist.name}" (${artistId})`);
+  // Primera sync → traer 1 año de historial. Después solo 30 días.
+  const { count: existingSnapshots } = await supabase
+    .from('platform_snapshots')
+    .select('id', { count: 'exact', head: true })
+    .eq('artist_id', artistId);
+
+  const isFirstSync = !existingSnapshots || existingSnapshots === 0;
+  const fromDate = isFirstSync ? daysAgo(730) : daysAgo(30);
+
+  console.log(`🔄 [ZernioSync] ${isFirstSync ? '🆕 PRIMERA SYNC (2 años)' : 'Sync regular (30d)'} para "${artist.name}" (${artistId})`);
 
   const results = { platform_snapshots: 0, post_analytics: 0, best_times: false, errors: [] };
 
@@ -100,7 +109,7 @@ async function syncArtistAnalytics(artistId) {
 
   // ── 2. ANALYTICS POR POST → actualiza analytics_4h en videos ───────────
   try {
-    const postsData = await zernioService.getAnalyticsPosts(profileId, fromDate, toDate);
+    const postsData = await zernioService.getAnalyticsPosts(profileId, fromDate, toDate, isFirstSync ? 500 : 100);
     const posts = postsData?.posts || postsData?.data || (Array.isArray(postsData) ? postsData : []);
 
     for (const post of posts) {
@@ -120,38 +129,51 @@ async function syncArtistAnalytics(artistId) {
 
       if (!video) continue;
 
+      const likes = a.likes || 0;
+      const comments = a.comments || 0;
+      const shares = a.shares || 0;
+      const saves = a.saves || 0;
+      const views = a.views || 0;
+      const impressions = a.impressions || 0;
+
+      const realEngRate = calcEngagementRate(likes, comments, shares, saves, views, impressions);
+      const viralScoreReal = engagementToViralScore(realEngRate);
+
       const analytics4h = {
-        likes: a.likes || 0,
-        comments: a.comments || 0,
-        shares: a.shares || 0,
-        saves: a.saves || 0,
-        views: a.views || 0,
+        likes,
+        comments,
+        shares,
+        saves,
+        views,
         reach: a.reach || 0,
-        impressions: a.impressions || 0,
+        impressions,
         clicks: a.clicks || 0,
-        engagement_rate: engRate,
+        engagement_rate: engRate || parseFloat(realEngRate.toFixed(3)),
         ig_reels_avg_watch_time: a.igReelsAvgWatchTime || 0,
         updated_at: new Date().toISOString(),
       };
 
       await supabase
         .from('videos')
-        .update({ analytics_4h: analytics4h })
+        .update({
+          analytics_4h: analytics4h,
+          viral_score_real: viralScoreReal,
+        })
         .eq('id', video.id);
 
-      // Snapshot histórico (sin bloquear si falla unique)
       await supabase.from('post_metrics_snapshots').insert({
         video_id: video.id,
         artist_id: artistId,
         platform: post.platform || 'unknown',
-        likes: a.likes || 0,
-        comments: a.comments || 0,
-        views: a.views || 0,
-        shares: a.shares || 0,
-        saves: a.saves || 0,
+        likes,
+        comments,
+        views,
+        shares,
+        saves,
         reach: a.reach || 0,
-        impressions: a.impressions || 0,
-        engagement_rate: engRate,
+        impressions,
+        engagement_rate: parseFloat(realEngRate.toFixed(3)),
+        viral_score_real: viralScoreReal,
         raw_data: a,
       }).then(() => {}).catch(() => {});
 
