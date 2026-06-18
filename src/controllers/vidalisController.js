@@ -30,6 +30,26 @@ exports.getConfig = async (req, res) => {
   }
 };
 
+// --- ANALIZAR ESTRATEGIA DE CONTENIDO ---
+exports.analyzeContentStrategy = async (req, res) => {
+  try {
+    const { script, tone, platform, artist_id } = req.body;
+    if (!script?.trim()) return res.status(400).json({ error: 'Se requiere el script o URL del contenido' });
+
+    let artistContext = null;
+    if (artist_id) {
+      const { data } = await supabase.from('artists').select('ai_tone, name').eq('id', artist_id).single();
+      if (data) artistContext = { tono: data.ai_tone, nombre: data.name };
+    }
+
+    const result = await aiService.analyzeContentStrategy(script, tone || 'natural', platform || 'tiktok', artistContext);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('❌ analyzeContentStrategy:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // --- REFINAR COPY (Marketing Skills) ---
 exports.refineCopy = async (req, res) => {
   try {

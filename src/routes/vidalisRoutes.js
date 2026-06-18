@@ -17,6 +17,7 @@ router.get('/config/:key', vidalisController.getConfig);
 router.post('/login', vidalisController.login);
 router.post('/google-login', vidalisController.googleLogin);
 router.post('/refine-copy', authenticateToken, vidalisController.refineCopy);
+router.post('/analyze-content', authenticateToken, requireFeature('analytics_sync'), vidalisController.analyzeContentStrategy);
 
 // ── Agencias y Artistas ───────────────────────────────────────────────────────
 router.post('/agencies', authenticateToken, vidalisController.createAgency);

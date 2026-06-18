@@ -75,12 +75,27 @@ app.use((req, res, next) => {
 
 // Seguridad Base
 app.use(helmet());
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // Límite de 100 peticiones por IP por ventana
-  message: { error: 'Demasiadas peticiones desde esta IP, por favor intenta más tarde.' }
+
+// Rate limiter estricto solo para endpoints de autenticación (anti-brute-force)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Demasiados intentos de acceso. Intenta de nuevo en 15 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
-app.use('/api/', limiter);
+app.use('/api/vidalis/login', authLimiter);
+app.use('/api/vidalis/google-login', authLimiter);
+
+// Rate limiter general para el resto de la API — generoso para no interrumpir el dashboard
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  message: { error: 'Demasiadas peticiones desde esta IP, por favor intenta más tarde.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', apiLimiter);
 
 // Body parser con auto-reparación para JSON malformado (ej: n8n con newlines o comillas sin escapar)
 app.use((req, res, next) => {

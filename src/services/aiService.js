@@ -814,6 +814,56 @@ Mantené el tono del artista: ${artistContext?.tono || 'Natural y cercano'}.`;
   }
 }
 
+/**
+ * Analiza un script/URL y genera estrategia de contenido completa.
+ * Devuelve score viral, hooks, descripciones, breakdown visual y audiencia.
+ */
+async function analyzeContentStrategy(script, tone, platform, artistContext) {
+  const systemPrompt = `Sos un estratega de contenido viral de Vidalis AI. Analizás scripts y conceptos de video para generar estrategia de marketing de alta conversión.
+Respondé SIEMPRE con JSON válido, sin markdown, sin texto extra.`;
+
+  const userContent = `Analizá este contenido y generá estrategia completa:
+
+Contenido: "${script}"
+Tono objetivo: ${tone}
+Plataforma: ${platform}
+${artistContext ? `Contexto del artista: tono=${artistContext.tono || 'natural'}` : ''}
+
+Devolvé este JSON exacto (sin markdown):
+{
+  "score": <número entero 60-98 representando potencial viral>,
+  "tags": [<exactamente 3 strings: características positivas detectadas>],
+  "hooks": [<exactamente 3 hooks virales en español, entrecomillados, basados en el contenido>],
+  "descriptions": [<exactamente 3 captions optimizadas con emojis y hashtags relevantes>],
+  "visualBreakdown": [
+    {"title": "Iluminación", "desc": "<recomendación concreta de iluminación>"},
+    {"title": "Ángulo de Cámara", "desc": "<recomendación de ángulo y encuadre>"},
+    {"title": "Overlays", "desc": "<recomendación de texto/efectos visuales>"}
+  ],
+  "audience": {
+    "demographic": "<rango de edad y perfil principal>",
+    "peakTime": "<mejor horario de publicación con zona horaria>"
+  }
+}`;
+
+  try {
+    const msg = await getAnthropic().messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      temperature: 0.75,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
+    });
+    const raw = msg.content[0].text;
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Claude no devolvió JSON en analyzeContentStrategy');
+    return JSON.parse(jsonMatch[0]);
+  } catch (err) {
+    console.error('❌ Error en analyzeContentStrategy:', err.message);
+    throw err;
+  }
+}
+
 module.exports = {
   processVideoAI,
   analyzeWithGemini,
@@ -821,5 +871,6 @@ module.exports = {
   transcribeWithGroq,
   generateInsights,
   runDeepAuditAnalysis,
-  refineCopy
+  refineCopy,
+  analyzeContentStrategy,
 };
