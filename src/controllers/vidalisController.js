@@ -492,6 +492,18 @@ exports.publishNow = async (req, res) => {
   }
 };
 
+exports.checkHashtags = async (req, res) => {
+  try {
+    const { checkHashtags } = require('../config/bannedHashtags');
+    const { hashtags } = req.body;
+    if (!hashtags) return res.status(400).json({ error: 'Se requiere el campo hashtags' });
+    const result = checkHashtags(hashtags);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.getClips = async (req, res) => {
   try {
     const { parentId } = req.params;

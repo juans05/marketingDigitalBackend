@@ -1018,7 +1018,8 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
   const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
   if (zernioArtistIds.size > 0) {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const tzOff = (parseInt(process.env.TZ_OFFSET_HOURS || '-5', 10)) * 60 * 60 * 1000;
+    const thirtyDaysAgo = new Date(Date.now() + tzOff - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const [{ data: snapshots }, { data: cacheRows }] = await Promise.all([
       supabase
@@ -1131,11 +1132,12 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
   // Si la red social reporta más videos que nuestra DB local, usamos esa cifra
   const finalTotalVideos = Math.max(total, totalPostsSocial);
 
-  // Generar historial de 7 días ordenado
+  // Generar historial de 7 días ordenado (usando timezone local, no UTC)
+  const tzOffsetMs = (parseInt(process.env.TZ_OFFSET_HOURS || '-5', 10)) * 60 * 60 * 1000;
   const history = [];
-  const today = new Date();
+  const localToday = new Date(Date.now() + tzOffsetMs);
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
+    const d = new Date(localToday);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
     history.push({ date: dateStr, value: historyMap[dateStr] || 0 });
@@ -1491,7 +1493,14 @@ exports.publishVideoNow = async (videoId, frontendOptions = {}) => {
   const hasConnection = artist.ayrshare_profile_key || artist.instagram_user_id;
   if (!hasConnection) throw new Error('El artista no tiene redes sociales conectadas. Conéctalas primero.');
 
-  const postText = video.hashtags || video.title || 'Nuevo contenido';
+  const { checkHashtags } = require('../config/bannedHashtags');
+  let postText = video.hashtags || video.title || 'Nuevo contenido';
+
+  const hashtagCheck = checkHashtags(postText);
+  if (hashtagCheck.banned.length > 0) {
+    console.warn(`⚠️ [Publish] Hashtags baneados removidos: ${hashtagCheck.banned.join(', ')}`);
+    postText = hashtagCheck.cleanHashtags;
+  }
 
   // Usar plataformas del frontend si las mandó, sino las del video/artista
   const platforms = frontendOptions.platforms?.length ? frontendOptions.platforms

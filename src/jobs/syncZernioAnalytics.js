@@ -9,12 +9,18 @@ const supabase = createClient(
 
 const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
+const TZ_OFFSET_MS = (parseInt(process.env.TZ_OFFSET_HOURS || '-5', 10)) * 60 * 60 * 1000;
+
+function localNow() {
+  return new Date(Date.now() + TZ_OFFSET_MS);
+}
+
 function daysAgo(n) {
-  return new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return new Date(localNow().getTime() - n * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 }
 
 function today() {
-  return new Date().toISOString().split('T')[0];
+  return localNow().toISOString().split('T')[0];
 }
 
 /**

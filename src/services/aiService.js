@@ -4,6 +4,7 @@
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleAIFileManager } = require('@google/generative-ai/server');
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
@@ -12,6 +13,8 @@ const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
   process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
+
+const { checkHashtags } = require('../config/bannedHashtags');
 
 const fs = require('fs');
 const path = require('path');
@@ -31,6 +34,7 @@ function logDebug(message) {
 
 let gemini = null;
 let anthropic = null;
+let fileManager = null;
 
 function getGemini() {
   if (!gemini) {
@@ -39,6 +43,14 @@ function getGemini() {
     gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   }
   return gemini;
+}
+
+function getFileManager() {
+  if (!fileManager) {
+    if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurado');
+    fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+  }
+  return fileManager;
 }
 
 function getAnthropic() {
@@ -55,15 +67,27 @@ function getAnthropic() {
 // ---------------------------------------------------------------------------
 
 /**
- * Extrae el primer frame de un video Cloudinary como JPEG (f_jpg,so_0).
+ * Extrae múltiples frames de un video Cloudinary como JPEGs.
+ * so_0 = inicio, so_3 = segundo 3 (gancho), so_auto = frame más representativo.
+ * Retorna un array de URLs para darle a Gemini más contexto visual.
  */
-function extractVideoThumbnail(videoUrl) {
-  if (!videoUrl.includes('cloudinary.com') || !videoUrl.includes('/upload/')) return videoUrl;
+function extractVideoThumbnails(videoUrl) {
+  if (!videoUrl.includes('cloudinary.com') || !videoUrl.includes('/upload/')) return [videoUrl];
   const uploadIdx = videoUrl.indexOf('/upload/');
   const cleanBase = videoUrl.slice(0, uploadIdx + 8);
   const afterUpload = videoUrl.slice(uploadIdx + 8);
   const publicPart = afterUpload.replace(/^(?:[^/]+\/)*?(v\d+\/.*)$/, '$1');
-  return `${cleanBase}f_jpg,so_0/${publicPart}`.replace(/\.(mp4|mov|webm)(\?|$)/i, '.jpg');
+  const toJpg = (transforms) =>
+    `${cleanBase}${transforms}/${publicPart}`.replace(/\.(mp4|mov|webm)(\?|$)/i, '.jpg');
+  return [
+    toJpg('f_jpg,so_0'),
+    toJpg('f_jpg,so_3'),
+    toJpg('f_jpg,so_auto'),
+  ];
+}
+
+function extractVideoThumbnail(videoUrl) {
+  return extractVideoThumbnails(videoUrl)[1];
 }
 
 /**
@@ -478,16 +502,25 @@ async function fetchAsBase64(url) {
   return { base64, mimeType };
 }
 
-const VISUAL_ANALYSIS_PROMPT = (title) =>
-  `Analizá este contenido visual${title ? ` titulado "${title}"` : ''}.
-Describí en detalle:
-1. Qué se ve (personas, escena, actividad, colores, estética, vestuario)
-2. Tono y mood (energético, tranquilo, dramático, etc.)
-3. Nicho o industria (música, moda, fitness, entretenimiento, etc.)
-4. Elementos visuales que lo hacen atractivo o viral
-5. Público objetivo probable
+const VISUAL_ANALYSIS_PROMPT = (title, isFullVideo = false) => {
+  const mediaDesc = isFullVideo
+    ? `Mirá este VIDEO completo${title ? ` titulado "${title}"` : ''}`
+    : `Analizá este contenido visual${title ? ` titulado "${title}"` : ''}`;
 
-Sé específico y detallado. Esta información se usará para generar copy de marketing.`;
+  return `${mediaDesc} de una publicación para redes sociales (TikTok/Instagram/YouTube).
+
+Describí en detalle:
+1. QUÉ PASA EN EL VIDEO: narrá la acción completa — qué hace la persona, cómo se mueve, qué expresiones tiene, cómo evoluciona el contenido de principio a fin
+2. TIPO DE CONTENIDO: identificá el formato exacto — ¿es una imitación/parodia de algún artista famoso? ¿lip sync? ¿baile/coreografía? ¿tutorial? ¿antes/después? ¿reacción? ¿storytelling? ¿comedia? ¿trend de TikTok? ¿dueto? ¿POV?
+3. REFERENCIAS CULTURALES: si la persona está imitando, referenciando o haciendo tributo a algún artista (Shakira, Becky G, Bad Bunny, Karol G, Rosalía, etc.), canción, película, serie o trend viral — IDENTIFICALO CON NOMBRE. Fijate en: vestuario similar, gestos característicos, coreografías conocidas, lip sync de canciones específicas
+4. GANCHO INICIAL (primeros 3 segundos): ¿qué se ve? ¿genera curiosidad? ¿retiene la atención? ¿hay un cambio visual impactante?
+5. TONO Y MOOD: energético, sensual, dramático, cómico, motivacional, nostálgico, etc.
+6. ELEMENTOS VIRALES: transiciones, cambios de outfit, efectos visuales, sorpresas, humor, relatabilidad, controversia sana, call-to-action implícito
+7. PÚBLICO OBJETIVO: edad, intereses, comunidades que conectarían con este contenido
+
+IMPORTANTE: Las imitaciones de artistas famosos, parodias y recreaciones de trends tienen ALTO potencial viral — siempre identificalas con el nombre del artista/trend.
+Sé específico y detallado. Esta información se usará para generar copy de marketing y calcular el potencial viral.`;
+};
 
 const isGeminiUnavailable = (err) =>
   err.status === 429 || err.status === 503 || err.status === 404 ||
@@ -508,7 +541,7 @@ async function analyzeWithClaudeVision(base64, mimeType, title = '') {
       role: 'user',
       content: [
         { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64 } },
-        { type: 'text', text: VISUAL_ANALYSIS_PROMPT(title) }
+        { type: 'text', text: VISUAL_ANALYSIS_PROMPT(title, false) }
       ]
     }]
   });
@@ -524,18 +557,121 @@ function withTimeout(promise, ms, label) {
   ]);
 }
 
-async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
-  const imageUrl = mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl;
-  const { base64, mimeType } = await fetchAsBase64(imageUrl);
-  const prompt = VISUAL_ANALYSIS_PROMPT(title);
+async function uploadVideoToGemini(buffer, mimeType) {
+  const tmpDir = require('os').tmpdir();
+  const tmpPath = path.join(tmpDir, `vidalis_${Date.now()}.mp4`);
 
-  // 1. Intento principal: Gemini 2.5 Flash (rápido y disponible en free tier)
+  try {
+    fs.writeFileSync(tmpPath, buffer);
+    const uploadResult = await getFileManager().uploadFile(tmpPath, {
+      mimeType,
+      displayName: `vidalis_analysis_${Date.now()}`,
+    });
+    logDebug(`☁️ [File API] Video subido a Google: ${uploadResult.file.name} (${uploadResult.file.sizeBytes} bytes)`);
+
+    // Esperar a que Google termine de procesar el video
+    let file = uploadResult.file;
+    let attempts = 0;
+    while (file.state === 'PROCESSING' && attempts < 30) {
+      await new Promise(r => setTimeout(r, 2000));
+      const check = await getFileManager().getFile(file.name);
+      file = check;
+      attempts++;
+    }
+
+    if (file.state === 'FAILED') {
+      throw new Error(`Google rechazó el video: ${file.error?.message || 'estado FAILED'}`);
+    }
+
+    return file;
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch {}
+  }
+}
+
+async function buildVideoContentParts(mediaUrl, title) {
+  const INLINE_LIMIT = 18 * 1024 * 1024;
+
+  try {
+    const response = await axios.get(mediaUrl, {
+      responseType: 'arraybuffer',
+      timeout: 120000,
+      headers: { 'User-Agent': 'vidalis-ai/1.0' },
+    });
+    const buffer = Buffer.from(response.data);
+    const videoMime = response.headers['content-type']?.split(';')[0] || 'video/mp4';
+    const sizeMB = (buffer.length / (1024 * 1024)).toFixed(1);
+
+    // Videos chicos: inline directo (más rápido)
+    if (buffer.length <= INLINE_LIMIT) {
+      logDebug(`🎬 [Gemini] Video inline: ${sizeMB}MB (${videoMime})`);
+      return {
+        parts: [
+          { inlineData: { data: buffer.toString('base64'), mimeType: videoMime } },
+          VISUAL_ANALYSIS_PROMPT(title, true),
+        ],
+        mode: 'full_video',
+      };
+    }
+
+    // Videos grandes: File API (sin límite práctico)
+    logDebug(`🎬 [Gemini] Video grande (${sizeMB}MB) — usando File API...`);
+    const file = await uploadVideoToGemini(buffer, videoMime);
+    return {
+      parts: [
+        { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
+        VISUAL_ANALYSIS_PROMPT(title, true),
+      ],
+      mode: 'full_video_fileapi',
+    };
+  } catch (err) {
+    logDebug(`⚠️ [Gemini] Error con video completo (${err.message}) — fallback a frames`);
+  }
+
+  // Fallback: 3 frames
+  const thumbUrls = extractVideoThumbnails(mediaUrl);
+  const frames = await Promise.allSettled(thumbUrls.map(url => fetchAsBase64(url)));
+  const validFrames = frames
+    .filter(r => r.status === 'fulfilled')
+    .map(r => ({ inlineData: { data: r.value.base64, mimeType: r.value.mimeType } }));
+
+  if (validFrames.length === 0) {
+    const fb = await fetchAsBase64(extractVideoThumbnail(mediaUrl));
+    validFrames.push({ inlineData: { data: fb.base64, mimeType: fb.mimeType } });
+  }
+
+  const extra = validFrames.length > 1
+    ? `\n\nEstás viendo ${validFrames.length} frames del video: inicio (0s), gancho (3s) y frame representativo. Analizá el video como un todo.`
+    : '';
+  return {
+    parts: [...validFrames, VISUAL_ANALYSIS_PROMPT(title, false) + extra],
+    mode: 'frames',
+  };
+}
+
+async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
+  let contentParts;
+  let analysisMode = 'image';
+
+  if (mediaType === 'video') {
+    const built = await buildVideoContentParts(mediaUrl, title);
+    contentParts = built.parts;
+    analysisMode = built.mode;
+  } else {
+    const { base64, mimeType } = await fetchAsBase64(mediaUrl);
+    contentParts = [{ inlineData: { data: base64, mimeType } }, VISUAL_ANALYSIS_PROMPT(title, false)];
+  }
+
+  const timeout = analysisMode.startsWith('full_video') ? 90000 : 45000;
+
+  // 1. Intento principal: Gemini 2.5 Flash
   try {
     const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
     const result = await withTimeout(
-      model.generateContent([{ inlineData: { data: base64, mimeType } }, prompt]),
-      45000, 'Gemini 2.5 Flash'
+      model.generateContent(contentParts),
+      timeout, 'Gemini 2.5 Flash'
     );
+    logDebug(`✅ [Gemini 2.5] Análisis completado (modo: ${analysisMode})`);
     return result.response.text();
   } catch (error) {
     if (!isGeminiUnavailable(error) && !error.message?.includes('Timeout')) throw error;
@@ -546,16 +682,20 @@ async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
   try {
     const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.0-flash' });
     const fallbackResult = await withTimeout(
-      fallbackModel.generateContent([{ inlineData: { data: base64, mimeType } }, prompt]),
-      45000, 'Gemini 2.0 Flash'
+      fallbackModel.generateContent(contentParts),
+      timeout, 'Gemini 2.0 Flash'
     );
+    logDebug(`✅ [Gemini 2.0] Análisis completado (modo: ${analysisMode})`);
     return fallbackResult.response.text();
   } catch (error) {
     if (!isGeminiUnavailable(error) && !error.message?.includes('Timeout')) throw error;
     logDebug(`⚠️ Gemini 2.0 Flash tampoco disponible (${error.message}). Usando Claude Vision...`);
   }
 
-  // 3. Último recurso: Claude Vision
+  // 3. Último recurso: Claude Vision (solo 1 frame)
+  const { base64, mimeType } = await fetchAsBase64(
+    mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl
+  );
   return analyzeWithClaudeVision(base64, mimeType, title);
 }
 
@@ -643,7 +783,12 @@ ${recentInsights.map(d => `- ${d}`).join('\n')}`;
   let userContent = `Análisis visual del contenido:\n${geminiAnalysis}`;
 
   if (transcript && transcript.trim().length > 10) {
-    userContent += `\n\nTranscripción del audio:\n"${transcript.trim()}"\n\nUsá la transcripción para entender mejor el mensaje del contenido.`;
+    userContent += `\n\nTranscripción del audio:\n"${transcript.trim()}"
+
+IMPORTANTE: Cruzá la transcripción con el análisis visual para entender QUÉ ESTÁ PASANDO REALMENTE en el video:
+- Si el audio es una canción conocida y la persona está actuando/bailando → es un lip sync o imitación (alto potencial viral)
+- Si el audio menciona un artista y la visual lo confirma → mencionalo en el copy
+- Las imitaciones de artistas famosos (Shakira, Becky G, Bad Bunny, etc.) suelen generar alto engagement porque activan reconocimiento inmediato — el copy debe capitalizar esa referencia`;
   }
 
   userContent += `\n\nTítulo del contenido: ${title || '(sin título)'}
@@ -652,9 +797,15 @@ Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
 {
   "ai_copy_short": "Un caption corto y potente (1-2 oraciones). Buscamos engagement inmediato.",
   "ai_copy_long": "Una versión con más contexto (3-5 oraciones) para generar conexión/storytelling.",
-  "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 combinando nuestros clásicos que funcionan con nuevos relevantes)",
+  "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 hashtags estratégicos)",
   "viral_score": 7.5
 }
+
+REGLAS DE HASHTAGS (MUY IMPORTANTE):
+- Combiná 5-7 hashtags de nicho específico del contenido + 5-7 de comunidad/tendencia + 3-5 del artista que históricamente funcionaron.
+- NUNCA uses hashtags genéricos saturados como #viral, #fyp, #foryou, #parati, #trending, #explorepage — TikTok/Instagram los ignoran.
+- NUNCA uses hashtags baneados o suprimidos (contenido sexual/sugestivo, spam, follow4follow, etc.) — causan shadowban y matan el alcance.
+- Priorizá hashtags entre 10K-500K de volumen (nicho rentable) sobre los de millones (ruido).
 
 viral_score: número del 1 al 10. Basate en el análisis visual, la transcripción Y la calibración histórica del artista.
 Respondé SOLO con el JSON, sin texto adicional.`;
@@ -678,6 +829,15 @@ Respondé SOLO con el JSON, sin texto adicional.`;
     let tags = parsed.hashtags || parsed.etiquetas || '';
     if (Array.isArray(tags)) tags = tags.join(' ');
 
+    const hashtagCheck = checkHashtags(tags);
+    if (hashtagCheck.banned.length > 0) {
+      logDebug(`⚠️ [Hashtags] Baneados detectados y removidos: ${hashtagCheck.banned.join(', ')}`);
+      tags = hashtagCheck.cleanHashtags;
+    }
+    if (hashtagCheck.risky.length > 0) {
+      logDebug(`⚠️ [Hashtags] Riesgosos detectados: ${hashtagCheck.risky.join(', ')}`);
+    }
+
     const rawScore = typeof parsed.viral_score === 'number' ? parsed.viral_score : (parseFloat(String(parsed.viral_score)) || null);
     const calibration = calibrateScore(rawScore, calibrationCtx, mainPlatform);
 
@@ -685,6 +845,7 @@ Respondé SOLO con el JSON, sin texto adicional.`;
       ai_copy_short: parsed.ai_copy_short || parsed.copy_corto || parsed.short_copy || '',
       ai_copy_long: parsed.ai_copy_long || parsed.copy_largo || parsed.long_copy || '',
       hashtags: tags,
+      hashtag_warnings: hashtagCheck.warnings.length > 0 ? hashtagCheck.warnings : undefined,
       viral_score: calibration.score,
       score_raw: calibration.raw,
       score_confidence: calibration.confidence,
