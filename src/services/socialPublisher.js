@@ -85,7 +85,7 @@ exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase, requeste
       ? `${process.env.FRONTEND_URL}/social-callback`
       : 'http://localhost:5173/social-callback';
 
-    const res = await zernioService.generateConnectUrl(profileId, platform, redirectUrl);
+    const res = await zernioService.generateConnectUrl(profileId, platform);
     
     let finalUrl = res.authUrl;
     if (finalUrl && !finalUrl.includes('redirect')) {
