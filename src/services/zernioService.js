@@ -81,11 +81,14 @@ async function createProfile(name, artistId) {
   }
 }
 
-async function generateConnectUrl(profileId, platform) {
+async function generateConnectUrl(profileId, platform, redirectUrl = null) {
   try {
-    const { data } = await api.get(`/connect/${platform}`, {
-      params: { profileId },
-    });
+    const params = { profileId };
+    if (redirectUrl) {
+      params.redirectUrl = redirectUrl;
+      params.redirect = redirectUrl;
+    }
+    const { data } = await api.get(`/connect/${platform}`, { params });
     return data;
   } catch (error) {
     logger.error('ZERNIO_generateConnectUrl', {

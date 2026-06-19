@@ -80,18 +80,18 @@ exports.getConnectUrl = async (artist, allowedPlatforms = [], supabase, requeste
     }
 
     const platform = allowedPlatforms.includes(requestedPlatform) ? requestedPlatform : allowedPlatforms[0];
-    
+
     const redirectUrl = process.env.FRONTEND_URL
       ? `${process.env.FRONTEND_URL}/social-callback`
       : 'http://localhost:5173/social-callback';
 
-    const res = await zernioService.generateConnectUrl(profileId, platform);
-    
+    const res = await zernioService.generateConnectUrl(profileId, platform, redirectUrl);
+
     let finalUrl = res.authUrl;
-    if (finalUrl && !finalUrl.includes('redirect')) {
+    if (finalUrl && !finalUrl.includes('redirect_uri')) {
       finalUrl += (finalUrl.includes('?') ? '&' : '?') + `redirect=${encodeURIComponent(redirectUrl)}&redirectUrl=${encodeURIComponent(redirectUrl)}`;
     }
-    
+
     return { url: finalUrl, mode: 'zernio', profileKey: profileId, platform };
   }
 
