@@ -64,6 +64,7 @@ async function syncArtistAnalytics(artistId) {
         artist_id: artistId,
         platform: pb.platform,
         snapshot_date: toDate,
+        followers: pb.followers || pb.follower_count || pb.subscribers || 0,
         reach: pb.reach || 0,
         impressions: pb.impressions || 0,
         likes: pb.likes || 0,
