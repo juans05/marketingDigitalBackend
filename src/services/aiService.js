@@ -509,17 +509,54 @@ const VISUAL_ANALYSIS_PROMPT = (title, isFullVideo = false) => {
 
   return `${mediaDesc} de una publicación para redes sociales (TikTok/Instagram/YouTube).
 
-Describí en detalle:
-1. QUÉ PASA EN EL VIDEO: narrá la acción completa — qué hace la persona, cómo se mueve, qué expresiones tiene, cómo evoluciona el contenido de principio a fin
-2. TIPO DE CONTENIDO: identificá el formato exacto — ¿es una imitación/parodia de algún artista famoso? ¿lip sync? ¿baile/coreografía? ¿tutorial? ¿antes/después? ¿reacción? ¿storytelling? ¿comedia? ¿trend de TikTok? ¿dueto? ¿POV?
-3. REFERENCIAS CULTURALES: si la persona está imitando, referenciando o haciendo tributo a algún artista (Shakira, Becky G, Bad Bunny, Karol G, Rosalía, etc.), canción, película, serie o trend viral — IDENTIFICALO CON NOMBRE. Fijate en: vestuario similar, gestos característicos, coreografías conocidas, lip sync de canciones específicas
-4. GANCHO INICIAL (primeros 3 segundos): ¿qué se ve? ¿genera curiosidad? ¿retiene la atención? ¿hay un cambio visual impactante?
-5. TONO Y MOOD: energético, sensual, dramático, cómico, motivacional, nostálgico, etc.
-6. ELEMENTOS VIRALES: transiciones, cambios de outfit, efectos visuales, sorpresas, humor, relatabilidad, controversia sana, call-to-action implícito
-7. PÚBLICO OBJETIVO: edad, intereses, comunidades que conectarían con este contenido
+═══ FRAMEWORK HOOK-RETAIN-REWARD ═══
+Analizá el contenido usando esta estructura de retención profesional:
 
-IMPORTANTE: Las imitaciones de artistas famosos, parodias y recreaciones de trends tienen ALTO potencial viral — siempre identificalas con el nombre del artista/trend.
-Sé específico y detallado. Esta información se usará para generar copy de marketing y calcular el potencial viral.`;
+🎣 HOOK (0-3 segundos):
+- ¿Qué elemento visual/auditivo aparece primero? ¿Genera curiosidad inmediata?
+- ¿Hay un "pattern interrupt" (algo inesperado que frena el scroll)?
+- ¿El primer frame comunica de qué va el video o genera misterio?
+- Puntuá la fuerza del hook: débil / medio / fuerte / irresistible
+
+⏳ RETAIN (3-15 segundos — zona crítica de retención):
+- ¿Qué mantiene al espectador? ¿Hay progresión narrativa, tensión, o revelación gradual?
+- ¿Hay cortes/transiciones que mantienen el ritmo? ¿O el video se estanca?
+- ¿El espectador quiere saber "qué pasa después"?
+- ¿Hay un "open loop" (pregunta sin responder que obliga a quedarse)?
+
+🎁 REWARD (final — lo que se lleva el espectador):
+- ¿Hay payoff emocional? (sorpresa, risa, satisfacción, inspiración, plot twist)
+- ¿El final motiva a compartir, comentar o ver de nuevo?
+- ¿Hay call-to-action implícito o explícito?
+- ¿El video funciona en loop (el final conecta con el inicio)?
+
+═══ ANÁLISIS DETALLADO ═══
+1. NARRACIÓN COMPLETA: Describí qué pasa de principio a fin — acciones, movimientos, expresiones, evolución del contenido
+2. FORMATO EXACTO: imitación/parodia, lip sync, baile/coreografía, tutorial, antes/después, reacción, storytelling, comedia, trend, dueto, POV, GRWM, storytime, unboxing, challenge, transición creativa
+3. REFERENCIAS CULTURALES: Si imita/referencia a un artista (Shakira, Becky G, Bad Bunny, Karol G, Rosalía, Taylor Swift, etc.), canción, película, serie o trend viral — NOMBRE EXACTO. Fijate en vestuario, gestos, coreografías, lip sync
+4. TONO Y MOOD: energético, sensual, dramático, cómico, motivacional, nostálgico, vulnerable, empoderado, etc.
+5. ELEMENTOS VIRALES: transiciones, cambios de outfit, efectos visuales, sorpresas, humor, relatabilidad, controversia sana, duet-bait, stitch-bait, comment-bait
+
+═══ PSICOLOGÍA DE ENGAGEMENT ═══
+Identificá qué gatillos psicológicos activa el contenido:
+- FOMO (Fear of Missing Out): ¿el espectador siente que se pierde algo?
+- SOCIAL PROOF: ¿muestra resultados, transformaciones o validación?
+- RECIPROCIDAD: ¿ofrece valor (tips, info, entretenimiento) que genera ganas de interactuar?
+- IDENTIFICACIÓN: ¿el espectador se ve reflejado? ¿dice "esto me pasa a mí"?
+- CURIOSIDAD GAP: ¿abre una brecha entre lo que sabés y lo que querés saber?
+- CONTROVERSIA SANA: ¿genera opiniones divididas que provocan comentarios?
+
+═══ EVALUACIÓN POR PLATAFORMA ═══
+- TIKTOK: ¿optimizado para watch time completo + replays? ¿funciona en loop? ¿genera duets/stitches?
+- INSTAGRAM REELS: ¿tiene calidad visual alta? ¿genera saves? ¿el caption puede complementar?
+- YOUTUBE SHORTS: ¿el thumbnail (primer frame) es potente? ¿retiene los primeros 3 segundos?
+
+═══ PÚBLICO OBJETIVO ═══
+- Rango de edad, género predominante, intereses, comunidades que conectarían
+- ¿En qué momento del día este contenido rendiría mejor?
+
+IMPORTANTE: Las imitaciones de artistas famosos, parodias y recreaciones de trends tienen ALTO potencial viral — siempre identificalas con nombre.
+Sé específico y detallado. Esta información se usará para generar copy profesional y calcular el potencial viral con frameworks de marketing digital.`;
 };
 
 const isGeminiUnavailable = (err) =>
@@ -715,16 +752,57 @@ async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
 async function generateCopyWithClaude(geminiAnalysis, transcript, title = '', platforms = [], artistContext = null, learningContext = null) {
   const platformList = platforms.length > 0 ? platforms.join(', ') : 'TikTok, Instagram, YouTube';
 
-  let systemPrompt = `Sos un Compañero Manager y Estratega de Contenido Digital. Tu objetivo es acompañar al artista y a su equipo para potenciar su crecimiento en ${platformList}.
+  let systemPrompt = `Sos un Compañero Manager y Estratega de Contenido Digital de nivel agencia profesional. Tu objetivo es acompañar al artista y a su equipo para potenciar su crecimiento en ${platformList}.
 Tu tono es motivador, colaborativo y experto, pero siempre cercano. Hablá en plural ("Nosotros", "Vamos a probar").
 
-PRINCIPIOS DE COPYWRITING (Marketing Skills):
+═══ FRAMEWORKS DE MARKETING DIGITAL ═══
+
+📋 AIDA (Attention-Interest-Desire-Action):
+- El copy CORTO debe ser puro ATTENTION + ACTION (captar y provocar interacción)
+- El copy LARGO debe seguir AIDA completo: captar → generar interés → despertar deseo → llamar a la acción
+
+📋 PAS (Problem-Agitate-Solution):
+- Si el contenido resuelve un problema o muestra una transformación, usá PAS:
+  Problem: identificá el dolor/frustración del público
+  Agitate: amplificá por qué ese problema importa
+  Solution: posicioná el contenido como la respuesta
+
+📋 HOOK-RETAIN-REWARD (estructura de retención):
+- El copy debe reforzar el HOOK del video (no repetirlo, complementarlo)
+- Si el video tiene un REWARD fuerte (sorpresa, plot twist), el copy debe generar anticipación sin spoilear
+
+📋 STORYTELLING ARC:
+- Setup → Conflict → Resolution: si el video cuenta una historia, el copy debe amplificarla
+- Usá "open loops" en el copy corto para forzar que lean el largo o vean el video completo
+
+📋 3H DE YOUTUBE (Hero-Hub-Hygiene):
+- HERO: contenido épico/aspiracional → copy emocional, grandioso
+- HUB: contenido recurrente/serie → copy que invita a seguir para más
+- HYGIENE: contenido evergreen/tutorial → copy con keywords de búsqueda
+
+═══ PRINCIPIOS DE COPYWRITING ═══
 1. Claridad sobre Creatividad: Si hay que elegir entre ser ingenioso o ser claro, elegí ser CLARO.
 2. Beneficios sobre Funcionalidades: No digas solo qué hacés, decí qué significa para el usuario.
 3. Especificidad: Evitá palabras vagas como "increíble" o "optimizado". Usá números y datos específicos.
 4. Lenguaje del Cliente: Usá términos que usaría una persona real, no jerga corporativa.
 5. Una idea por sección: Mantené el mensaje enfocado.
-6. Voz Activa y Directa: Sé asertivo. No entierres el valor en explicaciones largas.`;
+6. Voz Activa y Directa: Sé asertivo. No entierres el valor en explicaciones largas.
+7. Emociones primero: La gente comparte lo que les hace SENTIR algo (risa, asombro, nostalgia, orgullo).
+8. Pattern Interrupt: El primer line del copy debe frenar el scroll — usá datos, preguntas provocadoras o declaraciones contraintuitivas.
+
+═══ REGLAS POR PLATAFORMA ═══
+- TIKTOK: el algoritmo premia watch time + shares + replays. Copy corto y directo. Hashtags de nicho. CTA tipo "comenta si..." o "envíaselo a alguien que..."
+- INSTAGRAM: el algoritmo premia saves + comments + shares. Copy puede ser más largo y reflexivo. Carruseles de valor. CTA tipo "guardá esto" o "¿qué opinás?"
+- YOUTUBE: el algoritmo premia CTR del thumbnail + retención de audiencia + session time. Copy con keywords de búsqueda. CTA tipo "mirá hasta el final" o "suscribite para más"
+
+═══ GATILLOS PSICOLÓGICOS ═══
+Usá al menos 2 de estos en cada copy:
+- FOMO: urgencia, exclusividad, "antes de que..."
+- SOCIAL PROOF: números, resultados, testimonios implícitos
+- RECIPROCIDAD: dar valor primero (tip, dato, secreto) para generar interacción
+- CURIOSIDAD GAP: abrir una pregunta que solo se responde viendo el contenido
+- IDENTIFICACIÓN: "¿Te pasó esto?" — hacer que el público se sienta representado
+- CONTROVERSIA SANA: opiniones que dividen y generan debate en comentarios`;
 
   if (artistContext) {
     systemPrompt += `\n\nConozco bien a nuestro artista:
@@ -795,10 +873,29 @@ IMPORTANTE: Cruzá la transcripción con el análisis visual para entender QUÉ 
 
 Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
 {
-  "ai_copy_short": "Un caption corto y potente (1-2 oraciones). Buscamos engagement inmediato.",
-  "ai_copy_long": "Una versión con más contexto (3-5 oraciones) para generar conexión/storytelling.",
+  "ai_copy_short": "Caption corto y potente (1-2 oraciones). Usá AIDA condensado: Attention + Action. Debe frenar el scroll y provocar interacción.",
+  "ai_copy_long": "Versión extendida (3-5 oraciones). Seguí AIDA completo o PAS según el contenido. Incluí storytelling, emociones y CTA estratégico.",
   "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 hashtags estratégicos)",
-  "viral_score": 7.5
+  "viral_score": 7.5,
+  "marketing_breakdown": {
+    "hook_score": 8,
+    "retention_score": 7,
+    "reward_score": 6,
+    "shareability_score": 7,
+    "audio_match_score": 8,
+    "trend_alignment_score": 5,
+    "framework_used": "AIDA",
+    "psychological_triggers": ["CURIOSIDAD GAP", "IDENTIFICACIÓN"],
+    "content_type_3h": "hub",
+    "platform_fit": {
+      "tiktok": 8,
+      "instagram": 7,
+      "youtube": 6
+    },
+    "best_posting_time": "19:00-21:00",
+    "replay_potential": "alto",
+    "comment_bait_strength": "medio"
+  }
 }
 
 REGLAS DE HASHTAGS (MUY IMPORTANTE):
@@ -807,7 +904,20 @@ REGLAS DE HASHTAGS (MUY IMPORTANTE):
 - NUNCA uses hashtags baneados o suprimidos (contenido sexual/sugestivo, spam, follow4follow, etc.) — causan shadowban y matan el alcance.
 - Priorizá hashtags entre 10K-500K de volumen (nicho rentable) sobre los de millones (ruido).
 
-viral_score: número del 1 al 10. Basate en el análisis visual, la transcripción Y la calibración histórica del artista.
+REGLAS DE SCORING (MUY IMPORTANTE):
+- viral_score: promedio ponderado → hook (25%) + retention (25%) + reward (20%) + shareability (20%) + trend (10%)
+- hook_score: fuerza de los primeros 3 segundos (¿frena el scroll?)
+- retention_score: ¿el video mantiene la atención hasta el final? ¿hay progresión?
+- reward_score: ¿el final satisface? ¿genera replay? ¿motiva a compartir?
+- shareability_score: ¿alguien etiquetaría a un amigo? ¿lo reenviaría por DM?
+- audio_match_score: ¿el audio complementa el visual? ¿es trending sound?
+- trend_alignment_score: ¿usa un formato/trend actual o es atemporal?
+- platform_fit: score específico para cada plataforma según sus reglas de algoritmo
+- content_type_3h: "hero" (épico), "hub" (recurrente) o "hygiene" (evergreen/educativo)
+- replay_potential: "bajo", "medio", "alto" — ¿el video se ve más de una vez?
+- comment_bait_strength: "bajo", "medio", "alto" — ¿provoca comentarios?
+
+Basate en el análisis visual, la transcripción, los frameworks de marketing Y la calibración histórica del artista.
 Respondé SOLO con el JSON, sin texto adicional.`;
 
   const mainPlatform = (platforms || [])[0] || 'tiktok';
@@ -841,6 +951,8 @@ Respondé SOLO con el JSON, sin texto adicional.`;
     const rawScore = typeof parsed.viral_score === 'number' ? parsed.viral_score : (parseFloat(String(parsed.viral_score)) || null);
     const calibration = calibrateScore(rawScore, calibrationCtx, mainPlatform);
 
+    const mb = parsed.marketing_breakdown || {};
+
     return {
       ai_copy_short: parsed.ai_copy_short || parsed.copy_corto || parsed.short_copy || '',
       ai_copy_long: parsed.ai_copy_long || parsed.copy_largo || parsed.long_copy || '',
@@ -850,6 +962,21 @@ Respondé SOLO con el JSON, sin texto adicional.`;
       score_raw: calibration.raw,
       score_confidence: calibration.confidence,
       score_adjustments: calibration.adjustments,
+      marketing_breakdown: {
+        hook_score: mb.hook_score || null,
+        retention_score: mb.retention_score || null,
+        reward_score: mb.reward_score || null,
+        shareability_score: mb.shareability_score || null,
+        audio_match_score: mb.audio_match_score || null,
+        trend_alignment_score: mb.trend_alignment_score || null,
+        framework_used: mb.framework_used || null,
+        psychological_triggers: mb.psychological_triggers || [],
+        content_type_3h: mb.content_type_3h || null,
+        platform_fit: mb.platform_fit || {},
+        best_posting_time: mb.best_posting_time || null,
+        replay_potential: mb.replay_potential || null,
+        comment_bait_strength: mb.comment_bait_strength || null,
+      },
     };
   };
 
@@ -947,6 +1074,7 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
       hashtags: copy.hashtags || null,
       viral_score: copy.viral_score,
       score_calibration: calibrationMeta,
+      marketing_breakdown: copy.marketing_breakdown || null,
       error_log: null,
       ...(sourceUrl ? { source_url: sourceUrl } : {}),
     };
@@ -957,7 +1085,11 @@ async function processVideoAI(videoId, videoUrl, sourceUrl, mediaType, platforms
       throw new Error(`Error DB al guardar AI final: ${dbError.message || JSON.stringify(dbError)}`);
     }
 
+    const mb = copy.marketing_breakdown || {};
     logDebug(`✅ [AI interno] Video ${videoId} procesado — score: raw=${copy.score_raw} → calibrated=${copy.viral_score} (${copy.score_confidence} confidence)`);
+    if (mb.hook_score) {
+      logDebug(`   📊 [Marketing] Hook:${mb.hook_score} Retain:${mb.retention_score} Reward:${mb.reward_score} Share:${mb.shareability_score} Audio:${mb.audio_match_score} Trend:${mb.trend_alignment_score} | Framework:${mb.framework_used} | 3H:${mb.content_type_3h} | Triggers:${(mb.psychological_triggers||[]).join(',')}`);
+    }
 
     return updates;
   } catch (err) {
@@ -1063,8 +1195,16 @@ Respondé SOLO con este JSON (sin markdown, sin texto extra):
       model: 'claude-sonnet-4-6',
       max_tokens: 1400,
       temperature: 0.45,
-      system: `Sos un Compañero Manager y Estratega Digital. Tu misión es analizar nuestros resultados y acompañarme a tomar las mejores decisiones para el artista.
-Tu análisis debe ser motivador pero basado 100% en los datos reales que hemos recolectado. Hablá como parte del equipo ("Estamos viendo", "Sugiero que vayamos por").`,
+      system: `Sos un Compañero Manager y Estratega Digital con formación en frameworks profesionales de marketing. Tu misión es analizar nuestros resultados y acompañarme a tomar las mejores decisiones para el artista.
+Tu análisis debe ser motivador pero basado 100% en los datos reales que hemos recolectado. Hablá como parte del equipo ("Estamos viendo", "Sugiero que vayamos por").
+
+FRAMEWORKS QUE APLICÁS EN TUS ANÁLISIS:
+- HOOK-RETAIN-REWARD: Evaluá si los posts exitosos tienen buenos hooks, retención y reward. Identificá patrones.
+- AIDA / PAS: Evaluá qué framework de copy funciona mejor para este artista según los datos.
+- 3H (Hero/Hub/Hygiene): Clasificá los posts por tipo y detectá qué categoría rinde más.
+- REGLAS POR PLATAFORMA: TikTok premia watch time + shares, Instagram premia saves + comments, YouTube premia CTR + retención.
+- GATILLOS PSICOLÓGICOS: Detectá qué gatillos (FOMO, Social Proof, Curiosidad, Identificación) generan más engagement en este artista.
+- Tus decisiones deben ser accionables y referenciar frameworks específicos (ej: "El formato Hero funciona mejor — priorizar contenido épico sobre tutoriales").`,
       messages: [{ role: 'user', content: userContent }],
     });
 
@@ -1102,8 +1242,15 @@ async function runDeepAuditAnalysis(artist, history = []) {
     };
   }
 
-  const systemPrompt = `Sos un Consultor de Branding y Estratega Digital Senior. Tu objetivo es realizar una "Auditoría de Marca" basada en el historial real de publicaciones de un artista.
+  const systemPrompt = `Sos un Consultor de Branding y Estratega Digital Senior con dominio de todos los frameworks de marketing digital para redes sociales. Tu objetivo es realizar una "Auditoría de Marca" basada en el historial real de publicaciones de un artista.
 Tu tono es analítico, profesional y directo. No uses relleno.
+
+FRAMEWORKS QUE APLICÁS:
+- HOOK-RETAIN-REWARD: ¿Los posts exitosos tienen hooks fuertes? ¿Los que fallaron tenían hooks débiles?
+- AIDA vs PAS: ¿Qué framework de copy funciona mejor para este artista según la data?
+- 3H (Hero/Hub/Hygiene): Clasificá los posts por tipo — ¿qué categoría rinde más?
+- GATILLOS PSICOLÓGICOS: ¿Qué gatillos (FOMO, Social Proof, Curiosidad, Identificación, Controversia) aparecen en los posts exitosos?
+- REGLAS DE PLATAFORMA: TikTok premia watch time + shares, Instagram premia saves + comments, YouTube premia CTR + retención
 
 DATOS DEL ARTISTA:
 - Nombre: ${artist.name}
@@ -1114,19 +1261,28 @@ HISTORIAL DE PUBLICACIONES (Los últimos 20-30 posts):
 ${history.map((h, i) => `${i+1}. [Título: ${h.title}] | Engagement: ${h.likes} likes, ${h.comments} comments | Score: ${h.viral_score || 'N/A'}`).join('\n')}
 
 TU MISIÓN:
-1. Detectar patrones de éxito: ¿Qué temas o frases funcionaron mejor?
-2. Detectar debilidades: ¿Qué posts pasaron desapercibidos?
-3. Generar un "ADN Sugerido": Basado en la DATA REAL, ¿cuál debería ser el estilo, los hooks y temas del artista?
+1. Detectar patrones de éxito usando frameworks: ¿Qué hooks, gatillos y formatos funcionaron?
+2. Detectar debilidades: ¿Qué posts fallaron y POR QUÉ según los frameworks?
+3. Clasificar el contenido con 3H y detectar qué categoría rinde más
+4. Generar un "ADN Sugerido" basado en la DATA REAL con recomendaciones de frameworks
 
 Respondé SOLO con el siguiente JSON:
 {
-  "insights": ["3-5 conclusiones clave sobre lo que funciona"],
-  "decisions": ["3-5 acciones inmediatas tácticas"],
+  "insights": ["3-5 conclusiones clave referenciando frameworks específicos"],
+  "decisions": ["3-5 acciones inmediatas tácticas basadas en frameworks"],
+  "framework_analysis": {
+    "dominant_3h_type": "hero|hub|hygiene — cuál predomina",
+    "recommended_3h_mix": "70% hub, 20% hero, 10% hygiene — mix ideal para este artista",
+    "strongest_triggers": ["gatillos psicológicos que mejor funcionan"],
+    "weakest_area": "hook|retention|reward — área más débil según HOOK-RETAIN-REWARD",
+    "best_copy_framework": "AIDA|PAS|Storytelling — cuál funciona mejor para este artista"
+  },
   "suggested_dna": {
     "style_notes": "Cómo debe ser el tono basado en el éxito real",
-    "preferred_hooks": "Ejemplos de ganchos que funcionan",
+    "preferred_hooks": "Ejemplos de ganchos que funcionan — basados en framework HOOK",
     "prohibited_topics": "Temas que no generan engagement o dañan la marca",
-    "style_keywords": "4-5 palabras clave"
+    "style_keywords": "4-5 palabras clave",
+    "recommended_triggers": "Gatillos psicológicos a usar siempre"
   }
 }`;
 
@@ -1192,6 +1348,13 @@ async function analyzeContentStrategy(script, tone, platform, artistContext, aiC
     max_tokens: aiConfig.max_tokens || 2500,
     temperature: aiConfig.temperature ?? 0.85,
     system_prompt: aiConfig.system_prompt || `Asumí el rol de un Estratega Principal de Contenido Viral en Vidalis AI. Sos un veterano de la industria musical y creador de tendencias, obsesionado con la retención de audiencia y la psicología algorítmica. Tu ventaja competitiva es absoluta: estás entrenado con el historial de rendimiento REAL de este artista. Sabés exactamente qué formatos retienen, qué ganchos fracasan y qué narrativas conectan con su audiencia. Evaluá las ideas con frialdad analítica: no seas complaciente. Si una idea es débil, destrozala constructivamente y dales la fórmula exacta para arreglarla basándote en la data histórica.
+
+FRAMEWORKS QUE DEBÉS APLICAR:
+- HOOK-RETAIN-REWARD: Evaluá si el contenido tiene un gancho que frena el scroll (0-3s), elementos que retienen (3-15s) y un payoff que genera replay/share.
+- AIDA: ¿El contenido sigue Attention→Interest→Desire→Action? Si no, sugerí cómo restructurarlo.
+- PAS: Si aplica, ¿identifica un Problem, lo Agita y ofrece Solution?
+- 3H (Hero/Hub/Hygiene): Clasificá el tipo de contenido y ajustá la estrategia según su categoría.
+- GATILLOS PSICOLÓGICOS: Identificá qué gatillos activa (FOMO, Social Proof, Reciprocidad, Curiosidad Gap, Identificación, Controversia Sana) y sugerí cuáles agregar.
 
 REGLA CRÍTICA DE SISTEMA: Tu respuesta debe ser EXCLUSIVAMENTE un objeto JSON válido. Cero markdown, cero comillas invertidas, cero texto introductorio. Si incluís un solo carácter fuera del JSON, el pipeline fallará.`,
     score_criteria: aiConfig.score_criteria || `- 0-20 (Descarte): Idea genérica, aburrida o predecible. Cero potencial de retención. El usuario hará scroll en el primer segundo.
@@ -1358,22 +1521,29 @@ async function scoreVisualVirality(mediaUrl, mediaType, platform, artistId) {
     calibrationNote += `\nReferencia: el score real promedio de este artista es ${learningCtx.historicalAvg}/10. Usá eso como ancla.`;
   }
 
-  const prompt = `Sos un experto en viralidad de contenido en ${platform || 'redes sociales'}. Analizá esta imagen/thumbnail y puntuá su potencial viral con criterios específicos.
+  const prompt = `Sos un experto en viralidad de contenido en ${platform || 'redes sociales'} con dominio de frameworks profesionales de marketing digital.
 ${calibrationNote}
+
+Usá el framework HOOK-RETAIN-REWARD para evaluar el potencial viral visual:
+- HOOK: ¿Este frame/thumbnail frena el scroll en 0.5 segundos?
+- RETAIN: ¿La composición visual genera curiosidad por ver más?
+- REWARD: ¿Promete un payoff emocional que motive a ver el contenido completo?
 
 Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown):
 {
   "overall": <promedio ponderado de todas las dimensiones>,
   "dimensions": {
-    "hook": {"score": <0-100>, "label": "Gancho Visual", "detail": "<por qué este score — qué atrapa o qué falta en los primeros 0.5 segundos>"},
-    "quality": {"score": <0-100>, "label": "Calidad Visual", "detail": "<iluminación, resolución, composición, colores>"},
-    "emotion": {"score": <0-100>, "label": "Impacto Emocional", "detail": "<qué emoción genera — curiosidad, sorpresa, risa, inspiración, nada>"},
-    "trend": {"score": <0-100>, "label": "Tendencia", "detail": "<qué tan alineado está con tendencias actuales de ${platform || 'redes'}>"},
-    "thumb": {"score": <0-100>, "label": "Thumbnail Power", "detail": "<funcionaría como miniatura? contraste, texto, cara, expresión>"},
-    "scroll": {"score": <0-100>, "label": "Stop the Scroll", "detail": "<pararía alguien de scrollear al ver esto? por qué sí o no>"}
+    "hook": {"score": <0-100>, "label": "Gancho Visual (HOOK)", "detail": "<aplicando framework: ¿hay pattern interrupt? ¿qué atrapa o qué falta en los primeros 0.5 segundos?>"},
+    "quality": {"score": <0-100>, "label": "Calidad Visual", "detail": "<iluminación, resolución, composición, colores, profesionalismo>"},
+    "emotion": {"score": <0-100>, "label": "Impacto Emocional", "detail": "<qué gatillo psicológico activa: curiosidad, sorpresa, FOMO, identificación, o nada>"},
+    "trend": {"score": <0-100>, "label": "Tendencia", "detail": "<qué tan alineado está con tendencias actuales de ${platform || 'redes'} — formatos, estilos visuales, estética>"},
+    "thumb": {"score": <0-100>, "label": "Thumbnail Power", "detail": "<funcionaría como miniatura? contraste, texto overlay, expresión facial, clickbait visual>"},
+    "scroll": {"score": <0-100>, "label": "Stop the Scroll (RETAIN)", "detail": "<¿la composición genera un open loop visual? ¿genera suficiente curiosidad para detener el scroll?>"}
   },
-  "verdict": "<1 frase directa: se viraliza o no, y la razón principal>",
-  "quickFixes": [<3 mejoras concretas y rápidas que subirían el score>]
+  "content_type_3h": "<hero|hub|hygiene — clasificación según el framework 3H de YouTube>",
+  "psychological_triggers": [<gatillos detectados: FOMO, SOCIAL_PROOF, CURIOSIDAD_GAP, IDENTIFICACIÓN, CONTROVERSIA, RECIPROCIDAD>],
+  "verdict": "<1 frase directa: se viraliza o no, y la razón principal según frameworks de marketing>",
+  "quickFixes": [<3 mejoras concretas basadas en frameworks: HOOK más fuerte, gatillo psicológico faltante, optimización de plataforma>]
 }`;
 
   try {
