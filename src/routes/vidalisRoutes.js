@@ -36,6 +36,7 @@ router.patch('/artist-publish-mode/:artistId', authenticateToken, authorizeArtis
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
 router.post('/onboarding', authenticateToken, vidalisController.completeOnboarding);
+router.post('/complete-tour', authenticateToken, vidalisController.completeTour);
 
 // ── Videos ────────────────────────────────────────────────────────────────────
 router.post('/upload', authenticateToken, vidalisController.processVideo);

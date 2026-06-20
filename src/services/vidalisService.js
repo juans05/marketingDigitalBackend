@@ -154,6 +154,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
       account_type: resolvedType,
       artist_id,
       onboarding_completed: user.onboarding_completed || false,
+      tour_completed: user.tour_completed || false,
     };
 
     // Firmar Token JWT para seguridad móvil
@@ -242,6 +243,7 @@ exports.loginUser = async (email, password, accountType = null, displayName = nu
     artist_id: null,
     birth_date: newAgency.birth_date,
     onboarding_completed: false,
+    tour_completed: false,
     token: newToken,
   };
 };

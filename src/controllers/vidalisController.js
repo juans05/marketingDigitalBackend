@@ -904,6 +904,24 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
+exports.completeTour = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'No autorizado' });
+
+    const { error } = await supabase
+      .from('agencies')
+      .update({ tour_completed: true })
+      .eq('id', userId);
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ completeTour:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.updateArtistStyle = async (req, res) => {
   try {
     const { artistId } = req.params;
@@ -1086,8 +1104,15 @@ exports.getArtistComments = async (req, res) => {
       cursor || null,
       platform || null
     );
-    res.status(200).json(result);
+    console.log('📥 [Inbox] Zernio raw keys:', result ? Object.keys(result) : 'null');
+    console.log('📥 [Inbox] Zernio sample:', JSON.stringify(result).slice(0, 500));
+    const comments = result?.posts || result?.comments || result?.data || (Array.isArray(result) ? result : []);
+    res.status(200).json({
+      comments: Array.isArray(comments) ? comments : [],
+      pagination: result?.pagination || result?.nextCursor ? { cursor: result.nextCursor } : null,
+    });
   } catch (error) {
+    console.error('❌ [Inbox] getArtistComments error:', error.message);
     res.status(500).json({ error: error.message });
   }
 };
@@ -1095,13 +1120,28 @@ exports.getArtistComments = async (req, res) => {
 exports.getPostComments = async (req, res) => {
   try {
     const { postId } = req.params;
-    const { accountId, limit, cursor } = req.query;
-    if (!accountId) return res.status(400).json({ error: 'Se requiere accountId' });
+    const { accountId, artistId, limit, cursor } = req.query;
+    let resolvedAccountId = accountId;
+    if (!resolvedAccountId && artistId) {
+      const { data: artist } = await supabase
+        .from('artists')
+        .select('ayrshare_profile_key')
+        .eq('id', artistId)
+        .single();
+      resolvedAccountId = artist?.ayrshare_profile_key;
+    }
+    if (!resolvedAccountId) return res.status(400).json({ error: 'Se requiere accountId o artistId' });
     const result = await zernioService.getPostComments(
-      postId, accountId, parseInt(limit) || 50, cursor || null
+      postId, resolvedAccountId, parseInt(limit) || 50, cursor || null
     );
-    res.status(200).json(result);
+    console.log('📥 [Inbox] Post comments raw keys:', result ? Object.keys(result) : 'null');
+    const comments = result?.comments || result?.data || (Array.isArray(result) ? result : []);
+    res.status(200).json({
+      comments: Array.isArray(comments) ? comments : [],
+      pagination: result?.pagination || null,
+    });
   } catch (error) {
+    console.error('❌ [Inbox] getPostComments error:', error.message);
     res.status(500).json({ error: error.message });
   }
 };

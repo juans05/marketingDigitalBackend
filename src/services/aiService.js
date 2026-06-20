@@ -824,7 +824,7 @@ Usá al menos 2 de estos en cada copy:
 
   // Inyectar aprendizaje histórico real de la BD
   if (learningContext) {
-    const { topHashtags, platformPerformance, scoreBias, topCopies, recentInsights, totalPostsAnalyzed } = learningContext;
+    const { topHashtags, platformPerformance, scoreBias, topCopies, recentInsights, totalPostsAnalyzed, historicalAvg } = learningContext;
 
     systemPrompt += `\n\nAPRENDIZAJE DE PUBLICACIONES ANTERIORES (${totalPostsAnalyzed} posts analizados con métricas reales):`;
 
