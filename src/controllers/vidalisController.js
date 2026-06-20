@@ -1098,25 +1098,41 @@ exports.getArtistComments = async (req, res) => {
       return res.status(400).json({ error: 'El artista no tiene perfil de Zernio conectado' });
     }
     const profileKey = artist.ayrshare_profile_key;
-    console.log('📥 [Inbox] artistId:', artistId, '| profileKey:', profileKey, '| mode:', artist.publish_mode, '| platforms:', artist.active_platforms);
+    const { limit, cursor, platform } = req.query;
+
+    let accounts = [];
     try {
-      const accounts = await zernioService.getActivePlatforms(profileKey);
-      console.log('📥 [Inbox] Zernio accounts:', JSON.stringify(accounts));
+      accounts = await zernioService.getActivePlatforms(profileKey);
     } catch (accErr) {
       console.log('📥 [Inbox] Error checking accounts:', accErr.message);
     }
-    const { limit, cursor, platform } = req.query;
+
     const result = await zernioService.getProfileComments(
       profileKey,
       parseInt(limit) || 20,
       cursor || null,
       platform || null
     );
-    console.log('📥 [Inbox] Zernio raw keys:', result ? Object.keys(result) : 'null');
-    console.log('📥 [Inbox] Zernio meta:', JSON.stringify(result?.meta || {}));
+    const meta = result?.meta || {};
     const comments = result?.posts || result?.comments || result?.data || (Array.isArray(result) ? result : []);
+    const parsed = Array.isArray(comments) ? comments : [];
+
+    if (parsed.length === 0 && meta.accountsQueried === 0 && accounts.length > 0) {
+      const platformNames = accounts.map(a => a.platform);
+      const unsupported = platformNames.filter(p => !['instagram', 'facebook'].includes(p));
+      console.log('📥 [Inbox] accountsQueried=0 but accounts exist:', platformNames.join(', '));
+      return res.status(200).json({
+        comments: [],
+        pagination: null,
+        notice: unsupported.length === platformNames.length
+          ? `Las plataformas conectadas (${platformNames.join(', ')}) no soportan lectura de comentarios por API. Conecta Instagram o Facebook para usar el Inbox.`
+          : null,
+        connectedPlatforms: platformNames,
+      });
+    }
+
     res.status(200).json({
-      comments: Array.isArray(comments) ? comments : [],
+      comments: parsed,
       pagination: result?.pagination || result?.nextCursor ? { cursor: result.nextCursor } : null,
     });
   } catch (error) {
