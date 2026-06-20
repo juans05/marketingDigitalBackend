@@ -1091,21 +1091,29 @@ exports.getArtistComments = async (req, res) => {
     const { artistId } = req.params;
     const { data: artist } = await supabase
       .from('artists')
-      .select('ayrshare_profile_key')
+      .select('ayrshare_profile_key, publish_mode, active_platforms, social_keys')
       .eq('id', artistId)
       .single();
     if (!artist?.ayrshare_profile_key) {
       return res.status(400).json({ error: 'El artista no tiene perfil de Zernio conectado' });
     }
+    const profileKey = artist.ayrshare_profile_key;
+    console.log('📥 [Inbox] artistId:', artistId, '| profileKey:', profileKey, '| mode:', artist.publish_mode, '| platforms:', artist.active_platforms);
+    try {
+      const accounts = await zernioService.getActivePlatforms(profileKey);
+      console.log('📥 [Inbox] Zernio accounts:', JSON.stringify(accounts));
+    } catch (accErr) {
+      console.log('📥 [Inbox] Error checking accounts:', accErr.message);
+    }
     const { limit, cursor, platform } = req.query;
     const result = await zernioService.getProfileComments(
-      artist.ayrshare_profile_key,
+      profileKey,
       parseInt(limit) || 20,
       cursor || null,
       platform || null
     );
     console.log('📥 [Inbox] Zernio raw keys:', result ? Object.keys(result) : 'null');
-    console.log('📥 [Inbox] Zernio sample:', JSON.stringify(result).slice(0, 500));
+    console.log('📥 [Inbox] Zernio meta:', JSON.stringify(result?.meta || {}));
     const comments = result?.posts || result?.comments || result?.data || (Array.isArray(result) ? result : []);
     res.status(200).json({
       comments: Array.isArray(comments) ? comments : [],
