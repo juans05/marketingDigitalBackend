@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"]
   },
   "keywords": [],
   "author": "",
@@ -20,6 +24,7 @@
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",
     "cors": "^2.8.6",
+    "disposable-email-domains": "^1.0.62",
     "dotenv": "^17.3.1",
     "express": "^4.22.1",
     "express-rate-limit": "^8.3.2",
@@ -31,6 +36,7 @@
     "node-cron": "^4.5.0",
     "nodemon": "^3.1.14",
     "p-queue": "^6.6.2",
+    "resend": "^6.17.1",
     "winston": "^3.19.0"
   },
   "devDependencies": {
