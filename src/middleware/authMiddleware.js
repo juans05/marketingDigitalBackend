@@ -77,21 +77,37 @@ const authorizeVideo = async (req, res, next) => {
   if (!videoId) return next();
 
   try {
+    console.log(`[authorizeVideo] videoId=${videoId} user=${req.user?.id}`);
+
     const { data: video, error } = await supabaseAdmin
       .from('videos')
-      .select('id, artist_id, artists!inner(agency_id)')
+      .select('id, artist_id')
       .eq('id', videoId)
       .single();
 
-    if (error || !video) return res.status(404).json({ error: 'Video no encontrado.' });
+    console.log(`[authorizeVideo] video query → data=${JSON.stringify(video)} error=${JSON.stringify(error)}`);
 
-    if (video.artists.agency_id !== req.user.id && req.user.account_type !== 'admin') {
+    if (error || !video) return res.status(404).json({ error: 'Video no encontrado. method: authorizeVideo' });
+
+    const { data: artist, error: artistError } = await supabaseAdmin
+      .from('artists')
+      .select('agency_id')
+      .eq('id', video.artist_id)
+      .single();
+
+    console.log(`[authorizeVideo] artist query → data=${JSON.stringify(artist)} error=${JSON.stringify(artistError)}`);
+
+    if (artistError || !artist) return res.status(404).json({ error: 'Artista no encontrado.' });
+
+    if (artist.agency_id !== req.user.id && req.user.account_type !== 'admin') {
+      console.log(`[authorizeVideo] FORBIDDEN agency_id=${artist.agency_id} vs user.id=${req.user.id}`);
       return res.status(403).json({ error: 'No tienes permiso para acceder a este video.' });
     }
 
-    req.video = video; // disponible para el controller si lo necesita
+    req.video = video;
     next();
   } catch (err) {
+    console.error(`[authorizeVideo] catch:`, err);
     res.status(500).json({ error: 'Error de autorización.' });
   }
 };

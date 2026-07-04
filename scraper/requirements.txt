@@ -1,0 +1,5 @@
+scrapegraphai
+fastapi
+uvicorn[standard]
+playwright
+python-dotenv

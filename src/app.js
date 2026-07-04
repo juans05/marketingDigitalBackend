@@ -130,4 +130,8 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   logger.info('Server started', { port: PORT, env: process.env.NODE_ENV || 'development' });
+
+  // Start cron jobs (daily ideas, growth snapshots, competitor snapshots)
+  const { startCronJobs } = require('./jobs/dailyIdeas');
+  startCronJobs();
 });

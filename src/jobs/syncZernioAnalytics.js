@@ -3,8 +3,8 @@ const zernioService = require('../services/zernioService');
 const { calcEngagementRate, engagementToViralScore } = require('../services/uploadPostService');
 
 const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
 
 const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -62,15 +62,21 @@ async function syncArtistAnalytics(artistId) {
 
   // ── 1. MÉTRICAS DIARIAS POR PLATAFORMA ─────────────────────────────────
   try {
-    const dailyData = await zernioService.getDailyMetrics(profileId, fromDate, toDate);
+    const [dailyData, activeAccounts] = await Promise.all([
+      zernioService.getDailyMetrics(profileId, fromDate, toDate),
+      zernioService.getActivePlatforms(profileId).catch(() => []),
+    ]);
     const breakdown = dailyData?.platformBreakdown || [];
+
+    const followersByPlatform = {};
+    activeAccounts.forEach(acc => { followersByPlatform[acc.platform] = acc.followers || 0; });
 
     if (breakdown.length > 0) {
       const snapshots = breakdown.map(pb => ({
         artist_id: artistId,
         platform: pb.platform,
         snapshot_date: toDate,
-        followers: pb.followers || pb.follower_count || pb.subscribers || 0,
+        followers: followersByPlatform[pb.platform] || pb.followers || pb.followersCount || pb.follower_count || 0,
         reach: pb.reach || 0,
         impressions: pb.impressions || 0,
         likes: pb.likes || 0,
@@ -141,7 +147,7 @@ async function syncArtistAnalytics(artistId) {
         const displayTitle = postTitle.length > 80
           ? postTitle.slice(0, 80) + '…'
           : postTitle || `Post ${platform} ${(post.publishDate || post.createdAt || '').split('T')[0] || ''}`;
-        const postUrl = post.postUrl || post.permalink || post.url || null;
+        const postUrl = post.postUrl || post.permalink || post.url || `https://zernio.com/post/${zernioPostId}`;
         const publishedAt = post.publishDate || post.createdAt || new Date().toISOString();
 
         const { data: created, error: createErr } = await supabase
@@ -257,6 +263,106 @@ async function syncArtistAnalytics(artistId) {
     console.warn(`  ⚠️ [ZernioSync] best-time error:`, e.message);
   }
 
+  // ── 3b. CONTENT DECAY (vida útil del contenido) ─────────────────────────
+  try {
+    const PLATFORMS_TO_SYNC = ['instagram', 'tiktok', 'youtube', 'facebook'];
+    const decayResults = {};
+
+    for (const plat of PLATFORMS_TO_SYNC) {
+      const decayData = await zernioService.getContentDecay(profileId, plat);
+      if (decayData?.buckets?.length > 0) {
+        decayResults[plat] = decayData.buckets;
+      }
+    }
+
+    const globalDecay = await zernioService.getContentDecay(profileId);
+    if (globalDecay?.buckets?.length > 0) {
+      decayResults._global = globalDecay.buckets;
+    }
+
+    if (Object.keys(decayResults).length > 0) {
+      await supabase.from('zernio_sync_cache').upsert({
+        artist_id: artistId,
+        cache_key: 'content_decay',
+        data: decayResults,
+        synced_at: new Date().toISOString(),
+      }, { onConflict: 'artist_id,cache_key' });
+      results.content_decay = true;
+      console.log(`  ✅ content_decay: ${Object.keys(decayResults).length} plataformas guardadas`);
+    }
+  } catch (e) {
+    results.errors.push(`content_decay: ${e.message}`);
+    console.warn(`  ⚠️ [ZernioSync] content-decay error:`, e.message);
+  }
+
+  // ── 3c. POSTING FREQUENCY (frecuencia óptima) ──────────────────────────
+  try {
+    const PLATFORMS_TO_SYNC = ['instagram', 'tiktok', 'youtube', 'facebook'];
+    const freqResults = {};
+
+    for (const plat of PLATFORMS_TO_SYNC) {
+      const freqData = await zernioService.getPostingFrequency(profileId, plat);
+      if (freqData?.rows?.length > 0 || freqData?.frequencies?.length > 0) {
+        freqResults[plat] = freqData.rows || freqData.frequencies || [];
+      }
+    }
+
+    const globalFreq = await zernioService.getPostingFrequency(profileId);
+    if (globalFreq?.rows?.length > 0 || globalFreq?.frequencies?.length > 0) {
+      freqResults._global = globalFreq.rows || globalFreq.frequencies || [];
+    }
+
+    if (Object.keys(freqResults).length > 0) {
+      await supabase.from('zernio_sync_cache').upsert({
+        artist_id: artistId,
+        cache_key: 'posting_frequency',
+        data: freqResults,
+        synced_at: new Date().toISOString(),
+      }, { onConflict: 'artist_id,cache_key' });
+      results.posting_frequency = true;
+      console.log(`  ✅ posting_frequency: ${Object.keys(freqResults).length} plataformas guardadas`);
+    }
+  } catch (e) {
+    results.errors.push(`posting_frequency: ${e.message}`);
+    console.warn(`  ⚠️ [ZernioSync] posting-frequency error:`, e.message);
+  }
+
+  // ── 3d. BEST TIMES POR PLATAFORMA ──────────────────────────────────────
+  try {
+    const PLATFORMS_TO_SYNC = ['instagram', 'tiktok', 'youtube', 'facebook'];
+    const bestTimesByPlatform = {};
+
+    for (const plat of PLATFORMS_TO_SYNC) {
+      const btData = await zernioService.getBestPostingTimes(profileId, plat);
+      const slots = btData?.slots || [];
+      if (slots.length > 0) {
+        bestTimesByPlatform[plat] = slots
+          .sort((a, b) => b.avg_engagement - a.avg_engagement)
+          .slice(0, 5)
+          .map(s => ({
+            label: `${DAYS_ES[s.day_of_week]} ${String(s.hour).padStart(2, '0')}:00`,
+            day: DAYS_ES[s.day_of_week],
+            hour: s.hour,
+            avg_engagement: parseFloat((s.avg_engagement || 0).toFixed(2)),
+            posts: s.post_count || 0,
+          }));
+      }
+    }
+
+    if (Object.keys(bestTimesByPlatform).length > 0) {
+      await supabase.from('zernio_sync_cache').upsert({
+        artist_id: artistId,
+        cache_key: 'best_times_by_platform',
+        data: bestTimesByPlatform,
+        synced_at: new Date().toISOString(),
+      }, { onConflict: 'artist_id,cache_key' });
+      console.log(`  ✅ best_times_by_platform: ${Object.keys(bestTimesByPlatform).length} plataformas`);
+    }
+  } catch (e) {
+    results.errors.push(`best_times_by_platform: ${e.message}`);
+    console.warn(`  ⚠️ [ZernioSync] best-times-by-platform error:`, e.message);
+  }
+
   // ── 4. SEGUIDORES ACTUALES POR CUENTA ───────────────────────────────────
   try {
     const accounts = await zernioService.getActivePlatforms(profileId);
@@ -271,8 +377,27 @@ async function syncArtistAnalytics(artistId) {
         followers: acc.followers || 0,
         synced_at: new Date().toISOString(),
       }, { onConflict: 'artist_id,platform,snapshot_date' });
+
+      // Also write to growth_snapshots for the Growth History chart
+      const { data: latestSnap } = await supabase
+        .from('platform_snapshots')
+        .select('views, likes, engagement_rate')
+        .eq('artist_id', artistId)
+        .eq('platform', acc.platform)
+        .eq('snapshot_date', toDate)
+        .single();
+
+      await supabase.from('growth_snapshots').upsert({
+        artist_id: artistId,
+        platform: acc.platform,
+        snapshot_date: toDate,
+        followers: acc.followers || 0,
+        total_views: latestSnap?.views || 0,
+        total_likes: latestSnap?.likes || 0,
+        engagement_rate: latestSnap?.engagement_rate || 0,
+      }, { onConflict: 'artist_id,platform,snapshot_date' });
     }
-    console.log(`  ✅ followers: ${accounts.length} cuentas actualizadas`);
+    console.log(`  ✅ followers: ${accounts.length} cuentas actualizadas (platform_snapshots + growth_snapshots)`);
   } catch (e) {
     results.errors.push(`followers: ${e.message}`);
     console.warn(`  ⚠️ [ZernioSync] accounts/followers error:`, e.message);

@@ -117,7 +117,7 @@ async function getActivePlatforms(profileId) {
         username: acc.username || acc.name || '',
         accountId: acc.accountId || acc.id || acc._id || '',
         // Zernio puede devolver followers con distintos nombres según la plataforma
-        followers: acc.followers ?? acc.follower_count ?? acc.subscribers ??
+        followers: acc.followers ?? acc.followersCount ?? acc.follower_count ?? acc.subscribers ??
                    acc.subscriber_count ?? acc.fans ?? acc.stats?.followers ?? 0,
         profile_picture: acc.profilePicture || acc.profile_picture || acc.avatar || null,
       }));
@@ -325,6 +325,32 @@ async function getDailyMetrics(profileId, fromDate, toDate) {
     return data;
   } catch (error) {
     logger.error('ZERNIO_getDailyMetrics', { profileId, status: error.response?.status, msg: error.response?.data?.message });
+    return null;
+  }
+}
+
+// GET /v1/analytics/content-decay — curva de vida del contenido
+async function getContentDecay(profileId, platform = null) {
+  try {
+    const params = { profileId };
+    if (platform) params.platform = platform;
+    const { data } = await api.get('/analytics/content-decay', { params });
+    return data;
+  } catch (error) {
+    logger.error('ZERNIO_getContentDecay', { profileId, status: error.response?.status, msg: error.response?.data?.message });
+    return null;
+  }
+}
+
+// GET /v1/analytics/posting-frequency — frecuencia de publicación vs engagement
+async function getPostingFrequency(profileId, platform = null) {
+  try {
+    const params = { profileId };
+    if (platform) params.platform = platform;
+    const { data } = await api.get('/analytics/posting-frequency', { params });
+    return data;
+  } catch (error) {
+    logger.error('ZERNIO_getPostingFrequency', { profileId, status: error.response?.status, msg: error.response?.data?.message });
     return null;
   }
 }
@@ -621,6 +647,8 @@ module.exports = {
   getAnalyticsPosts,
   getDailyMetrics,
   getBestPostingTimes,
+  getContentDecay,
+  getPostingFrequency,
   getInstagramAccountInsights,
   getYouTubeChannelInsights,
   getProfileComments,

@@ -27,13 +27,13 @@ const AI_MODE = process.env.AI_MODE || 'internal';
  * @param {string} platform - 'android' | 'ios'
  */
 exports.loginWithGoogle = async (idToken, platform = 'android') => {
-  const clientId = platform === 'ios' 
-    ? process.env.GOOGLE_CLIENT_ID_IOS 
+  const clientId = platform === 'ios'
+    ? process.env.GOOGLE_CLIENT_ID_IOS
     : process.env.GOOGLE_CLIENT_ID_ANDROID;
 
   try {
     logger.log('info', 'GOOGLE_LOGIN_ATTEMPT', { platform });
-    
+
     const ticket = await googleClient.verifyIdToken({
       idToken,
       audience: clientId
@@ -47,9 +47,9 @@ exports.loginWithGoogle = async (idToken, platform = 'android') => {
     return await exports.loginUser(email, googleId, 'individual', name);
 
   } catch (error) {
-    logger.log('error', 'GOOGLE_LOGIN_FAILED', { 
-      error: error.message, 
-      clientId: clientId ? `${clientId.substring(0, 10)}...` : 'MISSING' 
+    logger.log('error', 'GOOGLE_LOGIN_FAILED', {
+      error: error.message,
+      clientId: clientId ? `${clientId.substring(0, 10)}...` : 'MISSING'
     });
     console.error('❌ Error verificando Google Token:', error.message);
     throw new Error(`Error de Google: ${error.message}`);
@@ -394,7 +394,7 @@ exports.completeOnboarding = async (data) => {
           })
           .eq('id', existing[0].id)
           .select();
-        
+
         if (updateErr) throw updateErr;
         return { success: true, artist: updated[0] };
       } else {
@@ -545,9 +545,9 @@ exports.registerVideo = async (videoData) => {
   }
 
   // Descontar usando la función RPC (atómica)
-  const { data: deductOk } = await supabase.rpc('deduct_sparks', { 
-    target_agency_id: agencyId, 
-    cost: SPARK_COST 
+  const { data: deductOk } = await supabase.rpc('deduct_sparks', {
+    target_agency_id: agencyId,
+    cost: SPARK_COST
   });
 
   if (!deductOk) {
@@ -569,7 +569,7 @@ exports.registerVideo = async (videoData) => {
     videoData.processed_url = buildCloudinaryUrl(videoData.source_url);
     // Inicializar post_type por defecto
     videoData.post_type = looksLikeVideo ? 'reel' : 'feed';
-    
+
     // Generar thumbnail para el dashboard
     if (looksLikeVideo) {
       const parts = videoData.source_url.split('/upload/');
@@ -679,6 +679,7 @@ exports.registerVideo = async (videoData) => {
 // --- REINTENTAR PROCESAMIENTO ---
 exports.retryVideoProcessing = async (videoId) => {
   // 1. Obtener datos del video
+  console.log(videoId);
   const { data: video, error: videoErr } = await supabase
     .from('videos')
     .select('*')
@@ -805,9 +806,9 @@ exports.getVideoAnalytics = async (videoId) => {
   const finalMetricsSource = (realTimeMetrics && Object.keys(realTimeMetrics).length > 2)
     ? realTimeMetrics
     : (video.analytics_4h || {});
-    
+
   const metrics = uploadPostService.normalizeMetrics(finalMetricsSource);
-  
+
   console.log(`[Analytics] Info enviada al frontend para video ${videoId}:`, {
     hasPostId: !!video.ayrshare_post_id,
     hasRealTime: !!realTimeMetrics,
@@ -915,7 +916,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
     try {
       const options = {};
       if (artist.facebook_page_id) options.facebookPageId = artist.facebook_page_id;
-      
+
       // Lanzamos ambas peticiones en paralelo para cada artista
       const [analytics, profile] = await Promise.all([
         uploadPostService.getAnalytics(artist.ayrshare_profile_key, platforms, options).catch(e => {
@@ -932,7 +933,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
         analytics: JSON.stringify(analytics),
         profile: JSON.stringify(profile)
       });
-      
+
       return { analytics, profile };
     } catch (e) {
       console.warn(`⚠️ Error fetching data for ${artist.ayrshare_profile_key}:`, e.message);
@@ -945,7 +946,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
   results.forEach(item => {
     if (!item) return;
     const { analytics, profile } = item;
-    
+
     // 1. Procesar Analiticas (Reach, Views, Timeseries)
     if (analytics) {
       Object.keys(analytics).forEach(platform => {
@@ -955,7 +956,7 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
           const pViews = pData.views || pData.video_views || 0;
           const pReach = pData.reach || pData.impressions || 0;
           const pPosts = pData.post_count || pData.media_count || pData.posts || 0;
-          
+
           followersTotal += followers;
           totalReach += pReach;
           totalViews += pViews;
@@ -997,14 +998,14 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
         if (acc && typeof acc === 'object') {
           const followers = acc.followers || acc.follower_count || acc.subscribers || 0;
           const posts = acc.post_count || acc.media_count || 0;
-          
+
           // Solo sumamos si no teníamos datos de esta plataforma desde analytics para evitar duplicar
           // O si el valor del perfil es significativamente más alto/actual
           if (followers > 0 && (!analytics[p] || (analytics[p].followers || 0) === 0)) {
             followersTotal += followers;
           }
           if (posts > totalPostsSocial) {
-             totalPostsSocial = posts;
+            totalPostsSocial = posts;
           }
         }
       });
@@ -1043,33 +1044,33 @@ exports.getDashboardStats = async (agencyId, artistId = null) => {
       if (seenPlatforms.has(snap.platform)) continue;
       seenPlatforms.add(snap.platform);
 
-      const pLikes    = snap.likes    || 0;
+      const pLikes = snap.likes || 0;
       const pComments = snap.comments || 0;
-      const pShares   = snap.shares   || 0;
-      const pSaves    = snap.saves    || 0;
-      const pViews    = snap.views    || 0;
-      const pReach    = snap.reach    || snap.impressions || 0;
-      const pFollow   = snap.followers || 0;
+      const pShares = snap.shares || 0;
+      const pSaves = snap.saves || 0;
+      const pViews = snap.views || 0;
+      const pReach = snap.reach || snap.impressions || 0;
+      const pFollow = snap.followers || 0;
 
       followersTotal += pFollow;
-      totalReach     += pReach;
-      totalViews     += pViews;
-      totalLikes     += pLikes;
-      totalComments  += pComments;
-      totalShares    += pShares;
-      totalSaves     += pSaves;
+      totalReach += pReach;
+      totalViews += pViews;
+      totalLikes += pLikes;
+      totalComments += pComments;
+      totalShares += pShares;
+      totalSaves += pSaves;
 
       if (!platformBreakdown[snap.platform]) {
         platformBreakdown[snap.platform] = { followers: 0, reach: 0, likes: 0, comments: 0, shares: 0, saves: 0, posts: 0, engagement_rate: 0 };
       }
       const pb = platformBreakdown[snap.platform];
       pb.followers += pFollow;
-      pb.reach     += pViews > 0 ? pViews : pReach;
-      pb.likes     += pLikes;
-      pb.comments  += pComments;
-      pb.shares    += pShares;
-      pb.saves     += pSaves;
-      pb.posts     += snap.posts_count || 0;
+      pb.reach += pViews > 0 ? pViews : pReach;
+      pb.likes += pLikes;
+      pb.comments += pComments;
+      pb.shares += pShares;
+      pb.saves += pSaves;
+      pb.posts += snap.posts_count || 0;
 
       // Historial de reach por fecha (para gráfico de 7 días)
       if (snap.snapshot_date) {
@@ -1580,7 +1581,7 @@ exports.updateArtistStyle = async (artistId, creativeDna) => {
     .update({ creative_dna: creativeDna })
     .eq('id', artistId)
     .select();
-  
+
   if (error) {
     console.warn('⚠️ Error actualizando creative_dna. Reintentando con branding_data...');
     // Fallback por si no existe la columna creative_dna aún
@@ -1628,7 +1629,7 @@ exports.runArtistDeepAudit = async (artistId, allowFullAudit = false) => {
     try {
       console.log('📡 Fetching historial externo de Instagram...');
       const externalMedia = await instagramService.getMediaHistory(artist, 20);
-      
+
       // Guardar posts externos en la base de datos (con categoría 'audit')
       if (externalMedia.length > 0) {
         const auditRecords = externalMedia.map(m => ({
@@ -1637,10 +1638,10 @@ exports.runArtistDeepAudit = async (artistId, allowFullAudit = false) => {
           external_id: m.id,
           caption: m.caption,
           media_url: m.media_url,
-          metrics: { 
-            likes: m.like_count || 0, 
+          metrics: {
+            likes: m.like_count || 0,
             comments: m.comments_count || 0,
-            timestamp: m.timestamp 
+            timestamp: m.timestamp
           },
           category: 'audit_deep'
         }));
@@ -1648,7 +1649,7 @@ exports.runArtistDeepAudit = async (artistId, allowFullAudit = false) => {
         const { error: insErr } = await supabase
           .from('external_posts_audit') // Asumimos que esta tabla existe o se crea vía migración
           .insert(auditRecords);
-        
+
         if (insErr) {
           console.warn('⚠️ No se pudo guardar historial externo en DB:', insErr.message);
           // Si la tabla no existe, fallbback a analytics_insights_log como raw_data

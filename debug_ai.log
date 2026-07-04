@@ -39,3 +39,21 @@ Please retry in 44.85090028s. [{"@type":"type.googleapis.com/google.rpc.Help","l
 [2026-04-13T09:39:33.877Z]    [Paso 4] Envío...
 [2026-04-13T09:39:34.183Z] ✅ [AI interno] Video 4c9b267d-03fb-4f70-8b20-9c88bd6b8871 procesado y guardado con éxito.
 [2026-04-15T04:57:24.671Z] 🧪 [Anthropic] Verificando API Key: Presente
+[2026-06-24T03:25:14.813Z] 📚 [Learning] Artista c5ca16db-f9e6-4532-a3eb-c42ce37cfc24: 17 hashtags, bias=5±0, avg_real=1, best=tiktok
+[2026-06-24T03:25:15.048Z] 🧪 [Gemini] Verificando API Key: Presente
+[2026-06-28T13:38:13.650Z] 🤖 [AI interno] Iniciando análisis para video 08854b70-0ade-444e-9780-6caa0e40aca6
+[2026-06-28T13:38:13.655Z]    [Paso 1] Transcripción...
+[2026-06-28T13:38:14.453Z] 📚 [Learning] Artista c5ca16db-f9e6-4532-a3eb-c42ce37cfc24: 17 hashtags, bias=5±0, avg_real=1, best=tiktok
+[2026-06-28T13:38:14.590Z] 🧪 [Anthropic] Verificando API Key: Presente
+[2026-06-28T13:38:15.693Z]    [Paso 2] Entendiendo contenido...
+[2026-06-28T13:38:16.037Z] 🎬 [Gemini] Video inline: 2.5MB (video/mp4)
+[2026-06-28T13:38:16.048Z] 🧪 [Gemini] Verificando API Key: Presente
+[2026-06-28T13:38:43.079Z] ✅ [Gemini 2.5] Análisis completado (modo: full_video)
+[2026-06-28T13:38:43.084Z] ✅ [Gemini] Análisis completado para video 08854b70-0ade-444e-9780-6caa0e40aca6
+[2026-06-28T13:38:43.089Z]    [Paso 3] Aprendiendo del historial...
+[2026-06-28T13:38:43.804Z] 📚 [Learning] Artista c5ca16db-f9e6-4532-a3eb-c42ce37cfc24: 17 hashtags, bias=5±0, avg_real=1, best=tiktok
+[2026-06-28T13:38:43.809Z] 📚 [Learning] Contexto cargado: 17 hashtags, bias=5, best=tiktok
+[2026-06-28T13:38:57.754Z] ✅ [Claude] Copy generado para video 08854b70-0ade-444e-9780-6caa0e40aca6
+[2026-06-28T13:38:57.761Z]    [Paso 4] Envío...
+[2026-06-28T13:38:58.265Z] ✅ [AI interno] Video 08854b70-0ade-444e-9780-6caa0e40aca6 procesado — score: raw=5.8 → calibrated=6 (low confidence)
+[2026-06-28T13:38:58.271Z]    📊 [Marketing] Hook:8 Retain:7 Reward:6 Share:6 Audio:8 Trend:4 | Framework:AIDA | 3H:hygiene | Triggers:CURIOSIDAD GAP,ASOMBRO/GRANDEZZA,IDENTIFICACIÓN,CONTROVERSIA SANA

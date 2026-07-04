@@ -16,6 +16,7 @@ router.get('/config/:key', vidalisController.getConfig);
 // ── Autenticación (pública) ───────────────────────────────────────────────────
 router.post('/login', vidalisController.login);
 router.post('/google-login', vidalisController.googleLogin);
+router.get('/me', authenticateToken, vidalisController.getMe);
 router.post('/refine-copy', authenticateToken, vidalisController.refineCopy);
 router.post('/analyze-content', authenticateToken, requireFeature('analytics_sync'), vidalisController.analyzeContentStrategy);
 router.post('/visual-score', authenticateToken, vidalisController.scoreVisualVirality);
@@ -66,6 +67,8 @@ router.post('/redeem-coupon', authenticateToken, vidalisController.redeemCoupon)
 router.post('/viral-score', authenticateToken, vidalisController.getViralScore);
 router.get('/analytics-posts/:artistId', authenticateToken, authorizeArtist, vidalisController.getPostMetrics);
 router.get('/analytics-insights/:artistId', authenticateToken, authorizeArtist, vidalisController.getAnalyticsInsights);
+router.get('/platform-analytics/:artistId', authenticateToken, authorizeArtist, vidalisController.getPlatformAnalytics);
+router.get('/content-learnings/:artistId', authenticateToken, authorizeArtist, vidalisController.getContentLearnings);
 
 // ── Cloudinary ────────────────────────────────────────────────────────────────
 router.get('/cloudinary-signature', authenticateToken, vidalisController.getSignature);
@@ -105,5 +108,58 @@ router.delete('/automations/:automationId', authenticateToken, vidalisController
 
 // ── Zernio: Webhook Receptor (raw body — protegido con HMAC en controller) ──
 router.post('/webhooks/zernio', vidalisController.zernioWebhook);
+
+// ── IdeaBank ─────────────────────────────────────────────────────────────────
+router.get('/ideas/:artistId', authenticateToken, authorizeArtist, vidalisController.getIdeas);
+router.post('/ideas/:artistId/generate', authenticateToken, authorizeArtist, vidalisController.generateIdeas);
+router.post('/ideas/:ideaId/swipe', authenticateToken, vidalisController.swipeIdea);
+router.put('/ideas/:ideaId/rate', authenticateToken, vidalisController.rateIdea);
+router.get('/ideas/:artistId/saved', authenticateToken, authorizeArtist, vidalisController.getSavedIdeas);
+router.post('/ideas/:ideaId/expand', authenticateToken, vidalisController.expandIdea);
+router.get('/style-profile/:artistId', authenticateToken, authorizeArtist, vidalisController.getStyleProfile);
+router.post('/style-profile/:artistId/analyze', authenticateToken, authorizeArtist, vidalisController.analyzeStyle);
+
+// ── Trends ───────────────────────────────────────────────────────────────────
+router.get('/trends/:artistId', authenticateToken, authorizeArtist, vidalisController.getTrends);
+router.get('/trends/:artistId/references', authenticateToken, authorizeArtist, vidalisController.getTrendReferences);
+router.post('/trends/:artistId/references', authenticateToken, authorizeArtist, vidalisController.addTrendReference);
+router.delete('/trends/references/:refId', authenticateToken, vidalisController.removeTrendReference);
+
+// ── Notifications ────────────────────────────────────────────────────────────
+router.get('/notifications/:artistId', authenticateToken, authorizeArtist, vidalisController.getNotifications);
+router.patch('/notifications/:notifId/read', authenticateToken, vidalisController.markNotificationRead);
+router.post('/notifications/:artistId/read-all', authenticateToken, authorizeArtist, vidalisController.markAllNotificationsRead);
+
+// ── Growth History ───────────────────────────────────────────────────────────
+router.get('/growth/:artistId', authenticateToken, authorizeArtist, vidalisController.getGrowthHistory);
+
+// ── Media Kit ────────────────────────────────────────────────────────────────
+router.get('/media-kit/:artistId', authenticateToken, authorizeArtist, vidalisController.getMediaKit);
+router.put('/media-kit/:artistId', authenticateToken, authorizeArtist, vidalisController.updateMediaKit);
+router.get('/media-kit/public/:slug', vidalisController.getPublicMediaKit);
+
+// ── Collaborations ───────────────────────────────────────────────────────────
+router.get('/collabs/:artistId', authenticateToken, authorizeArtist, vidalisController.getCollaborations);
+router.post('/collabs/:artistId', authenticateToken, authorizeArtist, vidalisController.createCollaboration);
+router.put('/collabs/:collabId', authenticateToken, vidalisController.updateCollaboration);
+router.delete('/collabs/:collabId', authenticateToken, vidalisController.deleteCollaboration);
+router.get('/collabs/:artistId/stats', authenticateToken, authorizeArtist, vidalisController.getCollabStats);
+
+// ── Rate Calculator ──────────────────────────────────────────────────────────
+router.get('/rate-calculator/:artistId', authenticateToken, authorizeArtist, vidalisController.calculateRates);
+
+// ── Competitor Spy ──────────────────────────────────────────────────────────
+const competitorController = require('../controllers/competitorController');
+router.get('/competitors/:artistId', authenticateToken, authorizeArtist, competitorController.getCompetitors);
+router.post('/competitors/:artistId', authenticateToken, authorizeArtist, competitorController.addCompetitor);
+router.put('/competitors/edit/:competitorId', authenticateToken, competitorController.updateCompetitor);
+router.delete('/competitors/edit/:competitorId', authenticateToken, competitorController.deleteCompetitor);
+router.post('/competitors/analyze/:competitorId', authenticateToken, competitorController.analyzeCompetitor);
+router.get('/competitors/analysis/:competitorId', authenticateToken, competitorController.getLastAnalysis);
+router.get('/competitors/history/:competitorId', authenticateToken, competitorController.getCompetitorHistory);
+router.post('/competitors/content/:competitorId', authenticateToken, competitorController.analyzeCompetitorContent);
+router.post('/competitors/steal-ideas/:competitorId', authenticateToken, competitorController.stealIdeas);
+router.get('/artists/:artistId/snapshot-tracking', authenticateToken, authorizeArtist, competitorController.getSnapshotStatus);
+router.put('/artists/:artistId/snapshot-tracking', authenticateToken, authorizeArtist, competitorController.toggleSnapshotTracking);
 
 module.exports = router;

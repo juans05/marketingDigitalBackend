@@ -5,14 +5,70 @@ const instagramService = require('../services/instagramService');
 const uploadPostService = require('../services/uploadPostService');
 const zernioService = require('../services/zernioService');
 const { syncArtistAnalytics } = require('../jobs/syncZernioAnalytics');
+const { takeGrowthSnapshotForArtist } = require('../jobs/dailyIdeas');
 const { generateInsights } = require('../services/aiService');
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-  process.env.SUPABASE_ANON_KEY || 'placeholder'
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
 const aiService = require('../services/aiService');
 const growthService = require('../services/growthService');
+const ideaBankService = require('../services/ideaBankService');
+const trendService = require('../services/trendService');
+const tiktokScraper = require('../services/tiktokScraper');
+
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder'
+);
+
+async function verifyArtistOwnership(artistId, agencyId) {
+  const { data } = await supabaseAdmin
+    .from('artists')
+    .select('agency_id')
+    .eq('id', artistId)
+    .single();
+  return data && data.agency_id === agencyId;
+}
+
+// --- SPARKS BILLING HELPER ---
+async function deductSparks(userId, cost, action) {
+  const { data: artistRow } = await supabase
+    .from('artists')
+    .select('agencies(id, sparks_balance)')
+    .eq('agency_id', userId)
+    .limit(1)
+    .single();
+
+  let agencyId = artistRow?.agencies?.id;
+  let balance = artistRow?.agencies?.sparks_balance ?? 0;
+
+  if (!agencyId) {
+    const { data: agency } = await supabase
+      .from('agencies')
+      .select('id, sparks_balance')
+      .eq('id', userId)
+      .single();
+    if (agency) { agencyId = agency.id; balance = agency.sparks_balance ?? 0; }
+  }
+
+  if (!agencyId) return { ok: false, error: 'No se encontró cuenta', balance: 0 };
+  if (balance < cost) return { ok: false, error: `Sparks insuficientes. Necesitas ${cost} Sparks (tienes ${balance}).`, balance, required: cost };
+
+  await supabase.from('agencies').update({ sparks_balance: balance - cost }).eq('id', agencyId);
+
+  try {
+    await supabase.from('sparks_transactions').insert([{
+      agency_id: agencyId,
+      amount: -cost,
+      action,
+      created_at: new Date().toISOString(),
+    }]);
+  } catch (_) { }
+
+  return { ok: true, balance: balance - cost, agencyId };
+}
 
 // --- CONFIG PÚBLICA ---
 exports.getConfig = async (req, res) => {
@@ -30,11 +86,15 @@ exports.getConfig = async (req, res) => {
   }
 };
 
-// --- ANALIZAR ESTRATEGIA DE CONTENIDO ---
+// --- ANALIZAR ESTRATEGIA DE CONTENIDO (10 Sparks) ---
 exports.analyzeContentStrategy = async (req, res) => {
   try {
     const { script, tone, platform, artist_id } = req.body;
     if (!script?.trim()) return res.status(400).json({ error: 'Se requiere el script o URL del contenido' });
+
+    const userId = req.user?.id || req.user?.userId;
+    const sparksResult = await deductSparks(userId, 10, 'analyze_content');
+    if (!sparksResult.ok) return res.status(402).json({ error: sparksResult.error, required: sparksResult.required, current: sparksResult.balance });
 
     const [artistPromise, videosPromise, configRes] = await Promise.all([
       artist_id ? supabase.from('artists').select('ai_tone, name').eq('id', artist_id).single() : { data: null },
@@ -112,6 +172,29 @@ exports.refineCopy = async (req, res) => {
   }
 };
 
+// --- ME (saldo y perfil básico) ---
+exports.getMe = async (req, res) => {
+  try {
+    const { data: agency } = await supabase
+      .from('agencies')
+      .select('id, name, email, plan_type, sparks_balance')
+      .eq('id', req.user.id)
+      .single();
+
+    if (!agency) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    res.json({
+      id: agency.id,
+      name: agency.name,
+      email: agency.email,
+      plan: agency.plan_type,
+      sparks_balance: agency.sparks_balance || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // --- LOGIN ---
 exports.login = async (req, res) => {
   try {
@@ -131,7 +214,7 @@ exports.googleLogin = async (req, res) => {
   try {
     const { idToken, platform } = req.body;
     if (!idToken) throw new Error('Se requiere idToken de Google');
-    
+
     const userData = await vidalisService.loginWithGoogle(idToken, platform || 'android');
     res.status(200).json(userData);
   } catch (error) {
@@ -203,12 +286,12 @@ exports.getGallery = async (req, res) => {
   try {
     const { artistId } = req.params;
     const { limit, page } = req.query;
-    
+
     const gallery = await vidalisService.fetchArtistGallery(artistId, {
       limit: parseInt(limit) || 20,
       page: parseInt(page) || 1
     });
-    
+
     res.status(200).json(gallery);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -335,9 +418,13 @@ exports.getVideoById = async (req, res) => {
       .select('id, artist_id, title, status, viral_score, viral_score_real, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at, thumbnail_url')
       .eq('id', videoId)
       .single();
-    if (error || !data) return res.status(404).json({ error: 'Video no encontrado' });
+    console.log(error);
+    console.log(data);
+    if (error || !data) return res.status(404).json({ error: 'Video no encontrado methid: getVideoById' });
     res.status(200).json(data);
   } catch (error) {
+    console.log(error);
+    console.log(data);
     res.status(500).json({ error: error.message });
   }
 };
@@ -355,7 +442,7 @@ exports.getPublishStatus = async (req, res) => {
       .select('id, status, platforms, ayrshare_post_id, published_at, error_log')
       .eq('id', videoId)
       .single();
-    if (error || !video) return res.status(404).json({ error: 'Video no encontrado' });
+    if (error || !video) return res.status(404).json({ error: 'Video no encontrado methid: getPublishStatus' });
 
     if (!video.ayrshare_post_id) {
       return res.status(200).json({
@@ -592,6 +679,9 @@ exports.getPostMetrics = async (req, res) => {
 exports.getAnalyticsInsights = async (req, res) => {
   const { artistId } = req.params;
   try {
+    const userId = req.user?.id || req.user?.userId;
+    const sparksResult = await deductSparks(userId, 15, 'analytics_insights');
+    if (!sparksResult.ok) return res.status(402).json({ error: sparksResult.error, required: sparksResult.required, current: sparksResult.balance });
     const { data: artist, error } = await supabase
       .from('artists')
       .select('name, ayrshare_profile_key, active_platforms, publish_mode, plan_type')
@@ -718,7 +808,7 @@ exports.getAnalyticsInsights = async (req, res) => {
       followers_total: followersTotal,
       total_reach: totalReach,
       profile_data: profileAnalytics
-    }).then(() => {}).catch(e => console.warn('⚠️ analytics_insights_log:', e.message));
+    }).then(() => { }).catch(e => console.warn('⚠️ analytics_insights_log:', e.message));
 
     // ── 6. Uso mensual ────────────────────────────────────────────────────────
     const firstDayOfMonth = new Date();
@@ -770,6 +860,17 @@ exports.syncZernioAnalytics = async (req, res) => {
     if (!result.ok && result.reason === 'not_zernio_artist') {
       return res.status(400).json({ error: 'Este artista no usa Zernio como modo de publicación' });
     }
+
+    // Growth snapshot after successful sync
+    if (result.ok) {
+      try {
+        await takeGrowthSnapshotForArtist(artistId);
+        result.growthSnapshotUpdated = true;
+      } catch (snapErr) {
+        console.warn('⚠️ Growth snapshot failed after sync:', snapErr.message);
+      }
+    }
+
     res.status(200).json(result);
   } catch (err) {
     console.error('❌ syncZernioAnalytics:', err.message);
@@ -955,7 +1056,7 @@ exports.uploadFromUrl = async (req, res) => {
 exports.runDeepAudit = async (req, res) => {
   const { artistId } = req.params;
   const { allow_full_audit } = req.body;
-  
+
   try {
     const result = await vidalisService.runArtistDeepAudit(artistId, allow_full_audit);
     res.json(result);
@@ -1051,11 +1152,22 @@ exports.getViralHistory = async (req, res) => {
 
 exports.generateABVariants = async (req, res) => {
   try {
+    const userId = req.user?.id || req.user?.userId;
     const { videoId } = req.params;
+    console.log(`[generateABVariants] userId=${userId} videoId=${videoId}`);
+
+    const sparksResult = await deductSparks(userId, 10, 'ab_variants');
+    console.log(`[generateABVariants] deductSparks → ok=${sparksResult.ok} balance=${sparksResult.balance}`);
+    if (!sparksResult.ok) {
+      console.warn(`[generateABVariants] Sparks insuficientes: balance=${sparksResult.balance} required=10`);
+      return res.status(402).json({ error: sparksResult.error, required: sparksResult.required, current: sparksResult.balance });
+    }
+
     const data = await growthService.generateABVariants(videoId);
+    console.log(`[generateABVariants] OK variants=${data?.variants?.length}`);
     res.status(200).json(data);
   } catch (err) {
-    console.error('❌ generateABVariants:', err.message);
+    console.error('❌ generateABVariants:', err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
 };
@@ -1063,21 +1175,34 @@ exports.generateABVariants = async (req, res) => {
 exports.getABResult = async (req, res) => {
   try {
     const { videoId } = req.params;
+    console.log(`[getABResult] videoId=${videoId}`);
     const data = await growthService.getABResult(videoId);
+    console.log(`[getABResult] OK is_complete=${data?.is_complete} variants=${data?.variants?.length}`);
     res.status(200).json(data);
   } catch (err) {
-    console.error('❌ getABResult:', err.message);
+    console.warn(`[getABResult] No result → ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 };
 
 exports.generateAdCopy = async (req, res) => {
   try {
+    const userId = req.user?.id || req.user?.userId;
     const { videoId } = req.params;
+    console.log(`[generateAdCopy] userId=${userId} videoId=${videoId}`);
+
+    const sparksResult = await deductSparks(userId, 10, 'ad_copy');
+    console.log(`[generateAdCopy] deductSparks → ok=${sparksResult.ok} balance=${sparksResult.balance}`);
+    if (!sparksResult.ok) {
+      console.warn(`[generateAdCopy] Sparks insuficientes: balance=${sparksResult.balance} required=10`);
+      return res.status(402).json({ error: sparksResult.error, required: sparksResult.required, current: sparksResult.balance });
+    }
+
     const data = await growthService.generateAdCopy(videoId);
+    console.log(`[generateAdCopy] OK plataformas=${data?.length}`);
     res.status(200).json(data);
   } catch (err) {
-    console.error('❌ generateAdCopy:', err.message);
+    console.error('❌ generateAdCopy:', err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
 };
@@ -1375,4 +1500,1087 @@ exports.zernioWebhook = async (req, res) => {
   }
 };
 
+// ══════════════════════════════════════════════════════════════
+// IDEABANK
+// ══════════════════════════════════════════════════════════════
 
+exports.getIdeas = async (req, res) => {
+  try {
+    const ideas = await ideaBankService.getTodayIdeas(req.params.artistId);
+    res.json(ideas);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.generateIdeas = async (req, res) => {
+  try {
+    const artistId = req.params.artistId;
+    const count = req.body.count || 5;
+    const SPARK_COST = 5;
+
+    const { data: agencyData } = await supabase
+      .from('artists')
+      .select('agencies(id, sparks_balance)')
+      .eq('id', artistId)
+      .single();
+
+    const agencyId = agencyData?.agencies?.id;
+    const balance = agencyData?.agencies?.sparks_balance ?? 0;
+
+    if (balance < SPARK_COST) {
+      return res.status(402).json({
+        error: `No tienes suficientes Sparks. Necesitas ${SPARK_COST} Sparks para generar ideas. Tu saldo actual: ${balance}.`,
+        code: 'INSUFFICIENT_SPARKS',
+        required: SPARK_COST,
+        balance
+      });
+    }
+
+    const { data: deductOk } = await supabase.rpc('deduct_sparks', {
+      target_agency_id: agencyId,
+      cost: SPARK_COST
+    });
+
+    if (!deductOk) {
+      return res.status(402).json({
+        error: 'Error al descontar Sparks. Intenta de nuevo.',
+        code: 'DEDUCT_FAILED'
+      });
+    }
+
+    const ideas = await ideaBankService.generateDailyIdeas(artistId, count);
+
+    await supabase.from('sparks_transactions').insert([{
+      agency_id: agencyId,
+      amount: -SPARK_COST,
+      type: 'idea_generation',
+      description: `Generación de ${count} ideas IA`
+    }]);
+
+    res.json({ ideas, sparksUsed: SPARK_COST, newBalance: balance - SPARK_COST });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.swipeIdea = async (req, res) => {
+  try {
+    const { action, artistId } = req.body;
+    if (!artistId) return res.status(400).json({ error: 'artistId requerido' });
+    const ownerOk = await verifyArtistOwnership(artistId, req.user.id);
+    if (!ownerOk) return res.status(403).json({ error: 'No tienes permiso para este artista' });
+    if (!['like', 'dislike', 'save'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+    const result = await ideaBankService.swipeIdea(req.params.ideaId, artistId, action);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.rateIdea = async (req, res) => {
+  try {
+    const { rating, artistId } = req.body;
+    if (!artistId) return res.status(400).json({ error: 'artistId requerido' });
+    const ownerOk = await verifyArtistOwnership(artistId, req.user.id);
+    if (!ownerOk) return res.status(403).json({ error: 'No tienes permiso para este artista' });
+    const result = await ideaBankService.rateIdea(req.params.ideaId, artistId, rating);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.getSavedIdeas = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const result = await ideaBankService.getSavedIdeas(req.params.artistId, page);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.expandIdea = async (req, res) => {
+  try {
+    const artistId = req.body.artistId || req.query.artistId;
+    if (!artistId) return res.status(400).json({ error: 'artistId requerido' });
+    const ownerOk = await verifyArtistOwnership(artistId, req.user.id);
+    if (!ownerOk) return res.status(403).json({ error: 'No tienes permiso para este artista' });
+
+    const sparksResult = await deductSparks(req.user.id, 5, 'expand_idea');
+    if (!sparksResult.ok) return res.status(402).json({ error: sparksResult.error, required: sparksResult.required, current: sparksResult.balance });
+
+    const result = await ideaBankService.expandToScript(req.params.ideaId, artistId);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.getStyleProfile = async (req, res) => {
+  try {
+    const profile = await ideaBankService.getStyleProfile(req.params.artistId);
+    res.json(profile || { message: 'No profile yet' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.analyzeStyle = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    const sparksResult = await deductSparks(userId, 10, 'analyze_style');
+    if (!sparksResult.ok) return res.status(402).json({ error: sparksResult.error, required: sparksResult.required, current: sparksResult.balance });
+
+    const result = await ideaBankService.analyzeArtistStyle(req.params.artistId);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// TRENDS
+// ══════════════════════════════════════════════════════════════
+
+exports.getTrends = async (req, res) => {
+  try {
+    const trends = await trendService.fetchAllTrends(req.params.artistId);
+    res.json(trends);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.getTrendReferences = async (req, res) => {
+  try {
+    const refs = await trendService.getTrendReferences(req.params.artistId);
+    res.json(refs);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.addTrendReference = async (req, res) => {
+  try {
+    const { type, value, platform } = req.body;
+    const ref = await trendService.addTrendReference(req.params.artistId, type, value, platform);
+    res.json(ref);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.removeTrendReference = async (req, res) => {
+  try {
+    const artistId = req.user.artistId;
+    if (!artistId) return res.status(401).json({ error: 'Unauthorized' });
+    await trendService.removeTrendReference(req.params.refId, artistId);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ══════════════════════════════════════════════════════════════
+
+exports.getNotifications = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 30;
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('artist_id', req.params.artistId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    res.json(data || []);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.markNotificationRead = async (req, res) => {
+  try {
+    const artistId = req.user.artistId;
+    if (!artistId) return res.status(401).json({ error: 'Unauthorized' });
+    const { count } = await supabase.from('notifications').update({ is_read: true }).eq('id', req.params.notifId).eq('artist_id', artistId);
+    if (!count) return res.status(404).json({ error: 'Notification not found' });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.markAllNotificationsRead = async (req, res) => {
+  try {
+    await supabase.from('notifications').update({ is_read: true }).eq('artist_id', req.params.artistId).eq('is_read', false);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// GROWTH HISTORY
+// ══════════════════════════════════════════════════════════════
+
+exports.getGrowthHistory = async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const { data } = await supabase
+      .from('growth_snapshots')
+      .select('*')
+      .eq('artist_id', req.params.artistId)
+      .gte('snapshot_date', since.toISOString().split('T')[0])
+      .order('snapshot_date', { ascending: true });
+
+    res.json(data || []);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// MEDIA KIT
+// ══════════════════════════════════════════════════════════════
+
+exports.getMediaKit = async (req, res) => {
+  try {
+    const { data } = await supabase.from('media_kit').select('*').eq('artist_id', req.params.artistId).single();
+    res.json(data || { exists: false });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.updateMediaKit = async (req, res) => {
+  try {
+    const artistId = req.params.artistId;
+    const updates = req.body;
+    updates.artist_id = artistId;
+
+    if (!updates.slug) {
+      updates.slug = (updates.display_name || artistId).toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    }
+
+    const { data } = await supabase
+      .from('media_kit')
+      .upsert(updates, { onConflict: 'artist_id' })
+      .select()
+      .single();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.getPublicMediaKit = async (req, res) => {
+  try {
+    const { data: kit } = await supabase
+      .from('media_kit')
+      .select('*')
+      .eq('slug', req.params.slug)
+      .eq('is_public', true)
+      .single();
+
+    if (!kit) return res.status(404).json({ error: 'Media kit not found' });
+
+    // Attach live stats
+    const { data: artist } = await supabase
+      .from('artists')
+      .select('name, genre, social_keys, active_platforms')
+      .eq('id', kit.artist_id)
+      .single();
+
+    const { data: snapshots } = await supabase
+      .from('growth_snapshots')
+      .select('platform, followers, total_views, engagement_rate')
+      .eq('artist_id', kit.artist_id)
+      .order('snapshot_date', { ascending: false })
+      .limit(5);
+
+    res.json({
+      ...kit,
+      artist_name: artist?.name,
+      genre: artist?.genre,
+      platforms: artist?.active_platforms || [],
+      stats: snapshots || [],
+      social_keys: undefined
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// COLLABORATIONS
+// ══════════════════════════════════════════════════════════════
+
+exports.getCollaborations = async (req, res) => {
+  try {
+    const status = req.query.status;
+    let query = supabase.from('collaborations').select('*').eq('artist_id', req.params.artistId).order('created_at', { ascending: false });
+    if (status) query = query.eq('status', status);
+    const { data } = await query;
+    res.json(data || []);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.createCollaboration = async (req, res) => {
+  try {
+    const collab = { ...req.body, artist_id: req.params.artistId };
+    const { data, error } = await supabase.from('collaborations').insert(collab).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.updateCollaboration = async (req, res) => {
+  try {
+    const artistId = req.user.artistId;
+    if (!artistId) return res.status(401).json({ error: 'Unauthorized' });
+    const allowed = ['brand_name', 'brand_logo', 'brand_contact', 'brand_email', 'amount', 'currency', 'status', 'platform', 'deliverables', 'start_date', 'end_date', 'notes'];
+    const updates = {};
+    for (const key of allowed) { if (req.body[key] !== undefined) updates[key] = req.body[key]; }
+    const { data } = await supabase
+      .from('collaborations')
+      .update(updates)
+      .eq('id', req.params.collabId)
+      .eq('artist_id', artistId)
+      .select()
+      .single();
+    if (!data) return res.status(404).json({ error: 'Collaboration not found' });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.deleteCollaboration = async (req, res) => {
+  try {
+    const artistId = req.user.artistId;
+    if (!artistId) return res.status(401).json({ error: 'Unauthorized' });
+    const { count } = await supabase.from('collaborations').delete().eq('id', req.params.collabId).eq('artist_id', artistId);
+    if (!count) return res.status(404).json({ error: 'Collaboration not found' });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+exports.getCollabStats = async (req, res) => {
+  try {
+    const { data: collabs } = await supabase
+      .from('collaborations')
+      .select('amount, currency, status')
+      .eq('artist_id', req.params.artistId);
+
+    const stats = {
+      total: (collabs || []).length,
+      total_earned: 0,
+      pending_payment: 0,
+      active: 0,
+      by_status: {}
+    };
+
+    for (const c of (collabs || [])) {
+      stats.by_status[c.status] = (stats.by_status[c.status] || 0) + 1;
+      if (c.status === 'paid') stats.total_earned += parseFloat(c.amount || 0);
+      if (c.status === 'delivered') stats.pending_payment += parseFloat(c.amount || 0);
+      if (['confirmed', 'in_progress'].includes(c.status)) stats.active++;
+    }
+
+    res.json(stats);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// RATE CALCULATOR
+// ══════════════════════════════════════════════════════════════
+
+exports.calculateRates = async (req, res) => {
+  try {
+    const artistId = req.params.artistId;
+
+    // Sync followers from Zernio if artist has a connected profile
+    const { data: artist } = await supabaseAdmin
+      .from('artists')
+      .select('ayrshare_profile_key, publish_mode')
+      .eq('id', artistId)
+      .single();
+
+    if (artist?.ayrshare_profile_key && artist.publish_mode === 'zernio') {
+      try {
+        const accounts = await zernioService.getActivePlatforms(artist.ayrshare_profile_key);
+        const today = new Date().toISOString().split('T')[0];
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        let platformViews = {};
+        let platformEngagement = {};
+        try {
+          const daily = await zernioService.getDailyMetrics(artist.ayrshare_profile_key, thirtyDaysAgo, today);
+          if (daily?.dailyData) {
+            for (const day of daily.dailyData) {
+              if (day.platformMetrics) {
+                for (const [plat, metrics] of Object.entries(day.platformMetrics)) {
+                  if (!platformViews[plat]) platformViews[plat] = 0;
+                  if (!platformEngagement[plat]) platformEngagement[plat] = { likes: 0, comments: 0, shares: 0, views: 0 };
+                  platformViews[plat] += metrics.views || 0;
+                  platformEngagement[plat].likes += metrics.likes || 0;
+                  platformEngagement[plat].comments += metrics.comments || 0;
+                  platformEngagement[plat].shares += metrics.shares || 0;
+                  platformEngagement[plat].views += metrics.views || 0;
+                }
+              }
+            }
+          }
+        } catch (metricsErr) {
+          console.log('⚠️ [Rates] Zernio daily metrics failed:', metricsErr.message);
+        }
+
+        for (const acc of accounts) {
+          let followers = acc.followers || 0;
+
+          if (followers === 0 && acc.platform === 'tiktok' && acc.username) {
+            try {
+              const scraped = await tiktokScraper.getProfileStats(acc.username);
+              if (scraped?.followers > 0) followers = scraped.followers;
+            } catch (e) {
+              console.log('⚠️ [Rates] TikTok scraper fallback failed:', e.message);
+            }
+          }
+
+          const views = platformViews[acc.platform] || 0;
+          const eng = platformEngagement[acc.platform] || {};
+          const totalInteractions = (eng.likes || 0) + (eng.comments || 0) + (eng.shares || 0);
+          const engRate = eng.views > 0 ? parseFloat(((totalInteractions / eng.views) * 100).toFixed(1)) : 0;
+
+          await supabaseAdmin.from('growth_snapshots').upsert({
+            artist_id: artistId,
+            platform: acc.platform,
+            followers,
+            engagement_rate: engRate,
+            total_views: views,
+            snapshot_date: today
+          }, { onConflict: 'artist_id,platform,snapshot_date' });
+        }
+      } catch (syncErr) {
+        console.log('⚠️ [Rates] Zernio sync failed, using cached data:', syncErr.message);
+      }
+    }
+
+    const { data: allSnapshots } = await supabaseAdmin
+      .from('growth_snapshots')
+      .select('platform, followers, engagement_rate, total_views, snapshot_date')
+      .eq('artist_id', artistId)
+      .order('snapshot_date', { ascending: false });
+
+    const latestByPlatform = {};
+    for (const s of (allSnapshots || [])) {
+      if (!latestByPlatform[s.platform]) latestByPlatform[s.platform] = s;
+    }
+
+    const platforms = Object.entries(latestByPlatform).map(([platform, s]) => ({
+      platform,
+      followers: s.followers || 0,
+      engagement_rate: parseFloat(s.engagement_rate) || 0,
+      total_views: s.total_views || 0
+    }));
+
+    const totalFollowers = platforms.reduce((sum, p) => sum + p.followers, 0);
+    const avgEngagement = platforms.length > 0
+      ? platforms.reduce((sum, p) => sum + p.engagement_rate, 0) / platforms.length
+      : 2.0;
+    const totalViews = platforms.reduce((sum, p) => sum + p.total_views, 0);
+
+    function calcTierAndRates(followers, engagementRate, views) {
+      let tier = 'nano', cpmBase = 5;
+      if (followers >= 1000000) { tier = 'mega'; cpmBase = 25; }
+      else if (followers >= 500000) { tier = 'macro'; cpmBase = 20; }
+      else if (followers >= 100000) { tier = 'mid'; cpmBase = 15; }
+      else if (followers >= 10000) { tier = 'micro'; cpmBase = 10; }
+
+      const mult = engagementRate > 5 ? 1.5 : engagementRate > 3 ? 1.2 : 1.0;
+      const baseCpm = cpmBase * mult;
+
+      return {
+        tier,
+        suggested_rates: {
+          reel: Math.round(baseCpm * (views / 1000) * 0.8) || Math.round(followers * 0.02),
+          story: Math.round(baseCpm * (views / 1000) * 0.3) || Math.round(followers * 0.005),
+          feed_post: Math.round(baseCpm * (views / 1000) * 0.5) || Math.round(followers * 0.01),
+          bundle_3: Math.round(baseCpm * (views / 1000) * 1.5 * 0.85) || Math.round(followers * 0.04),
+          ugc_video: Math.round(150 + (followers / 10000) * 50),
+        }
+      };
+    }
+
+    const combined = calcTierAndRates(totalFollowers, avgEngagement, totalViews);
+
+    const perPlatform = platforms.map(p => ({
+      platform: p.platform,
+      followers: p.followers,
+      engagement_rate: p.engagement_rate,
+      ...calcTierAndRates(p.followers, p.engagement_rate, p.total_views)
+    }));
+
+    res.json({
+      tier: combined.tier,
+      followers: totalFollowers,
+      engagement_rate: parseFloat(avgEngagement.toFixed(1)),
+      suggested_rates: combined.suggested_rates,
+      platforms: perPlatform,
+      currency: 'USD',
+      note: 'Tarifas sugeridas basadas en tu audiencia y engagement. Ajusta segun tu nicho y la marca.'
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// ══  PLATFORM ANALYTICS — per-platform command center data  ══
+// ══════════════════════════════════════════════════════════════
+
+const METRIC_EXPLANATIONS_ES = {
+  followers: 'Personas que eligieron seguir tu cuenta. Es tu audiencia base.',
+  reach: 'Cuántas personas DISTINTAS vieron tu contenido.',
+  impressions: 'Cuántas veces se mostró tu contenido en total. Una persona puede verlo 3 veces = 3 impresiones.',
+  views: 'Cuántas veces se reprodujo tu video.',
+  likes: 'Personas que dieron like a tu publicación.',
+  comments: 'Personas que escribieron algo en tu publicación. Vale mucho más que un like.',
+  shares: 'Personas que enviaron tu contenido a alguien. Es la forma más poderosa de crecer.',
+  saves: 'La métrica más valiosa de Instagram. Cuando alguien guarda tu post es porque quiere volver a verlo.',
+  clicks: 'Cuántas personas hicieron clic en tu perfil o link desde tu contenido.',
+  engagement_rate: 'De cada 100 personas que ven tu contenido, cuántas interactúan. Más de 3% es bueno, más de 6% es excelente.',
+  growth_rate: 'Porcentaje de crecimiento de seguidores en los últimos 7 días. Positivo = estás creciendo. Negativo = estás perdiendo audiencia.',
+  reach_follower_ratio: 'Tu alcance dividido entre tus seguidores. Si es mayor a 100% tu contenido llega más allá de quien te sigue (viral). Si es menor a 30% el algoritmo te está limitando.',
+  save_rate: 'De cada 100 personas que ven tu post, cuántas lo guardan. Un save rate alto indica que creas contenido de valor que la gente quiere revisitar.',
+  share_rate: 'De cada 100 personas que ven tu post, cuántas lo comparten. Es la señal #1 para los algoritmos en 2026.',
+  frequency_score: 'Impresiones divididas entre alcance. Si es mayor a 1.5 tu contenido se ve varias veces (bueno). Si es 1 la gente lo ve y se va.',
+  engagement_per_post: 'Engagement total dividido entre cantidad de posts. Te dice si cada publicación rinde más o menos que tu promedio.',
+  content_lifespan: 'Cuántos días tu contenido sigue generando engagement después de publicarse. Un post con vida larga indica contenido evergreen.',
+  optimal_frequency: 'La cantidad de publicaciones por semana que maximiza tu engagement. Publicar de más puede bajar tu rendimiento.',
+  follow_conversion: 'De cada 100 personas que ven tu contenido, cuántas te empiezan a seguir. Indica qué tan atractivo es tu perfil para nuevos visitantes.',
+  churn_rate: 'Porcentaje de seguidores que te dejaron de seguir. Si es alto, tu contenido no cumple la expectativa que generaste.',
+  avg_watch_time: 'Tiempo promedio que las personas ven tus videos. Un avg watch time alto indica que tu contenido retiene la atención.',
+  sub_conversion_rate: 'De cada 100 personas que ven tu video, cuántas se suscriben. Indica qué tan efectivo es tu contenido para convertir viewers en suscriptores.',
+  net_sub_growth: 'Suscriptores ganados menos suscriptores perdidos. Es tu balance real de crecimiento en YouTube.',
+  watch_time_total: 'Tiempo total que las personas pasaron viendo tus videos. El algoritmo de YouTube premia los canales con más watch time acumulado.',
+  views_per_follower: 'Views divididos entre seguidores. Si es mayor a 1 tu contenido llega más allá de tu base. En TikTok valores de 5-10x son comunes.',
+  click_rate: 'De cada 100 impresiones, cuántas generan un clic. Indica qué tan efectivo es tu CTA o bio para llevar tráfico.',
+  viral_score_avg: 'Promedio del viral score de tus publicaciones. Más de 7 indica contenido con alto potencial de explotar.',
+  best_times: 'Los días y horas en que tu audiencia interactuó más. Publicar en esos momentos aumenta las probabilidades de que más personas lo vean.',
+  content_decay: 'Cómo decae el engagement de tu contenido con el tiempo. Una curva lenta = contenido evergreen. Una caída rápida = contenido efímero.',
+  posting_frequency: 'Relación entre cuántos posts publicas por semana y el engagement que obtienes. Te ayuda a encontrar tu ritmo ideal.',
+};
+
+exports.getPlatformAnalytics = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const { platform } = req.query;
+
+    const [
+      snapshotsRes,
+      prevSnapshotsRes,
+      postsRes,
+      cacheDecayRes,
+      cacheFreqRes,
+      cacheBestTimesRes,
+      cacheBestTimesPlatRes,
+      igInsightsRes,
+      ytInsightsRes,
+    ] = await Promise.all([
+      supabase.from('platform_snapshots')
+        .select('*')
+        .eq('artist_id', artistId)
+        .order('snapshot_date', { ascending: false })
+        .limit(200),
+      supabase.from('platform_snapshots')
+        .select('platform, followers, snapshot_date')
+        .eq('artist_id', artistId)
+        .lt('snapshot_date', new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0])
+        .order('snapshot_date', { ascending: false })
+        .limit(200),
+      supabase.from('videos')
+        .select('id, title, platforms, viral_score_real, analytics_4h, published_at, created_at, source_url')
+        .eq('artist_id', artistId)
+        .eq('status', 'published')
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'content_decay').single(),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'posting_frequency').single(),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'best_posting_times').single(),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'best_times_by_platform').single(),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'instagram_insights').single(),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'youtube_insights').single(),
+    ]);
+
+    const allSnapshots = snapshotsRes.data || [];
+    const prevSnapshots = prevSnapshotsRes.data || [];
+    const allPosts = postsRes.data || [];
+    const contentDecay = cacheDecayRes.data?.data || {};
+    const postingFrequency = cacheFreqRes.data?.data || {};
+    const bestTimesGlobal = cacheBestTimesRes.data?.data || [];
+    const bestTimesByPlatform = cacheBestTimesPlatRes.data?.data || {};
+    const igInsights = igInsightsRes.data?.data || null;
+    const ytInsights = ytInsightsRes.data?.data || null;
+
+    // Get platforms from snapshots + artist's active_platforms + posts
+    const snapshotPlatforms = allSnapshots.map(s => s.platform);
+    const postPlatforms = allPosts.flatMap(p => p.platforms || []);
+
+    // Also fetch artist's active_platforms from DB
+    const { data: artistRow } = await supabase
+      .from('artists')
+      .select('active_platforms, social_keys')
+      .eq('id', artistId)
+      .single();
+    const activePlatforms = artistRow?.active_platforms || [];
+    const socialKeys = artistRow?.social_keys || {};
+    const socialKeyPlatforms = Object.keys(socialKeys);
+
+    const connectedPlatforms = [...new Set([
+      ...snapshotPlatforms,
+      ...postPlatforms,
+      ...activePlatforms,
+      ...socialKeyPlatforms,
+    ])].filter(p => ['instagram', 'tiktok', 'youtube', 'facebook'].includes(p));
+
+    const buildPlatformData = (plat) => {
+      const latest = allSnapshots.find(s => s.platform === plat) || {};
+      const prev = prevSnapshots.find(s => s.platform === plat) || {};
+      const platPosts = allPosts.filter(p => Array.isArray(p.platforms) && p.platforms.includes(plat));
+
+      const followers = latest.followers || 0;
+      const prevFollowers = prev.followers || 0;
+      const reach = latest.reach || 0;
+      const impressions = latest.impressions || 0;
+      const likes = latest.likes || 0;
+      const comments = latest.comments || 0;
+      const shares = latest.shares || 0;
+      const saves = latest.saves || 0;
+      const clicks = latest.clicks || 0;
+      const views = latest.views || 0;
+      const postsCount = latest.posts_count || platPosts.length;
+      const engRate = latest.engagement_rate || 0;
+
+      const growthRate = prevFollowers > 0
+        ? parseFloat(((followers - prevFollowers) / prevFollowers * 100).toFixed(1))
+        : 0;
+      const reachFollowerRatio = followers > 0
+        ? parseFloat((reach / followers * 100).toFixed(1))
+        : 0;
+      const saveRate = reach > 0
+        ? parseFloat((saves / reach * 100).toFixed(2))
+        : 0;
+      const shareRate = reach > 0
+        ? parseFloat((shares / reach * 100).toFixed(2))
+        : 0;
+      const frequencyScore = reach > 0
+        ? parseFloat((impressions / reach).toFixed(2))
+        : 0;
+      const engagementPerPost = postsCount > 0
+        ? Math.round((likes + comments + shares + saves) / postsCount)
+        : 0;
+      const clickRate = impressions > 0
+        ? parseFloat((clicks / impressions * 100).toFixed(2))
+        : 0;
+      const viewsPerFollower = followers > 0
+        ? parseFloat((views / followers).toFixed(1))
+        : 0;
+
+      const viralScores = platPosts
+        .map(p => p.viral_score_real)
+        .filter(s => typeof s === 'number' && s > 0);
+      const viralScoreAvg = viralScores.length > 0
+        ? parseFloat((viralScores.reduce((a, b) => a + b, 0) / viralScores.length).toFixed(1))
+        : 0;
+
+      const result = {
+        platform: plat,
+        kpis: {
+          followers,
+          reach,
+          impressions,
+          views,
+          likes,
+          comments,
+          shares,
+          saves,
+          clicks,
+          engagement_rate: engRate,
+          posts_count: postsCount,
+        },
+        calculated: {
+          growth_rate: growthRate,
+          reach_follower_ratio: reachFollowerRatio,
+          save_rate: saveRate,
+          share_rate: shareRate,
+          frequency_score: frequencyScore,
+          engagement_per_post: engagementPerPost,
+          click_rate: clickRate,
+          views_per_follower: viewsPerFollower,
+          viral_score_avg: viralScoreAvg,
+        },
+        content_decay: contentDecay[plat] || contentDecay._global || [],
+        posting_frequency: postingFrequency[plat] || postingFrequency._global || [],
+        best_times: bestTimesByPlatform[plat] || bestTimesGlobal,
+        posts: platPosts.slice(0, 30).map(p => {
+          const a = p.analytics_4h || {};
+          const pReach = a.reach || 0;
+          return {
+            id: p.id,
+            title: p.title,
+            date: p.published_at || p.created_at,
+            source_url: p.source_url,
+            viral_score: p.viral_score_real || 0,
+            likes: a.likes || 0,
+            comments: a.comments || 0,
+            views: a.views || 0,
+            shares: a.shares || 0,
+            saves: a.saves || 0,
+            reach: pReach,
+            impressions: a.impressions || 0,
+            clicks: a.clicks || 0,
+            engagement_rate: a.engagement_rate || 0,
+            ig_avg_watch_time: a.ig_reels_avg_watch_time || 0,
+            save_rate: pReach > 0 ? parseFloat(((a.saves || 0) / pReach * 100).toFixed(2)) : 0,
+            share_rate: pReach > 0 ? parseFloat(((a.shares || 0) / pReach * 100).toFixed(2)) : 0,
+          };
+        }),
+      };
+
+      if (plat === 'instagram' && igInsights) {
+        const metrics = igInsights.metrics || igInsights.data || igInsights;
+        result.platform_insights = {
+          accounts_engaged: metrics.accounts_engaged || 0,
+          total_interactions: metrics.total_interactions || 0,
+          follows: metrics.follows_and_unfollows?.follows || metrics.follows || 0,
+          unfollows: metrics.follows_and_unfollows?.unfollows || metrics.unfollows || 0,
+        };
+        const follows = result.platform_insights.follows || 0;
+        const unfollows = result.platform_insights.unfollows || 0;
+        result.calculated.follow_conversion = reach > 0
+          ? parseFloat((follows / reach * 100).toFixed(2))
+          : 0;
+        result.calculated.churn_rate = followers > 0
+          ? parseFloat((unfollows / followers * 100).toFixed(2))
+          : 0;
+      }
+
+      if (plat === 'instagram') {
+        const watchTimes = platPosts
+          .map(p => p.analytics_4h?.ig_reels_avg_watch_time)
+          .filter(t => typeof t === 'number' && t > 0);
+        result.calculated.avg_watch_time = watchTimes.length > 0
+          ? parseFloat((watchTimes.reduce((a, b) => a + b, 0) / watchTimes.length).toFixed(1))
+          : 0;
+      }
+
+      if (plat === 'youtube' && ytInsights) {
+        const metrics = ytInsights.metrics || ytInsights.data || ytInsights;
+        const subGained = metrics.subscribersGained || 0;
+        const subLost = metrics.subscribersLost || 0;
+        const watchMin = metrics.estimatedMinutesWatched || 0;
+        result.platform_insights = {
+          watch_time_total: watchMin,
+          subscribers_gained: subGained,
+          subscribers_lost: subLost,
+        };
+        result.calculated.net_sub_growth = subGained - subLost;
+        result.calculated.sub_conversion_rate = views > 0
+          ? parseFloat((subGained / views * 100).toFixed(3))
+          : 0;
+        result.calculated.avg_watch_time = views > 0
+          ? parseFloat((watchMin / views).toFixed(1))
+          : 0;
+      }
+
+      return result;
+    };
+
+    if (platform && platform !== 'all') {
+      return res.json({
+        platform: buildPlatformData(platform),
+        explanations: METRIC_EXPLANATIONS_ES,
+      });
+    }
+
+    const totalFollowers = connectedPlatforms.reduce((s, p) => {
+      const snap = allSnapshots.find(x => x.platform === p);
+      return s + (snap?.followers || 0);
+    }, 0);
+    const totalReach = connectedPlatforms.reduce((s, p) => {
+      const snap = allSnapshots.find(x => x.platform === p);
+      return s + (snap?.reach || 0);
+    }, 0);
+    const totalViews = connectedPlatforms.reduce((s, p) => {
+      const snap = allSnapshots.find(x => x.platform === p);
+      return s + (snap?.views || 0);
+    }, 0);
+    const totalLikes = connectedPlatforms.reduce((s, p) => {
+      const snap = allSnapshots.find(x => x.platform === p);
+      return s + (snap?.likes || 0);
+    }, 0);
+    const avgER = connectedPlatforms.length > 0
+      ? parseFloat((connectedPlatforms.reduce((s, p) => {
+        const snap = allSnapshots.find(x => x.platform === p);
+        return s + (snap?.engagement_rate || 0);
+      }, 0) / connectedPlatforms.length).toFixed(1))
+      : 0;
+
+    const totalPrevFollowers = connectedPlatforms.reduce((s, p) => {
+      const prev = prevSnapshots.find(x => x.platform === p);
+      return s + (prev?.followers || 0);
+    }, 0);
+    const overallGrowth = totalPrevFollowers > 0
+      ? parseFloat(((totalFollowers - totalPrevFollowers) / totalPrevFollowers * 100).toFixed(1))
+      : 0;
+
+    const allViralScores = allPosts
+      .map(p => p.viral_score_real)
+      .filter(s => typeof s === 'number' && s > 0);
+    const overallViralAvg = allViralScores.length > 0
+      ? parseFloat((allViralScores.reduce((a, b) => a + b, 0) / allViralScores.length).toFixed(1))
+      : 0;
+
+    const platformRanking = connectedPlatforms
+      .map(p => {
+        const snap = allSnapshots.find(x => x.platform === p);
+        return { platform: p, engagement_rate: snap?.engagement_rate || 0, followers: snap?.followers || 0 };
+      })
+      .sort((a, b) => b.engagement_rate - a.engagement_rate);
+
+    const topPosts = [...allPosts]
+      .map(p => {
+        const a = p.analytics_4h || {};
+        const score = (a.views || 0) + (a.likes || 0) * 5 + (a.comments || 0) * 10 + (a.shares || 0) * 8;
+        return { ...p, _rank_score: score, analytics: a };
+      })
+      .sort((a, b) => b._rank_score - a._rank_score)
+      .slice(0, 5)
+      .map(p => ({
+        id: p.id,
+        title: p.title,
+        platforms: p.platforms,
+        date: p.published_at || p.created_at,
+        viral_score: p.viral_score_real || 0,
+        likes: p.analytics.likes || 0,
+        comments: p.analytics.comments || 0,
+        views: p.analytics.views || 0,
+        shares: p.analytics.shares || 0,
+        saves: p.analytics.saves || 0,
+      }));
+
+    res.json({
+      overview: {
+        total_followers: totalFollowers,
+        total_reach: totalReach,
+        total_views: totalViews,
+        total_likes: totalLikes,
+        avg_engagement_rate: avgER,
+        growth_rate: overallGrowth,
+        viral_score_avg: overallViralAvg,
+        platform_ranking: platformRanking,
+        top_posts: topPosts,
+        content_decay_global: contentDecay._global || [],
+        posting_frequency_global: postingFrequency._global || [],
+        best_times_global: bestTimesGlobal,
+      },
+      platforms: Object.fromEntries(
+        connectedPlatforms.map(p => [p, buildPlatformData(p)])
+      ),
+      connected_platforms: connectedPlatforms,
+      explanations: METRIC_EXPLANATIONS_ES,
+    });
+  } catch (e) {
+    console.error('getPlatformAnalytics error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+// ══  CONTENT LEARNINGS — what the AI learned from posts     ══
+// ══════════════════════════════════════════════════════════════
+
+exports.getContentLearnings = async (req, res) => {
+  try {
+    const { artistId } = req.params;
+
+    const [postsRes, cacheDecayRes, cacheFreqRes, cacheBestTimesRes] = await Promise.all([
+      supabase.from('videos')
+        .select('id, title, platforms, viral_score_real, analytics_4h, published_at, created_at, ai_copy_short')
+        .eq('artist_id', artistId)
+        .eq('status', 'published')
+        .not('analytics_4h', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'content_decay').single(),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'posting_frequency').single(),
+      supabase.from('zernio_sync_cache').select('data').eq('artist_id', artistId).eq('cache_key', 'best_times_by_platform').single(),
+    ]);
+
+    const posts = postsRes.data || [];
+    const contentDecay = cacheDecayRes.data?.data || {};
+    const postingFreq = cacheFreqRes.data?.data || {};
+    const bestTimesByPlat = cacheBestTimesRes.data?.data || {};
+
+    if (posts.length < 3) {
+      return res.json({ learnings: {}, message: 'Necesitas al menos 3 publicaciones con métricas para generar aprendizajes.' });
+    }
+
+    const platformPosts = {};
+    posts.forEach(p => {
+      (p.platforms || []).forEach(plat => {
+        if (!platformPosts[plat]) platformPosts[plat] = [];
+        platformPosts[plat].push(p);
+      });
+    });
+
+    const learnings = {};
+
+    for (const [plat, platPosts] of Object.entries(platformPosts)) {
+      if (platPosts.length < 2) continue;
+
+      const insights = [];
+      const postsWithMetrics = platPosts.map(p => {
+        const a = p.analytics_4h || {};
+        return {
+          ...p,
+          likes: a.likes || 0,
+          comments: a.comments || 0,
+          shares: a.shares || 0,
+          saves: a.saves || 0,
+          views: a.views || 0,
+          reach: a.reach || 0,
+          eng_rate: a.engagement_rate || 0,
+          watch_time: a.ig_reels_avg_watch_time || 0,
+        };
+      });
+
+      const avgER = postsWithMetrics.reduce((s, p) => s + p.eng_rate, 0) / postsWithMetrics.length;
+      const avgShares = postsWithMetrics.reduce((s, p) => s + p.shares, 0) / postsWithMetrics.length;
+      const avgSaves = postsWithMetrics.reduce((s, p) => s + p.saves, 0) / postsWithMetrics.length;
+
+      const questionPosts = postsWithMetrics.filter(p => (p.title || p.ai_copy_short || '').includes('?'));
+      const nonQuestionPosts = postsWithMetrics.filter(p => !(p.title || p.ai_copy_short || '').includes('?'));
+
+      if (questionPosts.length >= 2 && nonQuestionPosts.length >= 2) {
+        const qER = questionPosts.reduce((s, p) => s + p.eng_rate, 0) / questionPosts.length;
+        const nqER = nonQuestionPosts.reduce((s, p) => s + p.eng_rate, 0) / nonQuestionPosts.length;
+        if (qER > nqER * 1.3) {
+          insights.push({
+            type: 'hook_pattern',
+            title: 'Hooks con pregunta generan más engagement',
+            detail: `Posts con pregunta: ${qER.toFixed(1)}% ER vs ${nqER.toFixed(1)}% ER sin pregunta (${(qER / nqER).toFixed(1)}x más).`,
+            impact: 'high',
+          });
+        } else if (nqER > qER * 1.3) {
+          insights.push({
+            type: 'hook_pattern',
+            title: 'Afirmaciones directas funcionan mejor que preguntas',
+            detail: `Posts sin pregunta: ${nqER.toFixed(1)}% ER vs ${qER.toFixed(1)}% ER con pregunta.`,
+            impact: 'medium',
+          });
+        }
+      }
+
+      const sorted = [...postsWithMetrics].sort((a, b) => b.eng_rate - a.eng_rate);
+      const topHalf = sorted.slice(0, Math.ceil(sorted.length / 2));
+      const bottomHalf = sorted.slice(Math.ceil(sorted.length / 2));
+
+      if (plat === 'instagram' && topHalf.length > 0) {
+        const topSaveRate = topHalf.reduce((s, p) => s + (p.reach > 0 ? p.saves / p.reach : 0), 0) / topHalf.length * 100;
+        const bottomSaveRate = bottomHalf.length > 0 ? bottomHalf.reduce((s, p) => s + (p.reach > 0 ? p.saves / p.reach : 0), 0) / bottomHalf.length * 100 : 0;
+        if (topSaveRate > 0) {
+          insights.push({
+            type: 'save_pattern',
+            title: `Save rate en top posts: ${topSaveRate.toFixed(1)}%`,
+            detail: `Tus mejores posts tienen ${topSaveRate.toFixed(1)}% save rate vs ${bottomSaveRate.toFixed(1)}% en los demás. Los saves son la señal más fuerte para el algoritmo de Instagram.`,
+            impact: topSaveRate > 2 ? 'high' : 'medium',
+          });
+        }
+      }
+
+      if (avgShares > 0) {
+        const topShareRate = topHalf.reduce((s, p) => s + (p.reach > 0 ? p.shares / p.reach : 0), 0) / topHalf.length * 100;
+        insights.push({
+          type: 'share_pattern',
+          title: `Share rate promedio: ${topShareRate.toFixed(1)}%`,
+          detail: `De ${platPosts.length} posts, los mejores tienen ${topShareRate.toFixed(1)}% share rate. Shares son la señal #1 del algoritmo en 2026.`,
+          impact: topShareRate > 1 ? 'high' : 'medium',
+        });
+      }
+
+      if (plat === 'instagram') {
+        const withWatch = postsWithMetrics.filter(p => p.watch_time > 0);
+        if (withWatch.length >= 2) {
+          const avgWatch = withWatch.reduce((s, p) => s + p.watch_time, 0) / withWatch.length;
+          insights.push({
+            type: 'watch_time',
+            title: `Avg watch time: ${avgWatch.toFixed(1)}s`,
+            detail: `Tus Reels se ven en promedio ${avgWatch.toFixed(1)} segundos. ${avgWatch > 10 ? 'Buena retención — tu audiencia se queda.' : 'Retención baja — mejora el gancho de los primeros 2 segundos.'}`,
+            impact: avgWatch > 10 ? 'positive' : 'needs_work',
+          });
+        }
+      }
+
+      const decay = contentDecay[plat] || [];
+      if (decay.length > 0) {
+        const lastBucket = decay[decay.length - 1];
+        const lastPct = lastBucket?.avg_pct || lastBucket?.percentage || lastBucket?.value || 0;
+        const lifespan = lastPct > 20 ? 'larga (evergreen)' : lastPct > 5 ? 'media' : 'corta (efímero)';
+        insights.push({
+          type: 'content_lifespan',
+          title: `Vida útil: ${lifespan}`,
+          detail: `Tu contenido retiene ${lastPct.toFixed(0)}% del engagement al final del ciclo. ${lastPct > 20 ? 'Tu contenido sigue generando interacción días después.' : 'Tu contenido muere rápido — considera formatos evergreen.'}`,
+          impact: lastPct > 20 ? 'positive' : 'needs_work',
+        });
+      }
+
+      const freq = postingFreq[plat] || [];
+      if (freq.length > 0) {
+        const best = freq.reduce((b, r) => (r.avg_engagement || r.engagement_rate || 0) > (b.avg_engagement || b.engagement_rate || 0) ? r : b, freq[0]);
+        const bestFreq = best.posts_per_week || best.frequency || '?';
+        const bestEng = best.avg_engagement || best.engagement_rate || 0;
+        insights.push({
+          type: 'optimal_frequency',
+          title: `Frecuencia óptima: ${bestFreq} posts/semana`,
+          detail: `Con ${bestFreq} posts por semana obtienes ${bestEng.toFixed(1)}% engagement. Publicar más o menos reduce tu rendimiento.`,
+          impact: 'high',
+        });
+      }
+
+      const bestTimes = bestTimesByPlat[plat] || [];
+      if (bestTimes.length > 0) {
+        const top = bestTimes[0];
+        insights.push({
+          type: 'best_time',
+          title: `Mejor momento: ${top.label}`,
+          detail: `Tu engagement sube significativamente publicando ${top.label}. Segundo mejor: ${bestTimes[1]?.label || 'N/A'}.`,
+          impact: 'medium',
+        });
+      }
+
+      learnings[plat] = insights;
+    }
+
+    res.json({ learnings });
+  } catch (e) {
+    console.error('getContentLearnings error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+};
