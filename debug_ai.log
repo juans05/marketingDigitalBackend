@@ -57,3 +57,9 @@ Please retry in 44.85090028s. [{"@type":"type.googleapis.com/google.rpc.Help","l
 [2026-06-28T13:38:57.761Z]    [Paso 4] Envío...
 [2026-06-28T13:38:58.265Z] ✅ [AI interno] Video 08854b70-0ade-444e-9780-6caa0e40aca6 procesado — score: raw=5.8 → calibrated=6 (low confidence)
 [2026-06-28T13:38:58.271Z]    📊 [Marketing] Hook:8 Retain:7 Reward:6 Share:6 Audio:8 Trend:4 | Framework:AIDA | 3H:hygiene | Triggers:CURIOSIDAD GAP,ASOMBRO/GRANDEZZA,IDENTIFICACIÓN,CONTROVERSIA SANA
+[2026-07-05T02:46:02.054Z] 🎯 [Calibration 0-100] raw=80 → calibrated=75 (confidence=high)
+[2026-07-05T02:46:02.101Z] 🎯 [Calibration] raw=9 → calibrated=5 (bias=0, stddev=0, confidence=medium)
+[2026-07-05T02:46:23.024Z] 🎯 [Calibration 0-100] raw=80 → calibrated=75 (confidence=high)
+[2026-07-05T02:46:23.058Z] 🎯 [Calibration] raw=9 → calibrated=5 (bias=0, stddev=0, confidence=medium)
+[2026-07-05T02:46:48.952Z] 🎯 [Calibration 0-100] raw=80 → calibrated=75 (confidence=high)
+[2026-07-05T02:46:49.001Z] 🎯 [Calibration] raw=9 → calibrated=5 (bias=0, stddev=0, confidence=medium)

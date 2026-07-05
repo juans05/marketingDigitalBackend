@@ -121,36 +121,37 @@ async function fetchArtistLearningContext(artistId) {
   if (!artistId) return null;
 
   try {
-    const { data: artistProfile } = await supabase
-      .from('artists')
-      .select('name, ai_genre, ai_audience, ai_tone, creative_dna, branding_data')
-      .eq('id', artistId)
-      .single();
-
-    // 1. Top 10 posts con mejor engagement real (solo los que tienen métricas)
-    const { data: topPosts } = await supabase
-      .from('videos')
-      .select('title, hashtags, platforms, viral_score, viral_score_real, ai_copy_short, analytics_4h')
-      .eq('artist_id', artistId)
-      .not('viral_score_real', 'is', null)
-      .order('viral_score_real', { ascending: false })
-      .limit(10);
-
-    // 2. Snapshots agrupados por plataforma (engagement promedio)
-    const { data: snapshots } = await supabase
-      .from('post_metrics_snapshots')
-      .select('platform, likes, comments, views, shares, engagement_rate, viral_score_real')
-      .eq('artist_id', artistId)
-      .order('snapshot_at', { ascending: false })
-      .limit(100);
-
-    // 3. Últimos 3 análisis de insights (para detectar tendencias en decisiones)
-    const { data: insightsLog } = await supabase
-      .from('analytics_insights_log')
-      .select('generated_at, insights, decisions, engagement_rate, best_platform')
-      .eq('artist_id', artistId)
-      .order('generated_at', { ascending: false })
-      .limit(3);
+    const [
+      { data: artistProfile },
+      { data: topPosts },
+      { data: snapshots },
+      { data: insightsLog },
+    ] = await Promise.all([
+      supabase
+        .from('artists')
+        .select('name, ai_genre, ai_audience, ai_tone, creative_dna, branding_data')
+        .eq('id', artistId)
+        .single(),
+      supabase
+        .from('videos')
+        .select('title, hashtags, platforms, viral_score, viral_score_real, ai_copy_short, analytics_4h')
+        .eq('artist_id', artistId)
+        .not('viral_score_real', 'is', null)
+        .order('viral_score_real', { ascending: false })
+        .limit(10),
+      supabase
+        .from('post_metrics_snapshots')
+        .select('platform, likes, comments, views, shares, engagement_rate, viral_score_real')
+        .eq('artist_id', artistId)
+        .order('snapshot_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('analytics_insights_log')
+        .select('generated_at, insights, decisions, engagement_rate, best_platform')
+        .eq('artist_id', artistId)
+        .order('generated_at', { ascending: false })
+        .limit(3),
+    ]);
 
     if (!topPosts?.length && !snapshots?.length) return null;
 
