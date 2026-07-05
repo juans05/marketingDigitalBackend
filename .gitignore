@@ -16,3 +16,8 @@ pnpm-debug.log*
 *.swo
 scratch/add_coupon.js
 migration_coupons_system.sql
+
+# Runtime logs — regenerated locally, can contain user PII (emails, IPs);
+# never belongs in version control.
+debug_ai.log
+logs/
