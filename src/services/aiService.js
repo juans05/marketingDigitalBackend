@@ -14,6 +14,7 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
 
+const { jsonrepair } = require('jsonrepair');
 const { checkHashtags } = require('../config/bannedHashtags');
 
 const fs = require('fs');
@@ -1528,7 +1529,13 @@ Devolvé este JSON exacto (sin markdown):
     const raw = msg.content[0].text;
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Claude no devolvió JSON en analyzeContentStrategy');
-    const parsed = JSON.parse(jsonMatch[0]);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      parsed = JSON.parse(jsonrepair(jsonMatch[0]));
+    }
 
     const cal = calibrateScore100(parsed.score || 50, learningCtx, platform);
     parsed.score = cal.score;
