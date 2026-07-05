@@ -335,6 +335,13 @@ async function fetchGlobalCalibration() {
   }
 }
 
+// Cuántos posts reales hacen falta para dejar de tirar el score hacia el
+// promedio histórico del artista. Unificado entre calibrateScore (1-10, el
+// pipeline principal de video) y calibrateScore100 (0-100, Content Copilot y
+// Visual Score) — es una pregunta de "cuánto confiar en N muestras", no algo
+// que dependa de la escala del score.
+const REGRESSION_WINDOW = 10;
+
 /**
  * Núcleo de corrección compartido entre calibrateScore (1-10) y
  * calibrateScore100 (0-100). Opera en la escala del rawScore que reciba —
@@ -412,7 +419,7 @@ function calibrateScore(rawScore, learningContext, platform) {
     }
   }
 
-  const { adjusted, confidence, adjustments } = calibrateCore(rawScore, learningContext, platform, 1, 15);
+  const { adjusted, confidence, adjustments } = calibrateCore(rawScore, learningContext, platform, 1, REGRESSION_WINDOW);
   const score = Math.max(1, Math.min(10, Math.round(adjusted)));
 
   if (score !== rawScore) {
@@ -455,10 +462,7 @@ function calibrateScore100(rawScore100, learningContext, platform) {
     }
   }
 
-  // Ventana de regresión reducida (15 → 10): con 10+ posts reales ya se confía
-  // del todo en el score nuevo, en vez de seguir mezclándolo con la media hasta
-  // los 15 posts — así se ablanda el jalón hacia la media con pocos datos.
-  const { adjusted, confidence, adjustments } = calibrateCore(rawScore100, ctx100, platform, 10, 10);
+  const { adjusted, confidence, adjustments } = calibrateCore(rawScore100, ctx100, platform, 10, REGRESSION_WINDOW);
   const score = Math.max(0, Math.min(100, Math.round(adjusted)));
 
   if (score !== rawScore100) {
@@ -900,7 +904,7 @@ ${topHashtags.join(' ')}`;
     }
 
     if (historicalAvg) {
-      systemPrompt += `\n\nREFERENCIA: El score real promedio de este artista históricamente es ${historicalAvg}/10. Usá eso como ancla — no inflés ni desinflés artificialmente.`;
+      systemPrompt += `\n\nCONTEXTO: El score real promedio de este artista históricamente es ${historicalAvg}/10 — es referencia, NO un objetivo a igualar. Si este video específico es claramente mejor o peor que su historial, tu viral_score DEBE reflejar esa diferencia con claridad, aunque se aleje mucho de ${historicalAvg}.`;
     }
 
     if (recentInsights?.length) {
@@ -923,12 +927,11 @@ IMPORTANTE: Cruzá la transcripción con el análisis visual para entender QUÉ 
 
   userContent += `\n\nTítulo del contenido: ${title || '(sin título)'}
 
-Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
+Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro). IMPORTANTE: generá los campos en ESTE orden — completá marketing_breakdown PRIMERO (es tu análisis dimensión por dimensión) y calculá viral_score AL FINAL, como el promedio ponderado real de esos sub-scores, nunca como una impresión general escrita antes de analizar:
 {
   "ai_copy_short": "Caption corto y potente (1-2 oraciones). Usá AIDA condensado: Attention + Action. Debe frenar el scroll y provocar interacción.",
   "ai_copy_long": "Versión extendida (3-5 oraciones). Seguí AIDA completo o PAS según el contenido. Incluí storytelling, emociones y CTA estratégico.",
   "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 hashtags estratégicos)",
-  "viral_score": 7.5,
   "marketing_breakdown": {
     "hook_score": 8,
     "retention_score": 7,
@@ -947,7 +950,8 @@ Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
     "best_posting_time": "19:00-21:00",
     "replay_potential": "alto",
     "comment_bait_strength": "medio"
-  }
+  },
+  "viral_score": 7.5
 }
 
 REGLAS DE HASHTAGS (MUY IMPORTANTE):
@@ -957,7 +961,8 @@ REGLAS DE HASHTAGS (MUY IMPORTANTE):
 - Priorizá hashtags entre 10K-500K de volumen (nicho rentable) sobre los de millones (ruido).
 
 REGLAS DE SCORING (MUY IMPORTANTE):
-- viral_score: promedio ponderado → hook (25%) + retention (25%) + reward (20%) + shareability (20%) + trend (10%)
+- Usá el rango completo 1-10 en cada sub-score — un video genuinamente débil en una dimensión va en 1-3, uno excepcional en 9-10. No agrupes tus respuestas alrededor de 6-8 "por las dudas", y no favorezcas números redondos por costumbre.
+- viral_score: promedio ponderado → hook (25%) + retention (25%) + reward (20%) + shareability (20%) + trend (10%). Calculalo RECIÉN cuando ya decidiste los 5 sub-scores que promedia — nunca antes.
 - hook_score: fuerza de los primeros 3 segundos (¿frena el scroll?)
 - retention_score: ¿el video mantiene la atención hasta el final? ¿hay progresión?
 - reward_score: ¿el final satisface? ¿genera replay? ¿motiva a compartir?

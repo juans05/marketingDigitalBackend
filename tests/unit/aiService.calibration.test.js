@@ -54,7 +54,7 @@ describe('calibrateScore100 — regresión a la media suavizada', () => {
   });
 });
 
-describe('calibrateScore (1-10, usado por el pipeline principal de video) — comportamiento sin cambios', () => {
+describe('calibrateScore (1-10, pipeline principal de video) — ventana de regresión unificada con calibrateScore100', () => {
   test('sin bias y con datos suficientes, el score no se ajusta', () => {
     const ctx = {
       scoreBias: 0,
@@ -67,7 +67,19 @@ describe('calibrateScore (1-10, usado por el pipeline principal de video) — co
     expect(result.score).toBe(8);
   });
 
-  test('con pocos posts (5), todavía hay pull hacia la media (ventana de 15 sin cambios)', () => {
+  test('con 10 posts analizados, ya no hay pull hacia historicalAvg (misma ventana=10 que calibrateScore100)', () => {
+    const ctx = {
+      scoreBias: 0,
+      biasStdDev: 0,
+      historicalAvg: 3,
+      platformCalibration: {},
+      totalPostsAnalyzed: 10,
+    };
+    const result = calibrateScore(9, ctx, 'tiktok');
+    expect(result.score).toBe(9); // regressionWeight = 10/10 = 1, sin pull
+  });
+
+  test('con pocos posts (5), todavía hay pull proporcional hacia la media', () => {
     const ctx = {
       scoreBias: 0,
       biasStdDev: 0,
@@ -76,8 +88,8 @@ describe('calibrateScore (1-10, usado por el pipeline principal de video) — co
       totalPostsAnalyzed: 5,
     };
     const result = calibrateScore(9, ctx, 'tiktok');
-    // regressionWeight = 5/15 = 0.333, priorWeight = 0.667
-    // adjusted = 9*0.333 + 3*0.667 = 3.0 + 2.0 = 5.0
-    expect(result.score).toBe(5);
+    // regressionWeight = 5/10 = 0.5, priorWeight = 0.5
+    // adjusted = 9*0.5 + 3*0.5 = 4.5 + 1.5 = 6.0
+    expect(result.score).toBe(6);
   });
 });

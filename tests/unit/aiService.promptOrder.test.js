@@ -73,6 +73,46 @@ describe('analyzeContentStrategy — el prompt razona antes de pedir el score', 
   });
 });
 
+describe('generateCopyWithClaude — el pipeline principal calcula viral_score después de marketing_breakdown', () => {
+  test('en el schema JSON, "viral_score" aparece después de "marketing_breakdown"', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({
+        ai_copy_short: 'x', ai_copy_long: 'x', hashtags: '#a #b',
+        marketing_breakdown: { hook_score: 8, retention_score: 7, reward_score: 6, shareability_score: 7, audio_match_score: 8, trend_alignment_score: 5 },
+        viral_score: 7,
+      }) }],
+    });
+
+    await aiService.generateCopyWithClaude('análisis visual de prueba', null, 'Mi Video', ['tiktok'], null, null);
+
+    const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+    const schemaStart = userContent.indexOf('"ai_copy_short"');
+    const idxBreakdown = userContent.indexOf('"marketing_breakdown"', schemaStart);
+    const idxViralScore = userContent.indexOf('"viral_score"', schemaStart);
+    expect(idxBreakdown).toBeGreaterThan(schemaStart);
+    expect(idxViralScore).toBeGreaterThan(idxBreakdown);
+  });
+
+  test('con historial del artista, no le pide al modelo anclarse al promedio como objetivo', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({
+        ai_copy_short: 'x', ai_copy_long: 'x', hashtags: '#a',
+        marketing_breakdown: {}, viral_score: 7,
+      }) }],
+    });
+
+    const learningContext = {
+      topHashtags: [], platformPerformance: [], topCopies: [], recentInsights: [],
+      scoreBias: 0, biasStdDev: 0, platformCalibration: {}, totalPostsAnalyzed: 12, historicalAvg: 6.5,
+    };
+    await aiService.generateCopyWithClaude('análisis', null, 'Video', ['tiktok'], null, learningContext);
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system;
+    expect(systemPrompt).toMatch(/6\.5/);
+    expect(systemPrompt).not.toMatch(/no infl[eé]s ni desinfl[eé]s/i);
+  });
+});
+
 describe('scoreVisualVirality — el prompt calcula "overall" después de las dimensiones', () => {
   test('en el schema JSON, "overall" aparece después de "quickFixes"', async () => {
     mockGenerateContent.mockResolvedValueOnce({
