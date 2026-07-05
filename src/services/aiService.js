@@ -120,6 +120,9 @@ function extractAudioUrl(videoUrl) {
 async function fetchArtistLearningContext(artistId) {
   if (!artistId) return null;
 
+  const cached = _artistLearningCache.get(artistId);
+  if (cached && Date.now() < cached.expiry) return cached.data;
+
   try {
     const [
       { data: artistProfile },
@@ -242,7 +245,7 @@ async function fetchArtistLearningContext(artistId) {
 
     logDebug(`📚 [Learning] Artista ${artistId}: ${topHashtags.length} hashtags, bias=${scoreBias}±${biasStdDev}, avg_real=${historicalAvg}, best=${platformPerformance[0]?.platform || 'N/A'}`);
 
-    return {
+    const result = {
       topHashtags,
       platformPerformance,
       bestPlatform: platformPerformance[0]?.platform || null,
@@ -256,11 +259,16 @@ async function fetchArtistLearningContext(artistId) {
       creativeDNA: artistProfile?.creative_dna || artistProfile?.branding_data?.creative_dna || null,
       brandingData: artistProfile?.branding_data || null,
     };
+    _artistLearningCache.set(artistId, { data: result, expiry: Date.now() + ARTIST_LEARNING_CACHE_TTL_MS });
+    return result;
   } catch (err) {
     logDebug(`⚠️ [Learning] No se pudo obtener contexto de aprendizaje: ${err.message}`);
     return null;
   }
 }
+
+const _artistLearningCache = new Map();
+const ARTIST_LEARNING_CACHE_TTL_MS = 5 * 60 * 1000;
 
 let _globalCalibrationCache = null;
 let _globalCalibrationExpiry = 0;
