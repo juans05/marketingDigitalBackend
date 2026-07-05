@@ -194,4 +194,26 @@ describe('scoreVisualVirality — el prompt calcula "overall" después de las di
     expect(idxQuickFixes).toBeGreaterThan(schemaStart);
     expect(idxOverall).toBeGreaterThan(idxQuickFixes);
   });
+
+  test('el prompt le pide a quickFixes atacar específicamente la dimensión con menor score', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: { text: () => JSON.stringify({
+        dimensions: {
+          hook: { score: 80, label: 'x', detail: 'x' },
+          quality: { score: 80, label: 'x', detail: 'x' },
+          emotion: { score: 80, label: 'x', detail: 'x' },
+          trend: { score: 80, label: 'x', detail: 'x' },
+          thumb: { score: 80, label: 'x', detail: 'x' },
+          scroll: { score: 80, label: 'x', detail: 'x' },
+        },
+        content_type_3h: 'hero', psychological_triggers: [], verdict: 'x',
+        quickFixes: ['a', 'b', 'c'], overall: 80,
+      }) },
+    });
+
+    await aiService.scoreVisualVirality('https://example.com/img.jpg', 'image', 'tiktok', null);
+
+    const promptArg = mockGenerateContent.mock.calls[0][0][1];
+    expect(promptArg).toMatch(/dimensi[oó]n.*(m[aá]s baja|menor score)/i);
+  });
 });

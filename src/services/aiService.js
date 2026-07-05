@@ -1605,6 +1605,8 @@ Usá el framework HOOK-RETAIN-REWARD para evaluar el potencial viral visual:
 
 CALIBRACIÓN: Usá el rango completo 0-100 en cada dimensión — una imagen genuinamente débil va en 0-30, una excepcional en 90+. No agrupes tus respuestas alrededor de 50-70 "por las dudas", y no favorezcas números redondos por costumbre.
 
+QUICKFIXES ESPECÍFICOS: Tus 3 quickFixes deben atacar directamente la o las dimensiones con menor score de las 6 que evaluaste — no des consejos genéricos intercambiables entre imágenes distintas. Si "hook" o "scroll" tienen la dimensión más baja, decí específicamente qué cambiaría ESTA imagen puntual para mejorarlas.
+
 Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown). Completá las dimensiones PRIMERO y calculá "overall" AL FINAL, como el promedio ponderado real de lo que acabás de evaluar:
 {
   "dimensions": {
