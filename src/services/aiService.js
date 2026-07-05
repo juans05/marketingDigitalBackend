@@ -326,6 +326,63 @@ async function fetchGlobalCalibration() {
 }
 
 /**
+ * Núcleo de corrección compartido entre calibrateScore (1-10) y
+ * calibrateScore100 (0-100). Opera en la escala del rawScore que reciba —
+ * el caller es responsable de que scoreBias/historicalAvg/platformCalibration
+ * ya vengan en esa misma escala. `scale` reescala los umbrales fijos (pensados
+ * originalmente para 1-10) y `regressionWindow` controla qué tan rápido deja
+ * de tirar hacia la media a medida que hay más posts analizados.
+ */
+function calibrateCore(rawScore, learningContext, platform, scale, regressionWindow) {
+  const adjustments = [];
+  let adjusted = rawScore;
+  const biasThreshold = 0.3 * scale;
+  const deltaMessageThreshold = 0.2 * scale;
+
+  // 1. Corrección por sesgo global
+  const { scoreBias, biasStdDev, historicalAvg, platformCalibration, totalPostsAnalyzed } = learningContext;
+  if (Math.abs(scoreBias) > biasThreshold) {
+    adjusted -= scoreBias;
+    adjustments.push(`Bias global: ${scoreBias > 0 ? '-' : '+'}${Math.abs(scoreBias).toFixed(1)} (modelo ${scoreBias > 0 ? 'sobreestimaba' : 'subestimaba'})`);
+  }
+
+  // 2. Corrección por plataforma específica
+  const platCal = platformCalibration[platform];
+  if (platCal && platCal.sampleSize >= 2 && Math.abs(platCal.bias - scoreBias) > biasThreshold) {
+    const platDelta = platCal.bias - scoreBias;
+    adjusted -= platDelta;
+    adjustments.push(`Ajuste ${platform}: ${platDelta > 0 ? '-' : '+'}${Math.abs(platDelta).toFixed(1)} (${platform} ${platDelta > 0 ? 'rinde menos' : 'rinde más'} que el promedio)`);
+  }
+
+  // 3. Regresión a la media del artista (cuantos menos datos, más tira hacia la media)
+  const regressionWeight = Math.min(totalPostsAnalyzed / regressionWindow, 1);
+  const priorWeight = 1 - regressionWeight;
+  if (priorWeight > 0.1) {
+    const beforeRegression = adjusted;
+    adjusted = (adjusted * regressionWeight) + (historicalAvg * priorWeight);
+    if (Math.abs(adjusted - beforeRegression) > deltaMessageThreshold) {
+      adjustments.push(`Regresión a media (${historicalAvg}): peso ${(priorWeight * 100).toFixed(0)}% por ${totalPostsAnalyzed} posts analizados`);
+    }
+  }
+
+  // 4. Confidence basada en cantidad de datos + consistencia
+  let confidence;
+  const isGlobal = !!learningContext._globalFallback;
+  if (isGlobal) {
+    confidence = totalPostsAnalyzed >= 20 ? 'medium' : 'low';
+    adjustments.push(`Calibrado con datos globales (${totalPostsAnalyzed} videos de toda la plataforma)`);
+  } else if (totalPostsAnalyzed >= 10 && biasStdDev < 1.5) {
+    confidence = 'high';
+  } else if (totalPostsAnalyzed >= 5) {
+    confidence = 'medium';
+  } else {
+    confidence = 'low';
+  }
+
+  return { adjusted, confidence, adjustments };
+}
+
+/**
  * Post-procesa el score crudo del LLM con corrección matemática real.
  * Si el artista no tiene datos, usa la calibración global de toda la plataforma.
  *
@@ -340,80 +397,65 @@ function calibrateScore(rawScore, learningContext, platform) {
   }
 
   if (!learningContext || learningContext.totalPostsAnalyzed < 2) {
-    if (learningContext?._globalFallback) {
-      // Ya tiene datos globales inyectados, continuar con la calibración
-    } else {
+    if (!learningContext?._globalFallback) {
       return { score: Math.round(rawScore), raw: rawScore, confidence: 'low', adjustments: ['Sin datos históricos — se usará calibración global en próximo análisis'] };
     }
   }
 
-  const adjustments = [];
-  let adjusted = rawScore;
+  const { adjusted, confidence, adjustments } = calibrateCore(rawScore, learningContext, platform, 1, 15);
+  const score = Math.max(1, Math.min(10, Math.round(adjusted)));
 
-  // 1. Corrección por sesgo global
-  const { scoreBias, biasStdDev, historicalAvg, platformCalibration, totalPostsAnalyzed } = learningContext;
-  if (Math.abs(scoreBias) > 0.3) {
-    adjusted -= scoreBias;
-    adjustments.push(`Bias global: ${scoreBias > 0 ? '-' : '+'}${Math.abs(scoreBias).toFixed(1)} (modelo ${scoreBias > 0 ? 'sobreestimaba' : 'subestimaba'})`);
+  if (score !== rawScore) {
+    logDebug(`🎯 [Calibration] raw=${rawScore} → calibrated=${score} (bias=${learningContext.scoreBias}, stddev=${learningContext.biasStdDev}, confidence=${confidence})`);
   }
 
-  // 2. Corrección por plataforma específica
-  const platCal = platformCalibration[platform];
-  if (platCal && platCal.sampleSize >= 2 && Math.abs(platCal.bias - scoreBias) > 0.3) {
-    const platDelta = platCal.bias - scoreBias;
-    adjusted -= platDelta;
-    adjustments.push(`Ajuste ${platform}: ${platDelta > 0 ? '-' : '+'}${Math.abs(platDelta).toFixed(1)} (${platform} ${platDelta > 0 ? 'rinde menos' : 'rinde más'} que el promedio)`);
-  }
-
-  // 3. Regresión a la media del artista (cuantos menos datos, más tira hacia la media)
-  const regressionWeight = Math.min(totalPostsAnalyzed / 15, 1);
-  const priorWeight = 1 - regressionWeight;
-  if (priorWeight > 0.1) {
-    const beforeRegression = adjusted;
-    adjusted = (adjusted * regressionWeight) + (historicalAvg * priorWeight);
-    if (Math.abs(adjusted - beforeRegression) > 0.2) {
-      adjustments.push(`Regresión a media (${historicalAvg}): peso ${(priorWeight * 100).toFixed(0)}% por ${totalPostsAnalyzed} posts analizados`);
-    }
-  }
-
-  // 4. Clamp 1-10
-  adjusted = Math.max(1, Math.min(10, parseFloat(adjusted.toFixed(1))));
-  adjusted = Math.round(adjusted);
-
-  // 5. Confidence basada en cantidad de datos + consistencia
-  let confidence;
-  const isGlobal = !!learningContext._globalFallback;
-  if (isGlobal) {
-    confidence = totalPostsAnalyzed >= 20 ? 'medium' : 'low';
-    adjustments.push(`Calibrado con datos globales (${totalPostsAnalyzed} videos de toda la plataforma)`);
-  } else if (totalPostsAnalyzed >= 10 && biasStdDev < 1.5) {
-    confidence = 'high';
-  } else if (totalPostsAnalyzed >= 5) {
-    confidence = 'medium';
-  } else {
-    confidence = 'low';
-  }
-
-  if (adjusted !== rawScore) {
-    logDebug(`🎯 [Calibration] raw=${rawScore} → calibrated=${adjusted} (bias=${scoreBias}, stddev=${biasStdDev}, confidence=${confidence})`);
-  }
-
-  return { score: Math.round(adjusted), raw: rawScore, confidence, adjustments };
+  return { score, raw: rawScore, confidence, adjustments };
 }
 
 /**
- * Versión de calibrateScore para escala 0-100 (usado en analyzeContentStrategy).
- * Convierte a escala 1-10, calibra, y vuelve a 0-100.
+ * Versión de calibrateScore para escala 0-100 (usado en analyzeContentStrategy
+ * y scoreVisualVirality). Calibra DIRECTAMENTE en escala 0-100 — antes convertía
+ * a 1-10, redondeaba a entero, y volvía a multiplicar por 10, lo que colapsaba
+ * cualquier score a uno de solo 11 valores posibles (múltiplos de 10). Los datos
+ * de aprendizaje (scoreBias, historicalAvg, platformCalibration.bias) se calculan
+ * en escala 1-10 en fetchArtistLearningContext/fetchGlobalCalibration, así que se
+ * escalan ×10 antes de aplicar la corrección.
  */
 function calibrateScore100(rawScore100, learningContext, platform) {
-  const raw10 = rawScore100 / 10;
-  const result = calibrateScore(raw10, learningContext, platform);
-  return {
-    score: Math.max(0, Math.min(100, result.score * 10)),
-    raw: rawScore100,
-    confidence: result.confidence,
-    adjustments: result.adjustments,
-  };
+  if (!rawScore100) {
+    return { score: rawScore100, raw: rawScore100, confidence: 'none', adjustments: [] };
+  }
+
+  let ctx100 = learningContext;
+  if (learningContext) {
+    ctx100 = {
+      ...learningContext,
+      scoreBias: (learningContext.scoreBias || 0) * 10,
+      historicalAvg: (learningContext.historicalAvg || 0) * 10,
+      platformCalibration: Object.fromEntries(
+        Object.entries(learningContext.platformCalibration || {})
+          .map(([plat, cal]) => [plat, { ...cal, bias: cal.bias * 10 }])
+      ),
+    };
+  }
+
+  if (!ctx100 || ctx100.totalPostsAnalyzed < 2) {
+    if (!ctx100?._globalFallback) {
+      return { score: Math.round(rawScore100), raw: rawScore100, confidence: 'low', adjustments: ['Sin datos históricos — se usará calibración global en próximo análisis'] };
+    }
+  }
+
+  // Ventana de regresión reducida (15 → 10): con 10+ posts reales ya se confía
+  // del todo en el score nuevo, en vez de seguir mezclándolo con la media hasta
+  // los 15 posts — así se ablanda el jalón hacia la media con pocos datos.
+  const { adjusted, confidence, adjustments } = calibrateCore(rawScore100, ctx100, platform, 10, 10);
+  const score = Math.max(0, Math.min(100, Math.round(adjusted)));
+
+  if (score !== rawScore100) {
+    logDebug(`🎯 [Calibration 0-100] raw=${rawScore100} → calibrated=${score} (confidence=${confidence})`);
+  }
+
+  return { score, raw: rawScore100, confidence, adjustments };
 }
 
 // ---------------------------------------------------------------------------
@@ -1590,4 +1632,6 @@ module.exports = {
   refineCopy,
   analyzeContentStrategy,
   scoreVisualVirality,
+  calibrateScore,
+  calibrateScore100,
 };
