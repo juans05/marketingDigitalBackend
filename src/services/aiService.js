@@ -1408,14 +1408,19 @@ FRAMEWORKS QUE DEBÉS APLICAR:
 - 3H (Hero/Hub/Hygiene): Clasificá el tipo de contenido y ajustá la estrategia según su categoría.
 - GATILLOS PSICOLÓGICOS: Identificá qué gatillos activa (FOMO, Social Proof, Reciprocidad, Curiosidad Gap, Identificación, Controversia Sana) y sugerí cuáles agregar.
 
-CALIBRACIÓN DE SCORE: Usá el rango completo de 0 a 100 — no default a la franja "segura" de 50-70. Un video genuinamente débil debe recibir un score bajo (0-30) sin miedo, y un video excepcional debe recibir 90+. Evitá agrupar tus respuestas alrededor del promedio; cada score debe reflejar la calidad real de ESTE contenido específico, no una estimación conservadora.
+CALIBRACIÓN DE SCORE: Usá el rango completo de 0 a 100 — no default a la franja "segura" de 50-70. Un video genuinamente débil debe recibir un score bajo (0-30) sin miedo, y un video excepcional debe recibir 90+. Evitá agrupar tus respuestas alrededor del promedio; cada score debe reflejar la calidad real de ESTE contenido específico, no una estimación conservadora. No favorezcas números redondos (50, 60, 70...) por costumbre — usá la precisión que el análisis amerite (ej. 34, 72, 91). Completá SIEMPRE tu diagnóstico (diagnostico_algoritmico, match_historico, mejora_del_gancho, ajuste_estrategico) ANTES de decidir el número final — el score es la CONCLUSIÓN de ese razonamiento, no el punto de partida. Si existe un promedio histórico del artista, tratalo como referencia de contexto, nunca como un valor al que tu score deba parecerse — un contenido claramente mejor o peor que su historial debe reflejarlo con un score que se aleje de ese promedio.
 
 REGLA CRÍTICA DE SISTEMA: Tu respuesta debe ser EXCLUSIVAMENTE un objeto JSON válido. Cero markdown, cero comillas invertidas, cero texto introductorio. Si incluís un solo carácter fuera del JSON, el pipeline fallará.`,
     score_criteria: aiConfig.score_criteria || `- 0-20 (Descarte): Idea genérica, aburrida o predecible. Cero potencial de retención. El usuario hará scroll en el primer segundo.
 - 21-40 (Concepto Crudo): Hay una chispa, pero la ejecución es plana. Carece de un ángulo único o ignora por completo la identidad histórica del artista.
 - 41-60 (Promedio/Aceptable): Buen concepto, pero mecánicamente débil. Requiere reescribir el gancho (hook), ajustar el ritmo visual o incorporar un catalizador emocional.
 - 61-80 (Alto Potencial): Estructura viral sólida. El storytelling es claro, el gancho atrapa y se alinea con los picos históricos de rendimiento del artista. Necesita ajustes finos para maximizar compartidas.
-- 81-100 (Unicornio/Hit): Ejecución magistral. Psicología de retención perfecta, alto potencial de shareability, aprovecha el contexto de forma original y conecta emocionalmente. Listo para grabar.`,
+- 81-100 (Unicornio/Hit): Ejecución magistral. Psicología de retención perfecta, alto potencial de shareability, aprovecha el contexto de forma original y conecta emocionalmente. Listo para grabar.
+
+EJEMPLOS DE CALIBRACIÓN (anclas de referencia, no copies el contenido — usá el razonamiento):
+- Idea: "Repito la misma rutina de baile que ya subí varias veces, sin ángulo nuevo." → Score ~15: cero sorpresa, la audiencia ya lo vio, no hay pattern interrupt.
+- Idea: "Reacciono en cámara a un comentario random con un giro inesperado al final que conecta con mi historia personal." → Score ~90: gancho de curiosidad inmediato, open loop claro, payoff emocional que invita a compartir.
+Tu score para el contenido real debe estar tan lejos de estos ejemplos como la calidad real lo justifique — no te quedes a mitad de camino "por las dudas".`,
   };
 
   const systemPrompt = cfg.system_prompt;
@@ -1496,16 +1501,16 @@ ${historyBlock}${learningBlock}
 
 INSTRUCCIONES DE SCORING:
 ${cfg.score_criteria}
-${artistContext?.avgScore ? `El promedio REAL de este artista es ${artistContext.avgScore}/100. Usá eso como ancla — no inflés ni desinflés artificialmente.` : ''}
+${artistContext?.avgScore ? `Contexto: el promedio histórico REAL de este artista es ${artistContext.avgScore}/100 — es información de referencia, NO un objetivo a igualar. Si este contenido específico es claramente mejor o peor que su promedio histórico, tu score DEBE reflejar esa diferencia con claridad, aunque se aleje mucho de ${artistContext.avgScore}.` : ''}
 
-Devolvé este JSON exacto (sin markdown):
+Devolvé este JSON exacto (sin markdown). IMPORTANTE: generá los campos en ESTE orden — razoná primero, el score va al final de tu análisis (antes de las piezas creativas), nunca al principio:
 {
-  "score": <número entero 0-100 calibrado con los datos reales>,
+  "tags": [<exactamente 3 strings: características detectadas del contenido>],
   "diagnostico_algoritmico": "<explicación de por qué el algoritmo de ${platform} empujará o frenará esto en los primeros 3 segundos>",
   "match_historico": "<qué dice la data previa del artista sobre este tipo de formato o temática — qué funcionó similar y qué no>",
   "mejora_del_gancho": "<reescritura del gancho inicial para retener el 70% de la audiencia en los primeros 3 segundos>",
   "ajuste_estrategico": "<un consejo de alto nivel para maximizar shares o comentarios>",
-  "tags": [<exactamente 3 strings: características detectadas del contenido>],
+  "score": <número entero 0-100 — decidilo RECIÉN ACÁ, como conclusión de los 4 campos de análisis anteriores, calibrado con los datos reales>,
   "hooks": [<exactamente 3 hooks virales en español basados en el contenido${learningCtx?.topHashtags?.length ? ' — incluí hashtags que históricamente funcionan para este artista' : ''}>],
   "descriptions": [<exactamente 3 captions optimizadas con emojis y hashtags${learningCtx?.topHashtags?.length ? ' — priorizá estos hashtags probados: ' + learningCtx.topHashtags.slice(0, 8).join(' ') : ''}>],
   "visualBreakdown": [
@@ -1578,7 +1583,7 @@ async function scoreVisualVirality(mediaUrl, mediaType, platform, artistId) {
     }
   }
   if (learningCtx?.historicalAvg) {
-    calibrationNote += `\nReferencia: el score real promedio de este artista es ${learningCtx.historicalAvg}/10. Usá eso como ancla.`;
+    calibrationNote += `\nContexto: el score real promedio de este artista es ${(learningCtx.historicalAvg * 10).toFixed(0)}/100 — es referencia, NO un objetivo a igualar. Si esta imagen es claramente mejor o peor que su historial, tu "overall" debe reflejarlo con claridad, aunque se aleje mucho de ese promedio.`;
   }
 
   const prompt = `Sos un experto en viralidad de contenido en ${platform || 'redes sociales'} con dominio de frameworks profesionales de marketing digital.
@@ -1589,9 +1594,10 @@ Usá el framework HOOK-RETAIN-REWARD para evaluar el potencial viral visual:
 - RETAIN: ¿La composición visual genera curiosidad por ver más?
 - REWARD: ¿Promete un payoff emocional que motive a ver el contenido completo?
 
-Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown):
+CALIBRACIÓN: Usá el rango completo 0-100 en cada dimensión — una imagen genuinamente débil va en 0-30, una excepcional en 90+. No agrupes tus respuestas alrededor de 50-70 "por las dudas", y no favorezcas números redondos por costumbre.
+
+Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown). Completá las dimensiones PRIMERO y calculá "overall" AL FINAL, como el promedio ponderado real de lo que acabás de evaluar:
 {
-  "overall": <promedio ponderado de todas las dimensiones>,
   "dimensions": {
     "hook": {"score": <0-100>, "label": "Gancho Visual (HOOK)", "detail": "<aplicando framework: ¿hay pattern interrupt? ¿qué atrapa o qué falta en los primeros 0.5 segundos?>"},
     "quality": {"score": <0-100>, "label": "Calidad Visual", "detail": "<iluminación, resolución, composición, colores, profesionalismo>"},
@@ -1603,7 +1609,8 @@ Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown):
   "content_type_3h": "<hero|hub|hygiene — clasificación según el framework 3H de YouTube>",
   "psychological_triggers": [<gatillos detectados: FOMO, SOCIAL_PROOF, CURIOSIDAD_GAP, IDENTIFICACIÓN, CONTROVERSIA, RECIPROCIDAD>],
   "verdict": "<1 frase directa: se viraliza o no, y la razón principal según frameworks de marketing>",
-  "quickFixes": [<3 mejoras concretas basadas en frameworks: HOOK más fuerte, gatillo psicológico faltante, optimización de plataforma>]
+  "quickFixes": [<3 mejoras concretas basadas en frameworks: HOOK más fuerte, gatillo psicológico faltante, optimización de plataforma>],
+  "overall": <número entero 0-100 — decidilo RECIÉN ACÁ, como promedio ponderado real de las 6 dimensiones ya evaluadas arriba, no una impresión general>
 }`;
 
   try {

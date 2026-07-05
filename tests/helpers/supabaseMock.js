@@ -10,6 +10,8 @@ function createSupabaseMock() {
     update() { return client; },
     delete() { return client; },
     eq() { return client; },
+    not() { return client; },
+    order() { return client; },
     limit() { return client; },
     single() { return client; },
     then(resolve, reject) {
