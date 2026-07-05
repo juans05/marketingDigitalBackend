@@ -927,11 +927,8 @@ IMPORTANTE: Cruzá la transcripción con el análisis visual para entender QUÉ 
 
   userContent += `\n\nTítulo del contenido: ${title || '(sin título)'}
 
-Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro). IMPORTANTE: generá los campos en ESTE orden — completá marketing_breakdown PRIMERO (es tu análisis dimensión por dimensión) y calculá viral_score AL FINAL, como el promedio ponderado real de esos sub-scores, nunca como una impresión general escrita antes de analizar:
+Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro). IMPORTANTE: generá los campos en ESTE orden — completá marketing_breakdown PRIMERO (decidí ahí el framework y los gatillos), después escribí el copy y los hashtags EJECUTANDO esa decisión, y calculá viral_score AL FINAL, como el promedio ponderado real de los sub-scores, nunca como una impresión general escrita antes de analizar:
 {
-  "ai_copy_short": "Caption corto y potente (1-2 oraciones). Usá AIDA condensado: Attention + Action. Debe frenar el scroll y provocar interacción.",
-  "ai_copy_long": "Versión extendida (3-5 oraciones). Seguí AIDA completo o PAS según el contenido. Incluí storytelling, emociones y CTA estratégico.",
-  "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 hashtags estratégicos)",
   "marketing_breakdown": {
     "hook_score": 8,
     "retention_score": 7,
@@ -951,11 +948,15 @@ Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro). IMP
     "replay_potential": "alto",
     "comment_bait_strength": "medio"
   },
+  "ai_copy_short": "Caption corto y potente (1-2 oraciones) que EJECUTA el framework_used y al menos uno de los psychological_triggers que ya decidiste arriba — no un texto genérico desconectado de esa decisión. Debe frenar el scroll y provocar interacción.",
+  "ai_copy_long": "Versión extendida (3-5 oraciones) que sigue el framework_used completo (AIDA o PAS, según lo que ya decidiste) e incorpora los psychological_triggers detectados. Incluí storytelling, emociones y CTA estratégico.",
+  "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 hashtags estratégicos, alineados con el content_type_3h que ya decidiste)",
   "viral_score": 7.5
 }
 
 REGLAS DE HASHTAGS (MUY IMPORTANTE):
 - Combiná 5-7 hashtags de nicho específico del contenido + 5-7 de comunidad/tendencia + 3-5 del artista que históricamente funcionaron.
+- Alineá la mezcla con el content_type_3h que ya decidiste: "hero" pide hashtags aspiracionales/de mayor alcance, "hub" pide hashtags de comunidad/serie, "hygiene" pide hashtags de búsqueda/tutorial.
 - NUNCA uses hashtags genéricos saturados como #viral, #fyp, #foryou, #parati, #trending, #explorepage — TikTok/Instagram los ignoran.
 - NUNCA uses hashtags baneados o suprimidos (contenido sexual/sugestivo, spam, follow4follow, etc.) — causan shadowban y matan el alcance.
 - Priorizá hashtags entre 10K-500K de volumen (nicho rentable) sobre los de millones (ruido).
