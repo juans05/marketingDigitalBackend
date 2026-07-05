@@ -34,10 +34,11 @@ const aiService = require('../../src/services/aiService');
 afterEach(() => jest.clearAllMocks());
 
 describe('analyzeContentStrategy — el prompt razona antes de pedir el score', () => {
-  test('en el schema JSON, "score" aparece después de los campos de diagnóstico', async () => {
+  test('en el schema JSON, "score" aparece después de los campos de diagnóstico (incluyendo tone_match)', async () => {
     mockCreate.mockResolvedValueOnce({
       content: [{ text: JSON.stringify({
         tags: ['a', 'b', 'c'],
+        tone_match: 'x',
         diagnostico_algoritmico: 'x',
         match_historico: 'x',
         mejora_del_gancho: 'x',
@@ -54,10 +55,24 @@ describe('analyzeContentStrategy — el prompt razona antes de pedir el score', 
     await aiService.analyzeContentStrategy('un script cualquiera', 'natural', 'tiktok', null, {});
 
     const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+    const idxToneMatch = userContent.indexOf('"tone_match"');
     const idxAjuste = userContent.indexOf('"ajuste_estrategico"');
     const idxScore = userContent.indexOf('"score"');
-    expect(idxAjuste).toBeGreaterThan(-1);
+    expect(idxToneMatch).toBeGreaterThan(-1);
+    expect(idxAjuste).toBeGreaterThan(idxToneMatch);
     expect(idxScore).toBeGreaterThan(idxAjuste);
+  });
+
+  test('el prompt le pide evaluar si el contenido ejecuta el tono declarado', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({ score: 50, tags: [], hooks: [], descriptions: [], visualBreakdown: [], audience: {}, improvements: [] }) }],
+    });
+
+    await aiService.analyzeContentStrategy('script', 'educational', 'tiktok', null, {});
+
+    const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(userContent).toMatch(/MATCH DE TONO/i);
+    expect(userContent).toContain('educational');
   });
 
   test('el system prompt no le pide anclarse al promedio histórico como objetivo', async () => {

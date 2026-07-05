@@ -1413,7 +1413,7 @@ FRAMEWORKS QUE DEBÉS APLICAR:
 - 3H (Hero/Hub/Hygiene): Clasificá el tipo de contenido y ajustá la estrategia según su categoría.
 - GATILLOS PSICOLÓGICOS: Identificá qué gatillos activa (FOMO, Social Proof, Reciprocidad, Curiosidad Gap, Identificación, Controversia Sana) y sugerí cuáles agregar.
 
-CALIBRACIÓN DE SCORE: Usá el rango completo de 0 a 100 — no default a la franja "segura" de 50-70. Un video genuinamente débil debe recibir un score bajo (0-30) sin miedo, y un video excepcional debe recibir 90+. Evitá agrupar tus respuestas alrededor del promedio; cada score debe reflejar la calidad real de ESTE contenido específico, no una estimación conservadora. No favorezcas números redondos (50, 60, 70...) por costumbre — usá la precisión que el análisis amerite (ej. 34, 72, 91). Completá SIEMPRE tu diagnóstico (diagnostico_algoritmico, match_historico, mejora_del_gancho, ajuste_estrategico) ANTES de decidir el número final — el score es la CONCLUSIÓN de ese razonamiento, no el punto de partida. Si existe un promedio histórico del artista, tratalo como referencia de contexto, nunca como un valor al que tu score deba parecerse — un contenido claramente mejor o peor que su historial debe reflejarlo con un score que se aleje de ese promedio.
+CALIBRACIÓN DE SCORE: Usá el rango completo de 0 a 100 — no default a la franja "segura" de 50-70. Un video genuinamente débil debe recibir un score bajo (0-30) sin miedo, y un video excepcional debe recibir 90+. Evitá agrupar tus respuestas alrededor del promedio; cada score debe reflejar la calidad real de ESTE contenido específico, no una estimación conservadora. No favorezcas números redondos (50, 60, 70...) por costumbre — usá la precisión que el análisis amerite (ej. 34, 72, 91). Completá SIEMPRE tu diagnóstico (tone_match, diagnostico_algoritmico, match_historico, mejora_del_gancho, ajuste_estrategico) ANTES de decidir el número final — el score es la CONCLUSIÓN de ese razonamiento, no el punto de partida. Si existe un promedio histórico del artista, tratalo como referencia de contexto, nunca como un valor al que tu score deba parecerse — un contenido claramente mejor o peor que su historial debe reflejarlo con un score que se aleje de ese promedio.
 
 REGLA CRÍTICA DE SISTEMA: Tu respuesta debe ser EXCLUSIVAMENTE un objeto JSON válido. Cero markdown, cero comillas invertidas, cero texto introductorio. Si incluís un solo carácter fuera del JSON, el pipeline fallará.`,
     score_criteria: aiConfig.score_criteria || `- 0-20 (Descarte): Idea genérica, aburrida o predecible. Cero potencial de retención. El usuario hará scroll en el primer segundo.
@@ -1504,6 +1504,8 @@ Plataforma: ${platform}
 ${artistContext ? `Artista: ${artistContext.nombre || 'desconocido'}, tono preferido: ${artistContext.tono || 'natural'}` : ''}
 ${historyBlock}${learningBlock}
 
+MATCH DE TONO (esto afecta el score, no es solo contexto): Evaluá si el contenido REALMENTE ejecuta el tono declarado ("${tone}"), o si hay un desajuste entre lo que se pidió y lo que el contenido transmite. Una ejecución fiel y efectiva del tono elegido debe sumar al score; un desajuste claro (ej. se pidió "educational" pero el contenido no enseña nada, o se pidió "fun" pero resulta soso) debe restarle puntos — un contenido que no cumple el tono que se propuso conecta peor con su audiencia objetivo, sin importar qué tan pulido esté en otros aspectos.
+
 INSTRUCCIONES DE SCORING:
 ${cfg.score_criteria}
 ${artistContext?.avgScore ? `Contexto: el promedio histórico REAL de este artista es ${artistContext.avgScore}/100 — es información de referencia, NO un objetivo a igualar. Si este contenido específico es claramente mejor o peor que su promedio histórico, tu score DEBE reflejar esa diferencia con claridad, aunque se aleje mucho de ${artistContext.avgScore}.` : ''}
@@ -1511,11 +1513,12 @@ ${artistContext?.avgScore ? `Contexto: el promedio histórico REAL de este artis
 Devolvé este JSON exacto (sin markdown). IMPORTANTE: generá los campos en ESTE orden — razoná primero, el score va al final de tu análisis (antes de las piezas creativas), nunca al principio:
 {
   "tags": [<exactamente 3 strings: características detectadas del contenido>],
+  "tone_match": "<¿el contenido ejecuta de verdad el tono '${tone}' declarado, o hay desajuste? Sé específico: si hay desajuste, decí cuál es>",
   "diagnostico_algoritmico": "<explicación de por qué el algoritmo de ${platform} empujará o frenará esto en los primeros 3 segundos>",
   "match_historico": "<qué dice la data previa del artista sobre este tipo de formato o temática — qué funcionó similar y qué no>",
   "mejora_del_gancho": "<reescritura del gancho inicial para retener el 70% de la audiencia en los primeros 3 segundos>",
   "ajuste_estrategico": "<un consejo de alto nivel para maximizar shares o comentarios>",
-  "score": <número entero 0-100 — decidilo RECIÉN ACÁ, como conclusión de los 4 campos de análisis anteriores, calibrado con los datos reales>,
+  "score": <número entero 0-100 — decidilo RECIÉN ACÁ, como conclusión de los 5 campos de análisis anteriores (incluyendo tone_match), calibrado con los datos reales>,
   "hooks": [<exactamente 3 hooks virales en español basados en el contenido${learningCtx?.topHashtags?.length ? ' — incluí hashtags que históricamente funcionan para este artista' : ''}>],
   "descriptions": [<exactamente 3 captions optimizadas con emojis y hashtags${learningCtx?.topHashtags?.length ? ' — priorizá estos hashtags probados: ' + learningCtx.topHashtags.slice(0, 8).join(' ') : ''}>],
   "visualBreakdown": [
