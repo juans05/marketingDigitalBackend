@@ -1659,4 +1659,5 @@ module.exports = {
   scoreVisualVirality,
   calibrateScore,
   calibrateScore100,
+  fetchArtistLearningContext,
 };
