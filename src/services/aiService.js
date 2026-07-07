@@ -682,8 +682,10 @@ async function uploadVideoToGemini(buffer, mimeType) {
   }
 }
 
-async function buildVideoContentParts(mediaUrl, title) {
+async function buildVideoContentParts(mediaUrl, title, promptOverride = null) {
   const INLINE_LIMIT = 18 * 1024 * 1024;
+  const fullVideoPrompt = promptOverride || VISUAL_ANALYSIS_PROMPT(title, true);
+  const framesPrompt = promptOverride || VISUAL_ANALYSIS_PROMPT(title, false);
 
   try {
     const response = await axios.get(mediaUrl, {
@@ -701,7 +703,7 @@ async function buildVideoContentParts(mediaUrl, title) {
       return {
         parts: [
           { inlineData: { data: buffer.toString('base64'), mimeType: videoMime } },
-          VISUAL_ANALYSIS_PROMPT(title, true),
+          fullVideoPrompt,
         ],
         mode: 'full_video',
       };
@@ -713,7 +715,7 @@ async function buildVideoContentParts(mediaUrl, title) {
     return {
       parts: [
         { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
-        VISUAL_ANALYSIS_PROMPT(title, true),
+        fullVideoPrompt,
       ],
       mode: 'full_video_fileapi',
     };
@@ -737,7 +739,7 @@ async function buildVideoContentParts(mediaUrl, title) {
     ? `\n\nEstás viendo ${validFrames.length} frames del video: inicio (0s), gancho (3s) y frame representativo. Analizá el video como un todo.`
     : '';
   return {
-    parts: [...validFrames, VISUAL_ANALYSIS_PROMPT(title, false) + extra],
+    parts: [...validFrames, framesPrompt + extra],
     mode: 'frames',
   };
 }
@@ -790,6 +792,64 @@ async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
     mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl
   );
   return analyzeWithClaudeVision(base64, mimeType, title);
+}
+
+const SEGMENT_DETECTION_PROMPT = (title) => `Sos un editor experto en encontrar los mejores momentos de videos largos (podcasts, entrevistas, streams) para convertirlos en clips cortos virales.
+
+Mirá y escuchá el video completo${title ? ` titulado "${title}"` : ''} y encontrá entre 3 y 8 capítulos/momentos que funcionen como clips independientes de 15 a 90 segundos cada uno.
+
+Para cada capítulo, evaluá:
+- ¿Tiene un gancho fuerte en los primeros segundos?
+- ¿Es una idea completa y autocontenida (no depende de contexto previo)?
+- ¿Tiene potencial de generar reacción, curiosidad o identificación?
+
+Devolvé SOLO este JSON (sin markdown, sin explicaciones):
+{
+  "segments": [
+    {
+      "start": <segundos, número entero>,
+      "end": <segundos, número entero, entre 15 y 90 segundos después de start>,
+      "title": "<título corto del momento, máx 60 caracteres>",
+      "reason": "<1-2 oraciones explicando por qué este momento funciona como clip, qué gancho tiene y qué lo hace autocontenido>"
+    }
+  ]
+}
+
+Ordená los segmentos por potencial viral, de mayor a menor. No inventes momentos que no aparecen en el video — basate solo en lo que realmente ves y escuchás.
+Respondé SOLO con el JSON, sin texto adicional.`;
+
+async function detectSegments(mediaUrl, title = '') {
+  const built = await buildVideoContentParts(mediaUrl, title, SEGMENT_DETECTION_PROMPT(title));
+  const contentParts = built.parts;
+  const timeout = built.mode.startsWith('full_video') ? 90000 : 45000;
+
+  const parse = (raw) => {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Gemini no devolvió JSON en detectSegments');
+    const parsed = JSON.parse(jsonMatch[0]);
+    const rawSegments = Array.isArray(parsed.segments) ? parsed.segments : [];
+    return rawSegments
+      .filter(s => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start)
+      .map(s => ({
+        start: Math.max(0, Math.round(s.start)),
+        end: Math.round(s.end),
+        title: (s.title || '').slice(0, 60) || 'Clip sin título',
+        reason: s.reason || '',
+      }));
+  };
+
+  try {
+    const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await withTimeout(model.generateContent(contentParts), timeout, 'Gemini Segment Detection');
+    logDebug(`✅ [Gemini 2.5] Detección de capítulos completada (modo: ${built.mode})`);
+    return parse(result.response.text());
+  } catch (error) {
+    if (!isGeminiUnavailable(error) && !error.message?.includes('Timeout')) throw error;
+    logDebug(`⚠️ Gemini 2.5 Flash no disponible en detectSegments (${error.message}). Probando gemini-2.0-flash...`);
+    const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const fallbackResult = await withTimeout(fallbackModel.generateContent(contentParts), timeout, 'Gemini Segment Detection (fallback)');
+    return parse(fallbackResult.response.text());
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1671,4 +1731,5 @@ module.exports = {
   calibrateScore,
   calibrateScore100,
   fetchArtistLearningContext,
+  detectSegments,
 };
