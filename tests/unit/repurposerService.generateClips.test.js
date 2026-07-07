@@ -5,6 +5,15 @@ const { createSupabaseMock } = require('../helpers/supabaseMock');
 const mock = createSupabaseMock();
 jest.mock('@supabase/supabase-js', () => ({ createClient: () => mock.client }));
 
+// Local spy (this file only) on the shared mock's `update` method so we can
+// assert the actual { status, error_log } payload written to the parent
+// video, since the shared FIFO queue itself only replays canned results and
+// never records call arguments. Created once at module scope; afterEach's
+// jest.clearAllMocks() resets its call history between tests while the
+// pass-through spy (it still calls the real chainable implementation)
+// remains installed.
+const updateSpy = jest.spyOn(mock.client, 'update');
+
 jest.mock('../../src/services/aiService', () => ({
   detectSegments: jest.fn(),
   generateCopyWithClaude: jest.fn(),
@@ -47,6 +56,15 @@ describe('generateClips', () => {
       { nombre: 'Juan', genero: 'tech', audiencia: null, tono: null },
       null,
     ]);
+    expect(aiService.generateCopyWithClaude.mock.calls[1]).toEqual([
+      'Anécdota completa', null, 'Momento 2', ['tiktok'],
+      { nombre: 'Juan', genero: 'tech', audiencia: null, tono: null },
+      null,
+    ]);
+
+    // Final parent status must reflect that both clips were created.
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy.mock.calls[0][0]).toEqual({ status: 'ready', error_log: null });
   });
 
   test('si un segmento falla al puntuar, se omite y se sigue con los demás', async () => {
@@ -71,6 +89,27 @@ describe('generateClips', () => {
     mock.queueResult({ error: null }); // update parent status ready
 
     await expect(generateClips('parent-1')).resolves.toBeUndefined();
+
+    // Crux of per-segment isolation: the loop must not stop after the first
+    // segment's rejection — it should still attempt to score the second one.
+    expect(aiService.generateCopyWithClaude).toHaveBeenCalledTimes(2);
+    // artist.active_platforms is [] (empty, falsy for `.length` fallback),
+    // so generateClips falls back to the default platform list.
+    expect(aiService.generateCopyWithClaude.mock.calls[0]).toEqual([
+      'x', null, 'Falla', ['tiktok', 'instagram', 'youtube'],
+      null,
+      null,
+    ]);
+    expect(aiService.generateCopyWithClaude.mock.calls[1]).toEqual([
+      'y', null, 'OK', ['tiktok', 'instagram', 'youtube'],
+      null,
+      null,
+    ]);
+
+    // Because one of the two segments still succeeded, the parent must end
+    // up 'ready' (not 'failed') despite the earlier rejection.
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy.mock.calls[0][0]).toEqual({ status: 'ready', error_log: null });
   });
 
   test('si detectSegments no encuentra ningún capítulo, marca el video como failed', async () => {
@@ -87,5 +126,12 @@ describe('generateClips', () => {
 
     await expect(generateClips('parent-1')).resolves.toBeUndefined();
     expect(aiService.generateCopyWithClaude).not.toHaveBeenCalled();
+
+    // Empty segments must short-circuit straight to a 'failed' parent status.
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy.mock.calls[0][0]).toEqual({
+      status: 'failed',
+      error_log: JSON.stringify({ step: 'detectSegments', message: 'No se detectaron capítulos en el video' }),
+    });
   });
 });
