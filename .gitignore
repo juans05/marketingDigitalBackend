@@ -21,3 +21,6 @@ migration_coupons_system.sql
 # never belongs in version control.
 debug_ai.log
 logs/
+
+# Local git worktrees (superpowers:using-git-worktrees)
+.worktrees/
