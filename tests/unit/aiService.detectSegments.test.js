@@ -26,6 +26,7 @@ jest.mock('axios', () => ({
   }),
 }));
 
+const axios = require('axios');
 const aiService = require('../../src/services/aiService');
 
 afterEach(() => jest.clearAllMocks());
@@ -76,5 +77,29 @@ describe('detectSegments', () => {
     await expect(
       aiService.detectSegments('https://res.cloudinary.com/demo/video/upload/v1/podcast.mp4', 'Mi Podcast')
     ).rejects.toThrow('no devolvió JSON');
+  });
+
+  test('lanza error si buildVideoContentParts cae al fallback de frames (sin timestamps fundamentados)', async () => {
+    const videoUrl = 'https://res.cloudinary.com/demo/video/upload/v1/podcast.mp4';
+
+    // La descarga del video completo falla -> buildVideoContentParts cae al
+    // fallback de 3 frames estáticos. Las URLs de esos frames (transformadas por
+    // extractVideoThumbnails con f_jpg,so_0/so_3/so_auto) sí resuelven como imágenes,
+    // para reproducir exactamente el modo 'frames'.
+    axios.get.mockImplementation((url) => {
+      if (url === videoUrl) {
+        return Promise.reject(new Error('download failed'));
+      }
+      return Promise.resolve({
+        data: Buffer.from('fake-frame-bytes'),
+        headers: { 'content-type': 'image/jpeg' },
+      });
+    });
+
+    await expect(
+      aiService.detectSegments(videoUrl, 'Mi Podcast')
+    ).rejects.toThrow('fallback a frames no soporta timestamps');
+
+    expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 });

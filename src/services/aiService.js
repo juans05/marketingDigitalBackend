@@ -820,6 +820,15 @@ Respondé SOLO con el JSON, sin texto adicional.`;
 
 async function detectSegments(mediaUrl, title = '') {
   const built = await buildVideoContentParts(mediaUrl, title, SEGMENT_DETECTION_PROMPT(title));
+
+  // La detección de capítulos depende de que Gemini vea/escuche la línea de tiempo
+  // completa. Si buildVideoContentParts no pudo descargar/subir el video y cayó al
+  // fallback de 3 frames estáticos, no hay forma de fundamentar start/end reales:
+  // el modelo alucinaría timestamps que pasarían los filtros pero serían inventados.
+  if (built.mode === 'frames') {
+    throw new Error('No se pudo descargar el video para detectar capítulos (fallback a frames no soporta timestamps)');
+  }
+
   const contentParts = built.parts;
   const timeout = built.mode.startsWith('full_video') ? 90000 : 45000;
 
@@ -832,10 +841,13 @@ async function detectSegments(mediaUrl, title = '') {
       .filter(s => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start)
       .map(s => ({
         start: Math.max(0, Math.round(s.start)),
-        end: Math.round(s.end),
+        end: Math.max(0, Math.round(s.end)),
         title: (s.title || '').slice(0, 60) || 'Clip sin título',
         reason: s.reason || '',
-      }));
+      }))
+      // Re-check tras el clamp: si el clamp de start/end hizo que end <= start
+      // (ej. ambos negativos redondeados a 0), descartamos el segmento.
+      .filter(s => s.end > s.start);
   };
 
   try {
