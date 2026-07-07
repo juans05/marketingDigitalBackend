@@ -11,8 +11,10 @@ function createSupabaseMock() {
     delete() { return client; },
     eq() { return client; },
     not() { return client; },
+    is() { return client; },
     order() { return client; },
     limit() { return client; },
+    range() { return client; },
     single() { return client; },
     then(resolve, reject) {
       const result = queue.length ? queue.shift() : { data: null, error: null };
