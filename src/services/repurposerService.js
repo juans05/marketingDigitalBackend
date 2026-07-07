@@ -107,4 +107,43 @@ async function generateClips(parentVideoId) {
   }).eq('id', parentVideoId);
 }
 
-module.exports = { buildClipUrl, generateClips };
+const MAX_DURATION_SECONDS = 7200; // 2 horas
+
+async function createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds }) {
+  if (!artistId || !sourceUrl) {
+    throw new Error('artistId y sourceUrl son requeridos');
+  }
+  if (durationSeconds && durationSeconds > MAX_DURATION_SECONDS) {
+    throw new Error(`El video dura más de 2 horas (${Math.round(durationSeconds / 60)} min) — no soportado todavía`);
+  }
+
+  const { data: artist, error: artistErr } = await supabase
+    .from('artists')
+    .select('id')
+    .eq('id', artistId)
+    .single();
+  if (artistErr || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
+
+  const cleanSourceUrl = sourceUrl.replace(/\s+/g, '');
+
+  const { data, error } = await supabase
+    .from('videos')
+    .insert([{
+      artist_id: artistId,
+      title: title || 'Video sin título',
+      source_url: cleanSourceUrl,
+      status: 'processing',
+    }])
+    .select();
+  if (error) throw error;
+
+  const video = data[0];
+
+  module.exports.generateClips(video.id).catch(err => {
+    console.error(`❌ [Repurposer] Error generando clips para ${video.id}:`, err.message);
+  });
+
+  return video;
+}
+
+module.exports = { buildClipUrl, generateClips, createRepurposeVideo, MAX_DURATION_SECONDS };

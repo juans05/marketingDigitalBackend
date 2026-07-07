@@ -282,6 +282,17 @@ exports.processVideo = async (req, res) => {
   }
 };
 
+exports.createRepurposeVideo = async (req, res) => {
+  try {
+    const { artistId, sourceUrl, title, durationSeconds } = req.body;
+    const repurposerService = require('../services/repurposerService');
+    const video = await repurposerService.createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds });
+    res.status(201).json(video);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
 exports.getGallery = async (req, res) => {
   try {
     const { artistId } = req.params;

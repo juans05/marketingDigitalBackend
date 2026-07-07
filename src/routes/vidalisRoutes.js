@@ -42,6 +42,7 @@ router.post('/complete-tour', authenticateToken, vidalisController.completeTour)
 // ── Videos ────────────────────────────────────────────────────────────────────
 router.post('/upload', authenticateToken, vidalisController.processVideo);
 router.post('/videos/from-url', authenticateToken, vidalisController.uploadFromUrl);
+router.post('/repurpose/upload', authenticateToken, authorizeArtist, vidalisController.createRepurposeVideo);
 router.get('/gallery/:artistId', authenticateToken, authorizeArtist, vidalisController.getGallery);
 
 // authorizeVideo verifica que el video pertenezca al agency del token
