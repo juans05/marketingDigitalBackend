@@ -293,6 +293,17 @@ exports.createRepurposeVideo = async (req, res) => {
   }
 };
 
+exports.createRepurposePresign = async (req, res) => {
+  try {
+    const { artistId, filename, contentType } = req.body;
+    const { generatePresignedUploadUrl } = require('../lib/r2');
+    const result = await generatePresignedUploadUrl({ artistId, filename, contentType });
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
 exports.getGallery = async (req, res) => {
   try {
     const { artistId } = req.params;
