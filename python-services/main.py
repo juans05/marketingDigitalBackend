@@ -237,6 +237,13 @@ def cleanup_files(paths: List[str]):
 
 # ── Endpoints Unificados ───────────────────────────────────────────────────────
 
+@app.get("/")
+def root():
+    # Railway healthchecks "/" por defecto si no se configura healthcheckPath
+    # explícitamente para este servicio. Sin esta ruta, FastAPI devuelve 404
+    # y el deploy se marca como fallido aunque la app arrancó bien.
+    return {"status": "ok", "service": "vidalis-python-services"}
+
 @app.get("/health")
 def health():
     return {
