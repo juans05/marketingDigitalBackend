@@ -11,6 +11,8 @@ import re
 import asyncio
 import subprocess
 import shutil
+import socket
+import ipaddress
 import requests
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
@@ -177,18 +179,37 @@ class CutRequest(BaseModel):
     segments: List[Segment]
     artist_id: str
 
+class ProbeRequest(BaseModel):
+    source_url: str
+
 
 def validate_source_url(source_url):
-    """Bloquea SSRF / lectura de archivos: solo http(s) y, si R2_PUBLIC_URL está
-    configurado, solo el host de R2 (los fuentes siempre son URLs que nosotros
-    producimos en R2)."""
+    """Bloquea SSRF / lectura de archivos. Fail-closed: solo http(s), solo el
+    host de R2 (los fuentes siempre son URLs que nosotros producimos en R2), y
+    rechaza hosts que resuelvan a IPs internas (defensa contra DNS rebinding)."""
     parsed = urlparse(source_url or "")
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="source_url debe ser http(s)")
     allowed_host = urlparse(os.getenv("R2_PUBLIC_URL", "")).hostname
-    if allowed_host and parsed.hostname != allowed_host:
+    if not allowed_host:
+        raise HTTPException(status_code=500, detail="R2_PUBLIC_URL no configurado")
+    host = (parsed.hostname or "").rstrip(".").lower()
+    if host != allowed_host.rstrip(".").lower():
         raise HTTPException(status_code=400, detail="source_url no proviene de un origen permitido")
+    for info in socket.getaddrinfo(host, None):
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise HTTPException(status_code=400, detail="source_url resuelve a una IP no permitida")
     return source_url
+
+
+def build_ffprobe_duration_command(source_url):
+    return [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        source_url,
+    ]
 
 
 def build_ffmpeg_cut_command(source_url, start, end, output_path):
@@ -342,6 +363,18 @@ async def scrape_all_platforms(req: MultiScrapeRequest):
 
 
 # ── Endpoints: Clipper de Video ────────────────────────────────────────────────
+
+@app.post("/probe")
+def probe_video(payload: ProbeRequest):
+    validate_source_url(payload.source_url)
+    try:
+        out = subprocess.run(
+            build_ffprobe_duration_command(payload.source_url),
+            check=True, capture_output=True, text=True,
+        )
+        return {"duration_seconds": float(out.stdout.strip())}
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"No se pudo leer la duración: {str(e)}")
 
 @app.post("/cut")
 def cut_video(payload: CutRequest, background_tasks: BackgroundTasks):

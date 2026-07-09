@@ -20,6 +20,9 @@ test('llama a /cut con source_url (la URL de R2), no con video_id', async () => 
   mock.queueResult({ data: { id: 'a1', name: 'J', ai_genre: null, ai_audience: null, ai_tone: null, active_platforms: ['tiktok'] }, error: null }); // artist
   mock.queueResult({ error: null }); // delete hijos
   mock.queueResult({ error: null }); // update final
+  axios.post
+    .mockResolvedValueOnce({ data: { duration_seconds: 120 } }) // /probe
+    .mockResolvedValueOnce({ data: { clips: [] } });            // /cut
 
   await generateClips('p1');
 
@@ -28,4 +31,18 @@ test('llama a /cut con source_url (la URL de R2), no con video_id', async () => 
     segments: [{ start: 1, end: 5, title: 'A' }],
     artist_id: 'a1',
   });
+});
+
+test('rechaza el video (failed) si /probe reporta más de 2 horas, sin llamar a Gemini', async () => {
+  const aiService = require('../../src/services/aiService');
+  mock.queueResult({ data: { id: 'p1', artist_id: 'a1', title: 'T', source_url: 'https://cdn/x.mp4', platforms: ['tiktok'] }, error: null }); // parent
+  mock.queueResult({ data: { id: 'a1', name: 'J', ai_genre: null, ai_audience: null, ai_tone: null, active_platforms: ['tiktok'] }, error: null }); // artist
+  mock.queueResult({ error: null }); // delete hijos
+  axios.post.mockResolvedValueOnce({ data: { duration_seconds: 8000 } }); // /probe
+  mock.queueResult({ error: null }); // update failed
+
+  await generateClips('p1');
+
+  expect(axios.post).toHaveBeenCalledWith('http://python:8080/probe', { source_url: 'https://cdn/x.mp4' });
+  expect(aiService.detectSegments).not.toHaveBeenCalled();
 });

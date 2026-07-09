@@ -56,6 +56,24 @@ async function generateClips(parentVideoId) {
   // no duplicar en la galería.
   await supabase.from('videos').delete().eq('parent_video_id', parentVideoId);
 
+  // Guard de duración: probar ≤2h antes de gastar Gemini (solo en modo Python).
+  const probeUrl = process.env.CLIPPER_SERVICE_URL;
+  if (probeUrl) {
+    try {
+      const probe = await axios.post(`${probeUrl.replace(/\/+$/, '')}/probe`, { source_url: parent.source_url });
+      const dur = probe.data?.duration_seconds;
+      if (dur && dur > 7200) {
+        await supabase.from('videos').update({
+          status: 'failed',
+          error_log: JSON.stringify({ step: 'probe', message: `El video dura más de 2 horas (${Math.round(dur / 60)} min)` }),
+        }).eq('id', parentVideoId);
+        return;
+      }
+    } catch (err) {
+      console.error(`⚠️ [Repurposer] /probe falló para ${parentVideoId}, se continúa:`, err.message);
+    }
+  }
+
   let segments;
   try {
     segments = await aiService.detectSegments(parent.source_url, parent.title);
