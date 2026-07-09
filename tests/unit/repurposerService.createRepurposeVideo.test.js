@@ -56,4 +56,20 @@ describe('createRepurposeVideo', () => {
       sourceUrl: 'file:///etc/passwd',
     })).rejects.toThrow();
   });
+
+  test('si el insert de Supabase falla con mensaje vacío, no propaga un error vacío al cliente', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mock.queueResult({ data: { id: 'artist-1' }, error: null }); // select artist
+    mock.queueResult({ data: null, error: { message: '', details: '', hint: '', code: '42501' } }); // insert falla (ej. RLS)
+
+    const err = await repurposerService.createRepurposeVideo({
+      artistId: 'artist-1',
+      sourceUrl: 'https://cdn.example.com/repurposer/sources/artist-1/x.mp4',
+    }).catch(e => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).not.toBe('');
+    expect(errorSpy).toHaveBeenCalled(); // el detalle completo debe quedar logueado server-side
+    errorSpy.mockRestore();
+  });
 });

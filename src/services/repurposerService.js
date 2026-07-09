@@ -259,7 +259,10 @@ async function createRepurposeVideo({ artistId, sourceUrl, title, durationSecond
       status: 'queued',
     }])
     .select();
-  if (error) throw error;
+  if (error) {
+    console.error('❌ [Repurposer] Error insertando video en Supabase:', JSON.stringify(error));
+    throw new Error(error.message || error.details || error.hint || 'Error guardando el video en la base de datos');
+  }
 
   const video = data[0];
 
