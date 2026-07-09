@@ -758,6 +758,7 @@ exports.fetchArtistGallery = async (artistId, options = {}) => {
     .from('videos')
     .select('*')
     .eq('artist_id', artistId)
+    .is('parent_video_id', null)
     .order('created_at', { ascending: false })
     .range(from, to);
 
@@ -1553,7 +1554,9 @@ exports.getClipsByParent = async (parentId) => {
     .eq('parent_video_id', parentId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return data;
+
+  const sorted = [...data].sort((a, b) => (b.viral_score_real || 0) - (a.viral_score_real || 0));
+  return sorted.map((clip, index) => ({ ...clip, isBest: index === 0 }));
 };
 // --- ELIMINAR ARTISTA Y SUS VIDEOS ---
 exports.deleteArtist = async (artistId) => {

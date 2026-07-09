@@ -282,6 +282,29 @@ exports.processVideo = async (req, res) => {
   }
 };
 
+exports.createRepurposeVideo = async (req, res) => {
+  try {
+    const { artistId, sourceUrl, title, durationSeconds } = req.body;
+    const repurposerService = require('../services/repurposerService');
+    const video = await repurposerService.createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds });
+    res.status(201).json(video);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+exports.createRepurposePresign = async (req, res) => {
+  try {
+    const { artistId, filename, contentType } = req.body;
+    const { generatePresignedUploadUrl } = require('../lib/r2');
+    const result = await generatePresignedUploadUrl({ artistId, filename, contentType });
+    console.log(`🔑 [Repurposer] URL prefirmada emitida para artista ${artistId} (${result.key})`);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
 exports.getGallery = async (req, res) => {
   try {
     const { artistId } = req.params;
@@ -415,7 +438,7 @@ exports.getVideoById = async (req, res) => {
     );
     const { data, error } = await supabase
       .from('videos')
-      .select('id, artist_id, title, status, viral_score, viral_score_real, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at, thumbnail_url')
+      .select('id, artist_id, title, status, viral_score, viral_score_real, ai_copy_short, ai_copy_long, hashtags, platforms, post_type, ayrshare_post_id, scheduled_for, published_at, analytics_4h, source_url, processed_url, error_log, created_at, thumbnail_url, ai_clips_data')
       .eq('id', videoId)
       .single();
     console.log(error);

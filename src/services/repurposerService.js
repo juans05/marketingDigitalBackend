@@ -1,0 +1,273 @@
+const { createClient } = require('@supabase/supabase-js');
+const aiService = require('./aiService');
+const axios = require('axios');
+const { setStage, STAGES } = require('./repurposeProgress');
+
+const supabase = createClient(
+  process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder'
+);
+
+function buildClipUrl(sourceUrl, startSeconds, endSeconds) {
+  if (!sourceUrl || !sourceUrl.includes('cloudinary.com') || !sourceUrl.includes('/upload/')) {
+    throw new Error(`buildClipUrl: la URL no es de Cloudinary: ${sourceUrl}`);
+  }
+
+  const cleanUrl = sourceUrl.replace(/\s+/g, '').split('?')[0];
+  const regex = /^(https:\/\/res\.cloudinary\.com\/[^\/]+\/(?:video|image)\/upload\/)(?:[^\/]+\/)*(v\d+\/.*)$/;
+  const match = cleanUrl.match(regex);
+
+  if (!match) {
+    throw new Error(`buildClipUrl: la URL de Cloudinary no estándar: ${cleanUrl}`);
+  }
+
+  const baseUrl = match[1];
+  const publicId = match[2];
+  const trans = `so_${startSeconds},eo_${endSeconds}`;
+  return `${baseUrl}${trans}/${publicId}`;
+}
+
+async function generateClips(parentVideoId) {
+  const { data: parent, error: parentErr } = await supabase
+    .from('videos')
+    .select('id, artist_id, title, source_url, platforms')
+    .eq('id', parentVideoId)
+    .single();
+  if (parentErr || !parent) throw new Error(`Video padre no encontrado: ${parentVideoId}`);
+  console.log(`🚀 [Repurposer] Iniciando generateClips para ${parentVideoId} ("${parent.title}")`);
+
+  const { data: artist } = await supabase
+    .from('artists')
+    .select('id, name, ai_genre, ai_audience, ai_tone, active_platforms')
+    .eq('id', parent.artist_id)
+    .single();
+
+  const artistContext = artist && (artist.ai_genre || artist.ai_audience || artist.ai_tone) ? {
+    nombre: artist.name,
+    genero: artist.ai_genre || null,
+    audiencia: artist.ai_audience || null,
+    tono: artist.ai_tone || null,
+  } : null;
+
+  const targetPlatforms = parent.platforms?.length ? parent.platforms
+    : (artist?.active_platforms?.length ? artist.active_platforms : ['tiktok', 'instagram', 'youtube']);
+
+  const learningContext = await aiService.fetchArtistLearningContext(parent.artist_id);
+
+  // Idempotencia: si el job se re-entrega, borra los clips hijos previos para
+  // no duplicar en la galería.
+  await supabase.from('videos').delete().eq('parent_video_id', parentVideoId);
+
+  // Guard de duración: probar ≤2h antes de gastar Gemini (solo en modo Python).
+  const probeUrl = process.env.CLIPPER_SERVICE_URL;
+  if (probeUrl) {
+    await setStage(parentVideoId, STAGES.PROBING);
+    try {
+      const probe = await axios.post(`${probeUrl.replace(/\/+$/, '')}/probe`, { source_url: parent.source_url });
+      console.log(`⏱️ [Repurposer] ${parentVideoId}: duración ${probe.data?.duration_seconds}s`);
+      const dur = probe.data?.duration_seconds;
+      if (dur && dur > 7200) {
+        await supabase.from('videos').update({
+          status: 'failed',
+          error_log: JSON.stringify({ step: 'probe', message: `El video dura más de 2 horas (${Math.round(dur / 60)} min)` }),
+        }).eq('id', parentVideoId);
+        return;
+      }
+    } catch (err) {
+      console.error(`⚠️ [Repurposer] /probe falló para ${parentVideoId}, se continúa:`, err.message);
+    }
+  }
+
+  await setStage(parentVideoId, STAGES.DETECTING);
+  console.log(`🧠 [Repurposer] ${parentVideoId}: detectando capítulos con Gemini...`);
+  let segments;
+  try {
+    segments = await aiService.detectSegments(parent.source_url, parent.title);
+  } catch (err) {
+    await supabase.from('videos').update({
+      status: 'failed',
+      error_log: JSON.stringify({ step: 'detectSegments', message: err.message }),
+    }).eq('id', parentVideoId);
+    return;
+  }
+
+  if (!segments.length) {
+    await supabase.from('videos').update({
+      status: 'failed',
+      error_log: JSON.stringify({ step: 'detectSegments', message: 'No se detectaron capítulos en el video' }),
+    }).eq('id', parentVideoId);
+    return;
+  }
+
+  console.log(`🎬 [Repurposer] ${parentVideoId}: ${segments.length} capítulos detectados`);
+  let clipsCreated = 0;
+  const clipperUrl = process.env.CLIPPER_SERVICE_URL;
+
+  if (clipperUrl) {
+    // Modo Python: Llamar al clipper-service
+    try {
+      await setStage(parentVideoId, STAGES.CUTTING);
+      console.log(`✂️ [Repurposer] ${parentVideoId}: cortando ${segments.length} clips con ffmpeg...`);
+      const response = await axios.post(`${clipperUrl.replace(/\/+$/, '')}/cut`, {
+        source_url: parent.source_url,
+        segments: segments.map(s => ({ start: s.start, end: s.end, title: s.title })),
+        artist_id: parent.artist_id,
+      });
+
+      const pythonClips = response.data.clips || [];
+      await setStage(parentVideoId, STAGES.SCORING);
+      console.log(`⭐ [Repurposer] ${parentVideoId}: ${pythonClips.length} clips cortados, puntuando con Claude...`);
+
+      for (const pyClip of pythonClips) {
+        if (pyClip.status === 'failed') {
+          console.error(`⚠️ [Repurposer] Segmento omitido por fallo en python: ${pyClip.error}`);
+          continue;
+        }
+
+        try {
+          const correspondingSegment = segments.find(s => s.title === pyClip.title);
+          const reason = correspondingSegment ? correspondingSegment.reason : '';
+
+          const copy = await aiService.generateCopyWithClaude(
+            reason, null, pyClip.title, targetPlatforms, artistContext, learningContext
+          );
+
+          const { error: insertErr } = await supabase.from('videos').insert([{
+            parent_video_id: parentVideoId,
+            artist_id: parent.artist_id,
+            title: pyClip.title,
+            source_url: pyClip.secure_url,
+            status: 'ready',
+            viral_score_real: copy.viral_score,
+            ai_clips_data: {
+              start: pyClip.start,
+              end: pyClip.end,
+              reason: reason,
+              ai_copy_short: copy.ai_copy_short,
+              ai_copy_long: copy.ai_copy_long,
+              hashtags: copy.hashtags,
+            },
+          }]);
+
+          if (insertErr) throw insertErr;
+          clipsCreated++;
+        } catch (err) {
+          console.error(`⚠️ [Repurposer] Error guardando segmento (${pyClip.title}):`, err.message);
+        }
+      }
+    } catch (err) {
+      console.error(`❌ [Repurposer] Error llamando al clipper-service:`, err.message);
+      await supabase.from('videos').update({
+        status: 'failed',
+        error_log: JSON.stringify({ step: 'clipperService', message: err.message }),
+      }).eq('id', parentVideoId);
+      return;
+    }
+  } else {
+    // Fallback: Modo original de Cloudinary dinámico por URL (útil para tests locales)
+    for (const segment of segments) {
+      try {
+        const clipUrl = buildClipUrl(parent.source_url, segment.start, segment.end);
+        const copy = await aiService.generateCopyWithClaude(
+          segment.reason, null, segment.title, targetPlatforms, artistContext, learningContext
+        );
+
+        const { error: insertErr } = await supabase.from('videos').insert([{
+          parent_video_id: parentVideoId,
+          artist_id: parent.artist_id,
+          title: segment.title,
+          source_url: clipUrl,
+          status: 'ready',
+          viral_score_real: copy.viral_score,
+          ai_clips_data: {
+            start: segment.start,
+            end: segment.end,
+            reason: segment.reason,
+            ai_copy_short: copy.ai_copy_short,
+            ai_copy_long: copy.ai_copy_long,
+            hashtags: copy.hashtags,
+          },
+        }]);
+        if (insertErr) throw insertErr;
+        clipsCreated++;
+      } catch (err) {
+        console.error(`⚠️ [Repurposer] Segmento omitido (${segment.title}):`, err.message);
+      }
+    }
+  }
+
+  const finalStatus = clipsCreated > 0 ? 'ready' : 'failed';
+  console.log(`✅ [Repurposer] ${parentVideoId}: terminado con ${clipsCreated} clips (status: ${finalStatus})`);
+  await supabase.from('videos').update({
+    status: finalStatus,
+    error_log: clipsCreated > 0 ? null : JSON.stringify({ step: 'generateClips', message: 'Ningún clip se generó correctamente' }),
+  }).eq('id', parentVideoId);
+}
+
+const MAX_DURATION_SECONDS = 7200; // 2 horas
+
+// Anti-SSRF: sourceUrl lo manda el cliente y luego lo leen server-side tanto
+// Gemini (buildVideoContentParts hace axios.get(mediaUrl)) como ffmpeg en el
+// media service. Sin este check, un cliente podría apuntar a un host interno
+// (ej. IP de metadata de la nube) y el backend lo iría a buscar por él.
+function validateSourceUrl(sourceUrl) {
+  let allowedHost;
+  try {
+    allowedHost = new URL(process.env.R2_PUBLIC_URL).hostname;
+  } catch {
+    throw new Error('R2_PUBLIC_URL no configurado');
+  }
+  let parsed;
+  try {
+    parsed = new URL(sourceUrl);
+  } catch {
+    throw new Error('sourceUrl inválida');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('sourceUrl debe ser http(s)');
+  }
+  if (parsed.hostname !== allowedHost) {
+    throw new Error('sourceUrl no proviene de un origen permitido');
+  }
+  return sourceUrl;
+}
+
+async function createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds }) {
+  if (!artistId || !sourceUrl) {
+    throw new Error('artistId y sourceUrl son requeridos');
+  }
+  validateSourceUrl(sourceUrl);
+  if (durationSeconds && durationSeconds > MAX_DURATION_SECONDS) {
+    throw new Error(`El video dura más de 2 horas (${Math.round(durationSeconds / 60)} min) — no soportado todavía`);
+  }
+
+  const { data: artist, error: artistErr } = await supabase
+    .from('artists')
+    .select('id')
+    .eq('id', artistId)
+    .single();
+  if (artistErr || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
+
+  const cleanSourceUrl = sourceUrl.replace(/\s+/g, '');
+
+  const { data, error } = await supabase
+    .from('videos')
+    .insert([{
+      artist_id: artistId,
+      title: title || 'Video sin título',
+      source_url: cleanSourceUrl,
+      status: 'queued',
+    }])
+    .select();
+  if (error) throw error;
+
+  const video = data[0];
+
+  const { publishRepurposeJob } = require('../lib/queue');
+  await publishRepurposeJob(video.id);
+  console.log(`📤 [Repurposer] Job encolado en RabbitMQ: ${video.id} (artista ${artistId})`);
+
+  return video;
+}
+
+module.exports = { buildClipUrl, generateClips, createRepurposeVideo, MAX_DURATION_SECONDS, validateSourceUrl };

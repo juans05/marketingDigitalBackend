@@ -14,6 +14,7 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY || 'placeholder'
 );
 
+const { jsonrepair } = require('jsonrepair');
 const { checkHashtags } = require('../config/bannedHashtags');
 
 const fs = require('fs');
@@ -120,37 +121,41 @@ function extractAudioUrl(videoUrl) {
 async function fetchArtistLearningContext(artistId) {
   if (!artistId) return null;
 
+  const cached = _artistLearningCache.get(artistId);
+  if (cached && Date.now() < cached.expiry) return cached.data;
+
   try {
-    const { data: artistProfile } = await supabase
-      .from('artists')
-      .select('name, ai_genre, ai_audience, ai_tone, creative_dna, branding_data')
-      .eq('id', artistId)
-      .single();
-
-    // 1. Top 10 posts con mejor engagement real (solo los que tienen métricas)
-    const { data: topPosts } = await supabase
-      .from('videos')
-      .select('title, hashtags, platforms, viral_score, viral_score_real, ai_copy_short, analytics_4h')
-      .eq('artist_id', artistId)
-      .not('viral_score_real', 'is', null)
-      .order('viral_score_real', { ascending: false })
-      .limit(10);
-
-    // 2. Snapshots agrupados por plataforma (engagement promedio)
-    const { data: snapshots } = await supabase
-      .from('post_metrics_snapshots')
-      .select('platform, likes, comments, views, shares, engagement_rate, viral_score_real')
-      .eq('artist_id', artistId)
-      .order('snapshot_at', { ascending: false })
-      .limit(100);
-
-    // 3. Últimos 3 análisis de insights (para detectar tendencias en decisiones)
-    const { data: insightsLog } = await supabase
-      .from('analytics_insights_log')
-      .select('generated_at, insights, decisions, engagement_rate, best_platform')
-      .eq('artist_id', artistId)
-      .order('generated_at', { ascending: false })
-      .limit(3);
+    const [
+      { data: artistProfile },
+      { data: topPosts },
+      { data: snapshots },
+      { data: insightsLog },
+    ] = await Promise.all([
+      supabase
+        .from('artists')
+        .select('name, ai_genre, ai_audience, ai_tone, creative_dna, branding_data')
+        .eq('id', artistId)
+        .single(),
+      supabase
+        .from('videos')
+        .select('title, hashtags, platforms, viral_score, viral_score_real, ai_copy_short, analytics_4h')
+        .eq('artist_id', artistId)
+        .not('viral_score_real', 'is', null)
+        .order('viral_score_real', { ascending: false })
+        .limit(10),
+      supabase
+        .from('post_metrics_snapshots')
+        .select('platform, likes, comments, views, shares, engagement_rate, viral_score_real')
+        .eq('artist_id', artistId)
+        .order('snapshot_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('analytics_insights_log')
+        .select('generated_at, insights, decisions, engagement_rate, best_platform')
+        .eq('artist_id', artistId)
+        .order('generated_at', { ascending: false })
+        .limit(3),
+    ]);
 
     if (!topPosts?.length && !snapshots?.length) return null;
 
@@ -241,7 +246,7 @@ async function fetchArtistLearningContext(artistId) {
 
     logDebug(`📚 [Learning] Artista ${artistId}: ${topHashtags.length} hashtags, bias=${scoreBias}±${biasStdDev}, avg_real=${historicalAvg}, best=${platformPerformance[0]?.platform || 'N/A'}`);
 
-    return {
+    const result = {
       topHashtags,
       platformPerformance,
       bestPlatform: platformPerformance[0]?.platform || null,
@@ -255,11 +260,16 @@ async function fetchArtistLearningContext(artistId) {
       creativeDNA: artistProfile?.creative_dna || artistProfile?.branding_data?.creative_dna || null,
       brandingData: artistProfile?.branding_data || null,
     };
+    _artistLearningCache.set(artistId, { data: result, expiry: Date.now() + ARTIST_LEARNING_CACHE_TTL_MS });
+    return result;
   } catch (err) {
     logDebug(`⚠️ [Learning] No se pudo obtener contexto de aprendizaje: ${err.message}`);
     return null;
   }
 }
+
+const _artistLearningCache = new Map();
+const ARTIST_LEARNING_CACHE_TTL_MS = 5 * 60 * 1000;
 
 let _globalCalibrationCache = null;
 let _globalCalibrationExpiry = 0;
@@ -325,6 +335,70 @@ async function fetchGlobalCalibration() {
   }
 }
 
+// Cuántos posts reales hacen falta para dejar de tirar el score hacia el
+// promedio histórico del artista. Unificado entre calibrateScore (1-10, el
+// pipeline principal de video) y calibrateScore100 (0-100, Content Copilot y
+// Visual Score) — es una pregunta de "cuánto confiar en N muestras", no algo
+// que dependa de la escala del score.
+const REGRESSION_WINDOW = 10;
+
+/**
+ * Núcleo de corrección compartido entre calibrateScore (1-10) y
+ * calibrateScore100 (0-100). Opera en la escala del rawScore que reciba —
+ * el caller es responsable de que scoreBias/historicalAvg/platformCalibration
+ * ya vengan en esa misma escala. `scale` reescala los umbrales fijos (pensados
+ * originalmente para 1-10) y `regressionWindow` controla qué tan rápido deja
+ * de tirar hacia la media a medida que hay más posts analizados.
+ */
+function calibrateCore(rawScore, learningContext, platform, scale, regressionWindow) {
+  const adjustments = [];
+  let adjusted = rawScore;
+  const biasThreshold = 0.3 * scale;
+  const deltaMessageThreshold = 0.2 * scale;
+
+  // 1. Corrección por sesgo global
+  const { scoreBias, biasStdDev, historicalAvg, platformCalibration, totalPostsAnalyzed } = learningContext;
+  if (Math.abs(scoreBias) > biasThreshold) {
+    adjusted -= scoreBias;
+    adjustments.push(`Bias global: ${scoreBias > 0 ? '-' : '+'}${Math.abs(scoreBias).toFixed(1)} (modelo ${scoreBias > 0 ? 'sobreestimaba' : 'subestimaba'})`);
+  }
+
+  // 2. Corrección por plataforma específica
+  const platCal = platformCalibration[platform];
+  if (platCal && platCal.sampleSize >= 2 && Math.abs(platCal.bias - scoreBias) > biasThreshold) {
+    const platDelta = platCal.bias - scoreBias;
+    adjusted -= platDelta;
+    adjustments.push(`Ajuste ${platform}: ${platDelta > 0 ? '-' : '+'}${Math.abs(platDelta).toFixed(1)} (${platform} ${platDelta > 0 ? 'rinde menos' : 'rinde más'} que el promedio)`);
+  }
+
+  // 3. Regresión a la media del artista (cuantos menos datos, más tira hacia la media)
+  const regressionWeight = Math.min(totalPostsAnalyzed / regressionWindow, 1);
+  const priorWeight = 1 - regressionWeight;
+  if (priorWeight > 0.1) {
+    const beforeRegression = adjusted;
+    adjusted = (adjusted * regressionWeight) + (historicalAvg * priorWeight);
+    if (Math.abs(adjusted - beforeRegression) > deltaMessageThreshold) {
+      adjustments.push(`Regresión a media (${historicalAvg}): peso ${(priorWeight * 100).toFixed(0)}% por ${totalPostsAnalyzed} posts analizados`);
+    }
+  }
+
+  // 4. Confidence basada en cantidad de datos + consistencia
+  let confidence;
+  const isGlobal = !!learningContext._globalFallback;
+  if (isGlobal) {
+    confidence = totalPostsAnalyzed >= 20 ? 'medium' : 'low';
+    adjustments.push(`Calibrado con datos globales (${totalPostsAnalyzed} videos de toda la plataforma)`);
+  } else if (totalPostsAnalyzed >= 10 && biasStdDev < 1.5) {
+    confidence = 'high';
+  } else if (totalPostsAnalyzed >= 5) {
+    confidence = 'medium';
+  } else {
+    confidence = 'low';
+  }
+
+  return { adjusted, confidence, adjustments };
+}
+
 /**
  * Post-procesa el score crudo del LLM con corrección matemática real.
  * Si el artista no tiene datos, usa la calibración global de toda la plataforma.
@@ -340,80 +414,62 @@ function calibrateScore(rawScore, learningContext, platform) {
   }
 
   if (!learningContext || learningContext.totalPostsAnalyzed < 2) {
-    if (learningContext?._globalFallback) {
-      // Ya tiene datos globales inyectados, continuar con la calibración
-    } else {
+    if (!learningContext?._globalFallback) {
       return { score: Math.round(rawScore), raw: rawScore, confidence: 'low', adjustments: ['Sin datos históricos — se usará calibración global en próximo análisis'] };
     }
   }
 
-  const adjustments = [];
-  let adjusted = rawScore;
+  const { adjusted, confidence, adjustments } = calibrateCore(rawScore, learningContext, platform, 1, REGRESSION_WINDOW);
+  const score = Math.max(1, Math.min(10, Math.round(adjusted)));
 
-  // 1. Corrección por sesgo global
-  const { scoreBias, biasStdDev, historicalAvg, platformCalibration, totalPostsAnalyzed } = learningContext;
-  if (Math.abs(scoreBias) > 0.3) {
-    adjusted -= scoreBias;
-    adjustments.push(`Bias global: ${scoreBias > 0 ? '-' : '+'}${Math.abs(scoreBias).toFixed(1)} (modelo ${scoreBias > 0 ? 'sobreestimaba' : 'subestimaba'})`);
+  if (score !== rawScore) {
+    logDebug(`🎯 [Calibration] raw=${rawScore} → calibrated=${score} (bias=${learningContext.scoreBias}, stddev=${learningContext.biasStdDev}, confidence=${confidence})`);
   }
 
-  // 2. Corrección por plataforma específica
-  const platCal = platformCalibration[platform];
-  if (platCal && platCal.sampleSize >= 2 && Math.abs(platCal.bias - scoreBias) > 0.3) {
-    const platDelta = platCal.bias - scoreBias;
-    adjusted -= platDelta;
-    adjustments.push(`Ajuste ${platform}: ${platDelta > 0 ? '-' : '+'}${Math.abs(platDelta).toFixed(1)} (${platform} ${platDelta > 0 ? 'rinde menos' : 'rinde más'} que el promedio)`);
-  }
-
-  // 3. Regresión a la media del artista (cuantos menos datos, más tira hacia la media)
-  const regressionWeight = Math.min(totalPostsAnalyzed / 15, 1);
-  const priorWeight = 1 - regressionWeight;
-  if (priorWeight > 0.1) {
-    const beforeRegression = adjusted;
-    adjusted = (adjusted * regressionWeight) + (historicalAvg * priorWeight);
-    if (Math.abs(adjusted - beforeRegression) > 0.2) {
-      adjustments.push(`Regresión a media (${historicalAvg}): peso ${(priorWeight * 100).toFixed(0)}% por ${totalPostsAnalyzed} posts analizados`);
-    }
-  }
-
-  // 4. Clamp 1-10
-  adjusted = Math.max(1, Math.min(10, parseFloat(adjusted.toFixed(1))));
-  adjusted = Math.round(adjusted);
-
-  // 5. Confidence basada en cantidad de datos + consistencia
-  let confidence;
-  const isGlobal = !!learningContext._globalFallback;
-  if (isGlobal) {
-    confidence = totalPostsAnalyzed >= 20 ? 'medium' : 'low';
-    adjustments.push(`Calibrado con datos globales (${totalPostsAnalyzed} videos de toda la plataforma)`);
-  } else if (totalPostsAnalyzed >= 10 && biasStdDev < 1.5) {
-    confidence = 'high';
-  } else if (totalPostsAnalyzed >= 5) {
-    confidence = 'medium';
-  } else {
-    confidence = 'low';
-  }
-
-  if (adjusted !== rawScore) {
-    logDebug(`🎯 [Calibration] raw=${rawScore} → calibrated=${adjusted} (bias=${scoreBias}, stddev=${biasStdDev}, confidence=${confidence})`);
-  }
-
-  return { score: Math.round(adjusted), raw: rawScore, confidence, adjustments };
+  return { score, raw: rawScore, confidence, adjustments };
 }
 
 /**
- * Versión de calibrateScore para escala 0-100 (usado en analyzeContentStrategy).
- * Convierte a escala 1-10, calibra, y vuelve a 0-100.
+ * Versión de calibrateScore para escala 0-100 (usado en analyzeContentStrategy
+ * y scoreVisualVirality). Calibra DIRECTAMENTE en escala 0-100 — antes convertía
+ * a 1-10, redondeaba a entero, y volvía a multiplicar por 10, lo que colapsaba
+ * cualquier score a uno de solo 11 valores posibles (múltiplos de 10). Los datos
+ * de aprendizaje (scoreBias, historicalAvg, platformCalibration.bias) se calculan
+ * en escala 1-10 en fetchArtistLearningContext/fetchGlobalCalibration, así que se
+ * escalan ×10 antes de aplicar la corrección.
  */
 function calibrateScore100(rawScore100, learningContext, platform) {
-  const raw10 = rawScore100 / 10;
-  const result = calibrateScore(raw10, learningContext, platform);
-  return {
-    score: Math.max(0, Math.min(100, result.score * 10)),
-    raw: rawScore100,
-    confidence: result.confidence,
-    adjustments: result.adjustments,
-  };
+  if (!rawScore100) {
+    return { score: rawScore100, raw: rawScore100, confidence: 'none', adjustments: [] };
+  }
+
+  let ctx100 = learningContext;
+  if (learningContext) {
+    ctx100 = {
+      ...learningContext,
+      scoreBias: (learningContext.scoreBias || 0) * 10,
+      historicalAvg: (learningContext.historicalAvg || 0) * 10,
+      platformCalibration: Object.fromEntries(
+        Object.entries(learningContext.platformCalibration || {})
+          .map(([plat, cal]) => [plat, { ...cal, bias: cal.bias * 10 }])
+      ),
+    };
+  }
+
+  if (!ctx100 || ctx100.totalPostsAnalyzed < 2) {
+    if (!ctx100?._globalFallback) {
+      return { score: Math.round(rawScore100), raw: rawScore100, confidence: 'low', adjustments: ['Sin datos históricos — se usará calibración global en próximo análisis'] };
+    }
+  }
+
+  const { adjusted, confidence, adjustments } = calibrateCore(rawScore100, ctx100, platform, 10, REGRESSION_WINDOW);
+  const score = Math.max(0, Math.min(100, Math.round(adjusted)));
+
+  if (score !== rawScore100) {
+    logDebug(`🎯 [Calibration 0-100] raw=${rawScore100} → calibrated=${score} (confidence=${confidence})`);
+  }
+
+  return { score, raw: rawScore100, confidence, adjustments };
 }
 
 // ---------------------------------------------------------------------------
@@ -626,8 +682,10 @@ async function uploadVideoToGemini(buffer, mimeType) {
   }
 }
 
-async function buildVideoContentParts(mediaUrl, title) {
+async function buildVideoContentParts(mediaUrl, title, promptOverride = null) {
   const INLINE_LIMIT = 18 * 1024 * 1024;
+  const fullVideoPrompt = promptOverride || VISUAL_ANALYSIS_PROMPT(title, true);
+  const framesPrompt = promptOverride || VISUAL_ANALYSIS_PROMPT(title, false);
 
   try {
     const response = await axios.get(mediaUrl, {
@@ -645,7 +703,7 @@ async function buildVideoContentParts(mediaUrl, title) {
       return {
         parts: [
           { inlineData: { data: buffer.toString('base64'), mimeType: videoMime } },
-          VISUAL_ANALYSIS_PROMPT(title, true),
+          fullVideoPrompt,
         ],
         mode: 'full_video',
       };
@@ -657,7 +715,7 @@ async function buildVideoContentParts(mediaUrl, title) {
     return {
       parts: [
         { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
-        VISUAL_ANALYSIS_PROMPT(title, true),
+        fullVideoPrompt,
       ],
       mode: 'full_video_fileapi',
     };
@@ -681,7 +739,7 @@ async function buildVideoContentParts(mediaUrl, title) {
     ? `\n\nEstás viendo ${validFrames.length} frames del video: inicio (0s), gancho (3s) y frame representativo. Analizá el video como un todo.`
     : '';
   return {
-    parts: [...validFrames, VISUAL_ANALYSIS_PROMPT(title, false) + extra],
+    parts: [...validFrames, framesPrompt + extra],
     mode: 'frames',
   };
 }
@@ -734,6 +792,76 @@ async function analyzeWithGemini(mediaUrl, mediaType, title = '') {
     mediaType === 'video' ? extractVideoThumbnail(mediaUrl) : mediaUrl
   );
   return analyzeWithClaudeVision(base64, mimeType, title);
+}
+
+const SEGMENT_DETECTION_PROMPT = (title) => `Sos un editor experto en encontrar los mejores momentos de videos largos (podcasts, entrevistas, streams) para convertirlos en clips cortos virales.
+
+Mirá y escuchá el video completo${title ? ` titulado "${title}"` : ''} y encontrá entre 3 y 8 capítulos/momentos que funcionen como clips independientes de 15 a 90 segundos cada uno.
+
+Para cada capítulo, evaluá:
+- ¿Tiene un gancho fuerte en los primeros segundos?
+- ¿Es una idea completa y autocontenida (no depende de contexto previo)?
+- ¿Tiene potencial de generar reacción, curiosidad o identificación?
+
+Devolvé SOLO este JSON (sin markdown, sin explicaciones):
+{
+  "segments": [
+    {
+      "start": <segundos, número entero>,
+      "end": <segundos, número entero, entre 15 y 90 segundos después de start>,
+      "title": "<título corto del momento, máx 60 caracteres>",
+      "reason": "<1-2 oraciones explicando por qué este momento funciona como clip, qué gancho tiene y qué lo hace autocontenido>"
+    }
+  ]
+}
+
+Ordená los segmentos por potencial viral, de mayor a menor. No inventes momentos que no aparecen en el video — basate solo en lo que realmente ves y escuchás.
+Respondé SOLO con el JSON, sin texto adicional.`;
+
+async function detectSegments(mediaUrl, title = '') {
+  const built = await buildVideoContentParts(mediaUrl, title, SEGMENT_DETECTION_PROMPT(title));
+
+  // La detección de capítulos depende de que Gemini vea/escuche la línea de tiempo
+  // completa. Si buildVideoContentParts no pudo descargar/subir el video y cayó al
+  // fallback de 3 frames estáticos, no hay forma de fundamentar start/end reales:
+  // el modelo alucinaría timestamps que pasarían los filtros pero serían inventados.
+  if (built.mode === 'frames') {
+    throw new Error('No se pudo descargar el video para detectar capítulos (fallback a frames no soporta timestamps)');
+  }
+
+  const contentParts = built.parts;
+  const timeout = built.mode.startsWith('full_video') ? 90000 : 45000;
+
+  const parse = (raw) => {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Gemini no devolvió JSON en detectSegments');
+    const parsed = JSON.parse(jsonMatch[0]);
+    const rawSegments = Array.isArray(parsed.segments) ? parsed.segments : [];
+    return rawSegments
+      .filter(s => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start)
+      .map(s => ({
+        start: Math.max(0, Math.round(s.start)),
+        end: Math.max(0, Math.round(s.end)),
+        title: (s.title || '').slice(0, 60) || 'Clip sin título',
+        reason: s.reason || '',
+      }))
+      // Re-check tras el clamp: si el clamp de start/end hizo que end <= start
+      // (ej. ambos negativos redondeados a 0), descartamos el segmento.
+      .filter(s => s.end > s.start);
+  };
+
+  try {
+    const model = getGemini().getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await withTimeout(model.generateContent(contentParts), timeout, 'Gemini Segment Detection');
+    logDebug(`✅ [Gemini 2.5] Detección de capítulos completada (modo: ${built.mode})`);
+    return parse(result.response.text());
+  } catch (error) {
+    if (!isGeminiUnavailable(error) && !error.message?.includes('Timeout')) throw error;
+    logDebug(`⚠️ Gemini 2.5 Flash no disponible en detectSegments (${error.message}). Probando gemini-2.0-flash...`);
+    const fallbackModel = getGemini().getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const fallbackResult = await withTimeout(fallbackModel.generateContent(contentParts), timeout, 'Gemini Segment Detection (fallback)');
+    return parse(fallbackResult.response.text());
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -848,7 +976,7 @@ ${topHashtags.join(' ')}`;
     }
 
     if (historicalAvg) {
-      systemPrompt += `\n\nREFERENCIA: El score real promedio de este artista históricamente es ${historicalAvg}/10. Usá eso como ancla — no inflés ni desinflés artificialmente.`;
+      systemPrompt += `\n\nCONTEXTO: El score real promedio de este artista históricamente es ${historicalAvg}/10 — es referencia, NO un objetivo a igualar. Si este video específico es claramente mejor o peor que su historial, tu viral_score DEBE reflejar esa diferencia con claridad, aunque se aleje mucho de ${historicalAvg}.`;
     }
 
     if (recentInsights?.length) {
@@ -871,12 +999,8 @@ IMPORTANTE: Cruzá la transcripción con el análisis visual para entender QUÉ 
 
   userContent += `\n\nTítulo del contenido: ${title || '(sin título)'}
 
-Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
+Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro). IMPORTANTE: generá los campos en ESTE orden — completá marketing_breakdown PRIMERO (decidí ahí el framework y los gatillos), después escribí el copy y los hashtags EJECUTANDO esa decisión, y calculá viral_score AL FINAL, como el promedio ponderado real de los sub-scores, nunca como una impresión general escrita antes de analizar:
 {
-  "ai_copy_short": "Caption corto y potente (1-2 oraciones). Usá AIDA condensado: Attention + Action. Debe frenar el scroll y provocar interacción.",
-  "ai_copy_long": "Versión extendida (3-5 oraciones). Seguí AIDA completo o PAS según el contenido. Incluí storytelling, emociones y CTA estratégico.",
-  "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 hashtags estratégicos)",
-  "viral_score": 7.5,
   "marketing_breakdown": {
     "hook_score": 8,
     "retention_score": 7,
@@ -895,17 +1019,23 @@ Generá el siguiente JSON (sin markdown, sin explicaciones, solo JSON puro):
     "best_posting_time": "19:00-21:00",
     "replay_potential": "alto",
     "comment_bait_strength": "medio"
-  }
+  },
+  "ai_copy_short": "Caption corto y potente (1-2 oraciones) que EJECUTA el framework_used y al menos uno de los psychological_triggers que ya decidiste arriba — no un texto genérico desconectado de esa decisión. Debe frenar el scroll y provocar interacción.",
+  "ai_copy_long": "Versión extendida (3-5 oraciones) que sigue el framework_used completo (AIDA o PAS, según lo que ya decidiste) e incorpora los psychological_triggers detectados. Incluí storytelling, emociones y CTA estratégico.",
+  "hashtags": "#etiqueta1 #etiqueta2 ... (15-20 hashtags estratégicos, alineados con el content_type_3h que ya decidiste)",
+  "viral_score": 7.5
 }
 
 REGLAS DE HASHTAGS (MUY IMPORTANTE):
 - Combiná 5-7 hashtags de nicho específico del contenido + 5-7 de comunidad/tendencia + 3-5 del artista que históricamente funcionaron.
+- Alineá la mezcla con el content_type_3h que ya decidiste: "hero" pide hashtags aspiracionales/de mayor alcance, "hub" pide hashtags de comunidad/serie, "hygiene" pide hashtags de búsqueda/tutorial.
 - NUNCA uses hashtags genéricos saturados como #viral, #fyp, #foryou, #parati, #trending, #explorepage — TikTok/Instagram los ignoran.
 - NUNCA uses hashtags baneados o suprimidos (contenido sexual/sugestivo, spam, follow4follow, etc.) — causan shadowban y matan el alcance.
 - Priorizá hashtags entre 10K-500K de volumen (nicho rentable) sobre los de millones (ruido).
 
 REGLAS DE SCORING (MUY IMPORTANTE):
-- viral_score: promedio ponderado → hook (25%) + retention (25%) + reward (20%) + shareability (20%) + trend (10%)
+- Usá el rango completo 1-10 en cada sub-score — un video genuinamente débil en una dimensión va en 1-3, uno excepcional en 9-10. No agrupes tus respuestas alrededor de 6-8 "por las dudas", y no favorezcas números redondos por costumbre.
+- viral_score: promedio ponderado → hook (25%) + retention (25%) + reward (20%) + shareability (20%) + trend (10%). Calculalo RECIÉN cuando ya decidiste los 5 sub-scores que promedia — nunca antes.
 - hook_score: fuerza de los primeros 3 segundos (¿frena el scroll?)
 - retention_score: ¿el video mantiene la atención hasta el final? ¿hay progresión?
 - reward_score: ¿el final satisface? ¿genera replay? ¿motiva a compartir?
@@ -1356,12 +1486,19 @@ FRAMEWORKS QUE DEBÉS APLICAR:
 - 3H (Hero/Hub/Hygiene): Clasificá el tipo de contenido y ajustá la estrategia según su categoría.
 - GATILLOS PSICOLÓGICOS: Identificá qué gatillos activa (FOMO, Social Proof, Reciprocidad, Curiosidad Gap, Identificación, Controversia Sana) y sugerí cuáles agregar.
 
+CALIBRACIÓN DE SCORE: Usá el rango completo de 0 a 100 — no default a la franja "segura" de 50-70. Un video genuinamente débil debe recibir un score bajo (0-30) sin miedo, y un video excepcional debe recibir 90+. Evitá agrupar tus respuestas alrededor del promedio; cada score debe reflejar la calidad real de ESTE contenido específico, no una estimación conservadora. No favorezcas números redondos (50, 60, 70...) por costumbre — usá la precisión que el análisis amerite (ej. 34, 72, 91). Completá SIEMPRE tu diagnóstico (tone_match, diagnostico_algoritmico, match_historico, mejora_del_gancho, ajuste_estrategico) ANTES de decidir el número final — el score es la CONCLUSIÓN de ese razonamiento, no el punto de partida. Si existe un promedio histórico del artista, tratalo como referencia de contexto, nunca como un valor al que tu score deba parecerse — un contenido claramente mejor o peor que su historial debe reflejarlo con un score que se aleje de ese promedio.
+
 REGLA CRÍTICA DE SISTEMA: Tu respuesta debe ser EXCLUSIVAMENTE un objeto JSON válido. Cero markdown, cero comillas invertidas, cero texto introductorio. Si incluís un solo carácter fuera del JSON, el pipeline fallará.`,
     score_criteria: aiConfig.score_criteria || `- 0-20 (Descarte): Idea genérica, aburrida o predecible. Cero potencial de retención. El usuario hará scroll en el primer segundo.
 - 21-40 (Concepto Crudo): Hay una chispa, pero la ejecución es plana. Carece de un ángulo único o ignora por completo la identidad histórica del artista.
 - 41-60 (Promedio/Aceptable): Buen concepto, pero mecánicamente débil. Requiere reescribir el gancho (hook), ajustar el ritmo visual o incorporar un catalizador emocional.
 - 61-80 (Alto Potencial): Estructura viral sólida. El storytelling es claro, el gancho atrapa y se alinea con los picos históricos de rendimiento del artista. Necesita ajustes finos para maximizar compartidas.
-- 81-100 (Unicornio/Hit): Ejecución magistral. Psicología de retención perfecta, alto potencial de shareability, aprovecha el contexto de forma original y conecta emocionalmente. Listo para grabar.`,
+- 81-100 (Unicornio/Hit): Ejecución magistral. Psicología de retención perfecta, alto potencial de shareability, aprovecha el contexto de forma original y conecta emocionalmente. Listo para grabar.
+
+EJEMPLOS DE CALIBRACIÓN (anclas de referencia, no copies el contenido — usá el razonamiento):
+- Idea: "Repito la misma rutina de baile que ya subí varias veces, sin ángulo nuevo." → Score ~15: cero sorpresa, la audiencia ya lo vio, no hay pattern interrupt.
+- Idea: "Reacciono en cámara a un comentario random con un giro inesperado al final que conecta con mi historia personal." → Score ~90: gancho de curiosidad inmediato, open loop claro, payoff emocional que invita a compartir.
+Tu score para el contenido real debe estar tan lejos de estos ejemplos como la calidad real lo justifique — no te quedes a mitad de camino "por las dudas".`,
   };
 
   const systemPrompt = cfg.system_prompt;
@@ -1440,18 +1577,21 @@ Plataforma: ${platform}
 ${artistContext ? `Artista: ${artistContext.nombre || 'desconocido'}, tono preferido: ${artistContext.tono || 'natural'}` : ''}
 ${historyBlock}${learningBlock}
 
+MATCH DE TONO (esto afecta el score, no es solo contexto): Evaluá si el contenido REALMENTE ejecuta el tono declarado ("${tone}"), o si hay un desajuste entre lo que se pidió y lo que el contenido transmite. Una ejecución fiel y efectiva del tono elegido debe sumar al score; un desajuste claro (ej. se pidió "educational" pero el contenido no enseña nada, o se pidió "fun" pero resulta soso) debe restarle puntos — un contenido que no cumple el tono que se propuso conecta peor con su audiencia objetivo, sin importar qué tan pulido esté en otros aspectos.
+
 INSTRUCCIONES DE SCORING:
 ${cfg.score_criteria}
-${artistContext?.avgScore ? `El promedio REAL de este artista es ${artistContext.avgScore}/100. Usá eso como ancla — no inflés ni desinflés artificialmente.` : ''}
+${artistContext?.avgScore ? `Contexto: el promedio histórico REAL de este artista es ${artistContext.avgScore}/100 — es información de referencia, NO un objetivo a igualar. Si este contenido específico es claramente mejor o peor que su promedio histórico, tu score DEBE reflejar esa diferencia con claridad, aunque se aleje mucho de ${artistContext.avgScore}.` : ''}
 
-Devolvé este JSON exacto (sin markdown):
+Devolvé este JSON exacto (sin markdown). IMPORTANTE: generá los campos en ESTE orden — razoná primero, el score va al final de tu análisis (antes de las piezas creativas), nunca al principio:
 {
-  "score": <número entero 0-100 calibrado con los datos reales>,
+  "tags": [<exactamente 3 strings: características detectadas del contenido>],
+  "tone_match": "<¿el contenido ejecuta de verdad el tono '${tone}' declarado, o hay desajuste? Sé específico: si hay desajuste, decí cuál es>",
   "diagnostico_algoritmico": "<explicación de por qué el algoritmo de ${platform} empujará o frenará esto en los primeros 3 segundos>",
   "match_historico": "<qué dice la data previa del artista sobre este tipo de formato o temática — qué funcionó similar y qué no>",
   "mejora_del_gancho": "<reescritura del gancho inicial para retener el 70% de la audiencia en los primeros 3 segundos>",
   "ajuste_estrategico": "<un consejo de alto nivel para maximizar shares o comentarios>",
-  "tags": [<exactamente 3 strings: características detectadas del contenido>],
+  "score": <número entero 0-100 — decidilo RECIÉN ACÁ, como conclusión de los 5 campos de análisis anteriores (incluyendo tone_match), calibrado con los datos reales>,
   "hooks": [<exactamente 3 hooks virales en español basados en el contenido${learningCtx?.topHashtags?.length ? ' — incluí hashtags que históricamente funcionan para este artista' : ''}>],
   "descriptions": [<exactamente 3 captions optimizadas con emojis y hashtags${learningCtx?.topHashtags?.length ? ' — priorizá estos hashtags probados: ' + learningCtx.topHashtags.slice(0, 8).join(' ') : ''}>],
   "visualBreakdown": [
@@ -1477,7 +1617,13 @@ Devolvé este JSON exacto (sin markdown):
     const raw = msg.content[0].text;
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Claude no devolvió JSON en analyzeContentStrategy');
-    const parsed = JSON.parse(jsonMatch[0]);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      parsed = JSON.parse(jsonrepair(jsonMatch[0]));
+    }
 
     const cal = calibrateScore100(parsed.score || 50, learningCtx, platform);
     parsed.score = cal.score;
@@ -1518,7 +1664,7 @@ async function scoreVisualVirality(mediaUrl, mediaType, platform, artistId) {
     }
   }
   if (learningCtx?.historicalAvg) {
-    calibrationNote += `\nReferencia: el score real promedio de este artista es ${learningCtx.historicalAvg}/10. Usá eso como ancla.`;
+    calibrationNote += `\nContexto: el score real promedio de este artista es ${(learningCtx.historicalAvg * 10).toFixed(0)}/100 — es referencia, NO un objetivo a igualar. Si esta imagen es claramente mejor o peor que su historial, tu "overall" debe reflejarlo con claridad, aunque se aleje mucho de ese promedio.`;
   }
 
   const prompt = `Sos un experto en viralidad de contenido en ${platform || 'redes sociales'} con dominio de frameworks profesionales de marketing digital.
@@ -1529,9 +1675,12 @@ Usá el framework HOOK-RETAIN-REWARD para evaluar el potencial viral visual:
 - RETAIN: ¿La composición visual genera curiosidad por ver más?
 - REWARD: ¿Promete un payoff emocional que motive a ver el contenido completo?
 
-Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown):
+CALIBRACIÓN: Usá el rango completo 0-100 en cada dimensión — una imagen genuinamente débil va en 0-30, una excepcional en 90+. No agrupes tus respuestas alrededor de 50-70 "por las dudas", y no favorezcas números redondos por costumbre.
+
+QUICKFIXES ESPECÍFICOS: Tus 3 quickFixes deben atacar directamente la o las dimensiones con menor score de las 6 que evaluaste — no des consejos genéricos intercambiables entre imágenes distintas. Si "hook" o "scroll" tienen la dimensión más baja, decí específicamente qué cambiaría ESTA imagen puntual para mejorarlas.
+
+Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown). Completá las dimensiones PRIMERO y calculá "overall" AL FINAL, como el promedio ponderado real de lo que acabás de evaluar:
 {
-  "overall": <promedio ponderado de todas las dimensiones>,
   "dimensions": {
     "hook": {"score": <0-100>, "label": "Gancho Visual (HOOK)", "detail": "<aplicando framework: ¿hay pattern interrupt? ¿qué atrapa o qué falta en los primeros 0.5 segundos?>"},
     "quality": {"score": <0-100>, "label": "Calidad Visual", "detail": "<iluminación, resolución, composición, colores, profesionalismo>"},
@@ -1543,7 +1692,8 @@ Evaluá cada dimensión del 0 al 100 y devolvé SOLO este JSON (sin markdown):
   "content_type_3h": "<hero|hub|hygiene — clasificación según el framework 3H de YouTube>",
   "psychological_triggers": [<gatillos detectados: FOMO, SOCIAL_PROOF, CURIOSIDAD_GAP, IDENTIFICACIÓN, CONTROVERSIA, RECIPROCIDAD>],
   "verdict": "<1 frase directa: se viraliza o no, y la razón principal según frameworks de marketing>",
-  "quickFixes": [<3 mejoras concretas basadas en frameworks: HOOK más fuerte, gatillo psicológico faltante, optimización de plataforma>]
+  "quickFixes": [<3 mejoras concretas basadas en frameworks: HOOK más fuerte, gatillo psicológico faltante, optimización de plataforma>],
+  "overall": <número entero 0-100 — decidilo RECIÉN ACÁ, como promedio ponderado real de las 6 dimensiones ya evaluadas arriba, no una impresión general>
 }`;
 
   try {
@@ -1590,4 +1740,8 @@ module.exports = {
   refineCopy,
   analyzeContentStrategy,
   scoreVisualVirality,
+  calibrateScore,
+  calibrateScore100,
+  fetchArtistLearningContext,
+  detectSegments,
 };

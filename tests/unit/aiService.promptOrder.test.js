@@ -1,0 +1,219 @@
+process.env.SUPABASE_URL = 'https://x.supabase.co';
+process.env.SUPABASE_ANON_KEY = 'anon';
+process.env.ANTHROPIC_API_KEY = 'test-key';
+process.env.GEMINI_API_KEY = 'test-key';
+
+const { createSupabaseMock } = require('../helpers/supabaseMock');
+const mock = createSupabaseMock();
+jest.mock('@supabase/supabase-js', () => ({ createClient: () => mock.client }));
+
+const mockCreate = jest.fn();
+jest.mock('@anthropic-ai/sdk', () => jest.fn().mockImplementation(() => ({
+  messages: { create: mockCreate },
+})));
+
+const mockGenerateContent = jest.fn();
+jest.mock('@google/generative-ai', () => ({
+  GoogleGenerativeAI: jest.fn().mockImplementation(() => ({
+    getGenerativeModel: () => ({ generateContent: mockGenerateContent }),
+  })),
+}));
+jest.mock('@google/generative-ai/server', () => ({
+  GoogleAIFileManager: jest.fn().mockImplementation(() => ({})),
+}));
+
+jest.mock('axios', () => ({
+  get: jest.fn().mockResolvedValue({
+    data: Buffer.from('fake-image-bytes'),
+    headers: { 'content-type': 'image/jpeg' },
+  }),
+}));
+
+const aiService = require('../../src/services/aiService');
+
+afterEach(() => jest.clearAllMocks());
+
+describe('analyzeContentStrategy — el prompt razona antes de pedir el score', () => {
+  test('en el schema JSON, "score" aparece después de los campos de diagnóstico (incluyendo tone_match)', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({
+        tags: ['a', 'b', 'c'],
+        tone_match: 'x',
+        diagnostico_algoritmico: 'x',
+        match_historico: 'x',
+        mejora_del_gancho: 'x',
+        ajuste_estrategico: 'x',
+        score: 70,
+        hooks: ['a', 'b', 'c'],
+        descriptions: ['a', 'b', 'c'],
+        visualBreakdown: [],
+        audience: { demographic: 'x', peakTime: 'x' },
+        improvements: ['a', 'b', 'c'],
+      }) }],
+    });
+
+    await aiService.analyzeContentStrategy('un script cualquiera', 'natural', 'tiktok', null, {});
+
+    const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+    const idxToneMatch = userContent.indexOf('"tone_match"');
+    const idxAjuste = userContent.indexOf('"ajuste_estrategico"');
+    const idxScore = userContent.indexOf('"score"');
+    expect(idxToneMatch).toBeGreaterThan(-1);
+    expect(idxAjuste).toBeGreaterThan(idxToneMatch);
+    expect(idxScore).toBeGreaterThan(idxAjuste);
+  });
+
+  test('el prompt le pide evaluar si el contenido ejecuta el tono declarado', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({ score: 50, tags: [], hooks: [], descriptions: [], visualBreakdown: [], audience: {}, improvements: [] }) }],
+    });
+
+    await aiService.analyzeContentStrategy('script', 'educational', 'tiktok', null, {});
+
+    const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(userContent).toMatch(/MATCH DE TONO/i);
+    expect(userContent).toContain('educational');
+  });
+
+  test('el system prompt no le pide anclarse al promedio histórico como objetivo', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({ score: 50, tags: [], hooks: [], descriptions: [], visualBreakdown: [], audience: {}, improvements: [] }) }],
+    });
+
+    await aiService.analyzeContentStrategy('script', 'natural', 'tiktok', null, {});
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system;
+    expect(systemPrompt).toMatch(/rango completo/i);
+    expect(systemPrompt).not.toMatch(/no infl[eé]s ni desinfl[eé]s/i);
+  });
+});
+
+describe('generateCopyWithClaude — el pipeline principal calcula viral_score después de marketing_breakdown', () => {
+  test('en el schema JSON, "viral_score" aparece después de "marketing_breakdown"', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({
+        marketing_breakdown: { hook_score: 8, retention_score: 7, reward_score: 6, shareability_score: 7, audio_match_score: 8, trend_alignment_score: 5 },
+        ai_copy_short: 'x', ai_copy_long: 'x', hashtags: '#a #b',
+        viral_score: 7,
+      }) }],
+    });
+
+    await aiService.generateCopyWithClaude('análisis visual de prueba', null, 'Mi Video', ['tiktok'], null, null);
+
+    const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+    const schemaStart = userContent.indexOf('"marketing_breakdown"');
+    const idxBreakdown = schemaStart;
+    const idxViralScore = userContent.indexOf('"viral_score"', schemaStart);
+    expect(schemaStart).toBeGreaterThan(-1);
+    expect(idxViralScore).toBeGreaterThan(idxBreakdown);
+  });
+
+  test('en el schema JSON, "ai_copy_short" y "hashtags" aparecen después de "marketing_breakdown" (el copy ejecuta el framework ya decidido)', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({
+        marketing_breakdown: { hook_score: 8, retention_score: 7, reward_score: 6, shareability_score: 7, audio_match_score: 8, trend_alignment_score: 5, framework_used: 'AIDA', psychological_triggers: ['CURIOSIDAD GAP'] },
+        ai_copy_short: 'x', ai_copy_long: 'x', hashtags: '#a #b',
+        viral_score: 7,
+      }) }],
+    });
+
+    await aiService.generateCopyWithClaude('análisis visual de prueba', null, 'Mi Video', ['tiktok'], null, null);
+
+    const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+    const schemaStart = userContent.indexOf('"marketing_breakdown"');
+    const idxCopyShort = userContent.indexOf('"ai_copy_short"');
+    const idxHashtags = userContent.indexOf('"hashtags"');
+    const idxViralScore = userContent.indexOf('"viral_score"', schemaStart);
+    expect(schemaStart).toBeGreaterThan(-1);
+    expect(idxCopyShort).toBeGreaterThan(schemaStart);
+    expect(idxHashtags).toBeGreaterThan(idxCopyShort);
+    expect(idxViralScore).toBeGreaterThan(idxHashtags);
+  });
+
+  test('las reglas de copy le piden ejecutar el framework y los gatillos ya decididos en marketing_breakdown', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({ marketing_breakdown: {}, ai_copy_short: 'x', ai_copy_long: 'x', hashtags: '#a', viral_score: 5 }) }],
+    });
+
+    await aiService.generateCopyWithClaude('análisis', null, 'Video', ['tiktok'], null, null);
+
+    const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+    expect(userContent).toMatch(/framework_used/);
+    expect(userContent).toMatch(/psychological_triggers/);
+  });
+
+  test('con historial del artista, no le pide al modelo anclarse al promedio como objetivo', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: JSON.stringify({
+        ai_copy_short: 'x', ai_copy_long: 'x', hashtags: '#a',
+        marketing_breakdown: {}, viral_score: 7,
+      }) }],
+    });
+
+    const learningContext = {
+      topHashtags: [], platformPerformance: [], topCopies: [], recentInsights: [],
+      scoreBias: 0, biasStdDev: 0, platformCalibration: {}, totalPostsAnalyzed: 12, historicalAvg: 6.5,
+    };
+    await aiService.generateCopyWithClaude('análisis', null, 'Video', ['tiktok'], null, learningContext);
+
+    const systemPrompt = mockCreate.mock.calls[0][0].system;
+    expect(systemPrompt).toMatch(/6\.5/);
+    expect(systemPrompt).not.toMatch(/no infl[eé]s ni desinfl[eé]s/i);
+  });
+});
+
+describe('scoreVisualVirality — el prompt calcula "overall" después de las dimensiones', () => {
+  test('en el schema JSON, "overall" aparece después de "quickFixes"', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: { text: () => JSON.stringify({
+        dimensions: {
+          hook: { score: 80, label: 'x', detail: 'x' },
+          quality: { score: 80, label: 'x', detail: 'x' },
+          emotion: { score: 80, label: 'x', detail: 'x' },
+          trend: { score: 80, label: 'x', detail: 'x' },
+          thumb: { score: 80, label: 'x', detail: 'x' },
+          scroll: { score: 80, label: 'x', detail: 'x' },
+        },
+        content_type_3h: 'hero',
+        psychological_triggers: [],
+        verdict: 'x',
+        quickFixes: ['a', 'b', 'c'],
+        overall: 80,
+      }) },
+    });
+
+    await aiService.scoreVisualVirality('https://example.com/img.jpg', 'image', 'tiktok', null);
+
+    const promptArg = mockGenerateContent.mock.calls[0][0][1];
+    // Ancla la búsqueda al inicio del bloque JSON real (evita falsos positivos
+    // con la instrucción en prosa que también menciona "overall" antes del schema).
+    const schemaStart = promptArg.indexOf('"dimensions"');
+    const idxQuickFixes = promptArg.indexOf('"quickFixes"', schemaStart);
+    const idxOverall = promptArg.indexOf('"overall"', schemaStart);
+    expect(schemaStart).toBeGreaterThan(-1);
+    expect(idxQuickFixes).toBeGreaterThan(schemaStart);
+    expect(idxOverall).toBeGreaterThan(idxQuickFixes);
+  });
+
+  test('el prompt le pide a quickFixes atacar específicamente la dimensión con menor score', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: { text: () => JSON.stringify({
+        dimensions: {
+          hook: { score: 80, label: 'x', detail: 'x' },
+          quality: { score: 80, label: 'x', detail: 'x' },
+          emotion: { score: 80, label: 'x', detail: 'x' },
+          trend: { score: 80, label: 'x', detail: 'x' },
+          thumb: { score: 80, label: 'x', detail: 'x' },
+          scroll: { score: 80, label: 'x', detail: 'x' },
+        },
+        content_type_3h: 'hero', psychological_triggers: [], verdict: 'x',
+        quickFixes: ['a', 'b', 'c'], overall: 80,
+      }) },
+    });
+
+    await aiService.scoreVisualVirality('https://example.com/img.jpg', 'image', 'tiktok', null);
+
+    const promptArg = mockGenerateContent.mock.calls[0][0][1];
+    expect(promptArg).toMatch(/dimensi[oó]n.*(m[aá]s baja|menor score)/i);
+  });
+});
