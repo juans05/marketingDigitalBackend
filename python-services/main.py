@@ -10,13 +10,12 @@ import json
 import re
 import asyncio
 import subprocess
-import uuid
 import shutil
 import requests
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -32,7 +31,7 @@ app = FastAPI(title="Vidalis Python Services", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -45,12 +44,6 @@ cloudinary.config(
     secure=True
 )
 
-STATIC_DIR = "static"
-VIDEOS_DIR = os.path.join(STATIC_DIR, "videos")
-os.makedirs(VIDEOS_DIR, exist_ok=True)
-
-# Servir archivos estáticos para que Gemini pueda descargar el video original
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _executor = ThreadPoolExecutor(max_workers=4)
 
@@ -183,6 +176,19 @@ class CutRequest(BaseModel):
     source_url: str
     segments: List[Segment]
     artist_id: str
+
+
+def validate_source_url(source_url):
+    """Bloquea SSRF / lectura de archivos: solo http(s) y, si R2_PUBLIC_URL está
+    configurado, solo el host de R2 (los fuentes siempre son URLs que nosotros
+    producimos en R2)."""
+    parsed = urlparse(source_url or "")
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="source_url debe ser http(s)")
+    allowed_host = urlparse(os.getenv("R2_PUBLIC_URL", "")).hostname
+    if allowed_host and parsed.hostname != allowed_host:
+        raise HTTPException(status_code=400, detail="source_url no proviene de un origen permitido")
+    return source_url
 
 
 def build_ffmpeg_cut_command(source_url, start, end, output_path):
@@ -337,30 +343,9 @@ async def scrape_all_platforms(req: MultiScrapeRequest):
 
 # ── Endpoints: Clipper de Video ────────────────────────────────────────────────
 
-@app.post("/upload")
-async def upload_video(file: UploadFile = File(...)):
-    if not file.content_type.startswith("video/"):
-        raise HTTPException(status_code=400, detail="El archivo debe ser un video")
-
-    file_ext = os.path.splitext(file.filename)[1] or ".mp4"
-    video_id = f"{uuid.uuid4()}{file_ext}"
-    output_path = os.path.join(VIDEOS_DIR, video_id)
-
-    try:
-        with open(output_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        if os.path.exists(output_path):
-            os.remove(output_path)
-        raise HTTPException(status_code=500, detail=f"Error guardando el video: {str(e)}")
-
-    return {
-        "video_id": video_id,
-        "filename": file.filename
-    }
-
 @app.post("/cut")
 def cut_video(payload: CutRequest, background_tasks: BackgroundTasks):
+    validate_source_url(payload.source_url)
     import tempfile
     temp_dir = tempfile.mkdtemp(prefix="repurpose_")
     files_to_clean = []
