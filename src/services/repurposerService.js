@@ -81,15 +81,10 @@ async function generateClips(parentVideoId) {
   if (clipperUrl) {
     // Modo Python: Llamar al clipper-service
     try {
-      const tempVideoId = parent.source_url.split('/').pop();
       const response = await axios.post(`${clipperUrl.replace(/\/+$/, '')}/cut`, {
-        video_id: tempVideoId,
-        segments: segments.map(s => ({
-          start: s.start,
-          end: s.end,
-          title: s.title
-        })),
-        artist_id: parent.artist_id
+        source_url: parent.source_url,
+        segments: segments.map(s => ({ start: s.start, end: s.end, title: s.title })),
+        artist_id: parent.artist_id,
       });
 
       const pythonClips = response.data.clips || [];
