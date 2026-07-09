@@ -206,10 +206,37 @@ async function generateClips(parentVideoId) {
 
 const MAX_DURATION_SECONDS = 7200; // 2 horas
 
+// Anti-SSRF: sourceUrl lo manda el cliente y luego lo leen server-side tanto
+// Gemini (buildVideoContentParts hace axios.get(mediaUrl)) como ffmpeg en el
+// media service. Sin este check, un cliente podría apuntar a un host interno
+// (ej. IP de metadata de la nube) y el backend lo iría a buscar por él.
+function validateSourceUrl(sourceUrl) {
+  let allowedHost;
+  try {
+    allowedHost = new URL(process.env.R2_PUBLIC_URL).hostname;
+  } catch {
+    throw new Error('R2_PUBLIC_URL no configurado');
+  }
+  let parsed;
+  try {
+    parsed = new URL(sourceUrl);
+  } catch {
+    throw new Error('sourceUrl inválida');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('sourceUrl debe ser http(s)');
+  }
+  if (parsed.hostname !== allowedHost) {
+    throw new Error('sourceUrl no proviene de un origen permitido');
+  }
+  return sourceUrl;
+}
+
 async function createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds }) {
   if (!artistId || !sourceUrl) {
     throw new Error('artistId y sourceUrl son requeridos');
   }
+  validateSourceUrl(sourceUrl);
   if (durationSeconds && durationSeconds > MAX_DURATION_SECONDS) {
     throw new Error(`El video dura más de 2 horas (${Math.round(durationSeconds / 60)} min) — no soportado todavía`);
   }
@@ -243,4 +270,4 @@ async function createRepurposeVideo({ artistId, sourceUrl, title, durationSecond
   return video;
 }
 
-module.exports = { buildClipUrl, generateClips, createRepurposeVideo, MAX_DURATION_SECONDS };
+module.exports = { buildClipUrl, generateClips, createRepurposeVideo, MAX_DURATION_SECONDS, validateSourceUrl };
