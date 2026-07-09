@@ -1,10 +1,13 @@
 [deploy]
-startCommand = "node src/app.js"
-# Sin healthcheckPath explícito: Railway hace un chequeo simple de puerto en
-# vez de pedir "/". Se quitó porque el worker (otro servicio de Railway que
-# comparte este mismo Root Directory / railway.toml al no tener uno propio)
-# heredaba este valor y fallaba siempre, aunque su Settings UI lo tuviera
-# vacío -- el archivo de config le ganaba al campo vacío del panel.
+# Sin startCommand ni healthcheckPath explícitos aquí: este archivo lo
+# comparten DOS servicios de Railway (Backend-VIDALIS y worker), que tienen
+# el mismo Root Directory (raíz del repo) al no poder aislar el worker en
+# su propia carpeta (comparte código con src/services/*). Cualquier valor
+# puesto aquí le gana al campo del panel de Settings para AMBOS servicios
+# -- incluso deja ese campo no editable en la UI. Por eso el startCommand
+# de cada uno se configura por separado en Railway (Settings > Deploy >
+# Custom Start Command): "node src/app.js" en Backend-VIDALIS, "npm run
+# worker" en worker. Solo dejamos aquí lo que es seguro compartir.
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
