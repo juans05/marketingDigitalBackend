@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const aiService = require('./aiService');
+const axios = require('axios');
 
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
@@ -71,33 +72,99 @@ async function generateClips(parentVideoId) {
   }
 
   let clipsCreated = 0;
-  for (const segment of segments) {
-    try {
-      const clipUrl = buildClipUrl(parent.source_url, segment.start, segment.end);
-      const copy = await aiService.generateCopyWithClaude(
-        segment.reason, null, segment.title, targetPlatforms, artistContext, learningContext
-      );
+  const clipperUrl = process.env.CLIPPER_SERVICE_URL;
 
-      const { error: insertErr } = await supabase.from('videos').insert([{
-        parent_video_id: parentVideoId,
-        artist_id: parent.artist_id,
-        title: segment.title,
-        source_url: clipUrl,
-        status: 'ready',
-        viral_score_real: copy.viral_score,
-        ai_clips_data: {
-          start: segment.start,
-          end: segment.end,
-          reason: segment.reason,
-          ai_copy_short: copy.ai_copy_short,
-          ai_copy_long: copy.ai_copy_long,
-          hashtags: copy.hashtags,
-        },
-      }]);
-      if (insertErr) throw insertErr;
-      clipsCreated++;
+  if (clipperUrl) {
+    // Modo Python: Llamar al clipper-service
+    try {
+      const tempVideoId = parent.source_url.split('/').pop();
+      const response = await axios.post(`${clipperUrl.replace(/\/+$/, '')}/cut`, {
+        video_id: tempVideoId,
+        segments: segments.map(s => ({
+          start: s.start,
+          end: s.end,
+          title: s.title
+        })),
+        artist_id: parent.artist_id
+      });
+
+      const pythonClips = response.data.clips || [];
+
+      for (const pyClip of pythonClips) {
+        if (pyClip.status === 'failed') {
+          console.error(`⚠️ [Repurposer] Segmento omitido por fallo en python: ${pyClip.error}`);
+          continue;
+        }
+
+        try {
+          const correspondingSegment = segments.find(s => s.title === pyClip.title);
+          const reason = correspondingSegment ? correspondingSegment.reason : '';
+
+          const copy = await aiService.generateCopyWithClaude(
+            reason, null, pyClip.title, targetPlatforms, artistContext, learningContext
+          );
+
+          const { error: insertErr } = await supabase.from('videos').insert([{
+            parent_video_id: parentVideoId,
+            artist_id: parent.artist_id,
+            title: pyClip.title,
+            source_url: pyClip.secure_url,
+            status: 'ready',
+            viral_score_real: copy.viral_score,
+            ai_clips_data: {
+              start: pyClip.start,
+              end: pyClip.end,
+              reason: reason,
+              ai_copy_short: copy.ai_copy_short,
+              ai_copy_long: copy.ai_copy_long,
+              hashtags: copy.hashtags,
+            },
+          }]);
+
+          if (insertErr) throw insertErr;
+          clipsCreated++;
+        } catch (err) {
+          console.error(`⚠️ [Repurposer] Error guardando segmento (${pyClip.title}):`, err.message);
+        }
+      }
     } catch (err) {
-      console.error(`⚠️ [Repurposer] Segmento omitido (${segment.title}):`, err.message);
+      console.error(`❌ [Repurposer] Error llamando al clipper-service:`, err.message);
+      await supabase.from('videos').update({
+        status: 'failed',
+        error_log: JSON.stringify({ step: 'clipperService', message: err.message }),
+      }).eq('id', parentVideoId);
+      return;
+    }
+  } else {
+    // Fallback: Modo original de Cloudinary dinámico por URL (útil para tests locales)
+    for (const segment of segments) {
+      try {
+        const clipUrl = buildClipUrl(parent.source_url, segment.start, segment.end);
+        const copy = await aiService.generateCopyWithClaude(
+          segment.reason, null, segment.title, targetPlatforms, artistContext, learningContext
+        );
+
+        const { error: insertErr } = await supabase.from('videos').insert([{
+          parent_video_id: parentVideoId,
+          artist_id: parent.artist_id,
+          title: segment.title,
+          source_url: clipUrl,
+          status: 'ready',
+          viral_score_real: copy.viral_score,
+          ai_clips_data: {
+            start: segment.start,
+            end: segment.end,
+            reason: segment.reason,
+            ai_copy_short: copy.ai_copy_short,
+            ai_copy_long: copy.ai_copy_long,
+            hashtags: copy.hashtags,
+          },
+        }]);
+        if (insertErr) throw insertErr;
+        clipsCreated++;
+      } catch (err) {
+        console.error(`⚠️ [Repurposer] Segmento omitido (${segment.title}):`, err.message);
+      }
     }
   }
 
@@ -132,16 +199,15 @@ async function createRepurposeVideo({ artistId, sourceUrl, title, durationSecond
       artist_id: artistId,
       title: title || 'Video sin título',
       source_url: cleanSourceUrl,
-      status: 'processing',
+      status: 'queued',
     }])
     .select();
   if (error) throw error;
 
   const video = data[0];
 
-  module.exports.generateClips(video.id).catch(err => {
-    console.error(`❌ [Repurposer] Error generando clips para ${video.id}:`, err.message);
-  });
+  const { publishRepurposeJob } = require('../lib/queue');
+  await publishRepurposeJob(video.id);
 
   return video;
 }

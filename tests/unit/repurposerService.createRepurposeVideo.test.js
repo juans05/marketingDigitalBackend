@@ -7,27 +7,27 @@ jest.mock('@supabase/supabase-js', () => ({ createClient: () => mock.client }));
 jest.mock('../../src/services/aiService', () => ({
   detectSegments: jest.fn(), generateCopyWithClaude: jest.fn(), fetchArtistLearningContext: jest.fn(),
 }));
+jest.mock('../../src/lib/queue', () => ({ publishRepurposeJob: jest.fn().mockResolvedValue() }));
+const queue = require('../../src/lib/queue');
 
 const repurposerService = require('../../src/services/repurposerService');
 
 afterEach(() => jest.clearAllMocks());
 
 describe('createRepurposeVideo', () => {
-  test('crea la fila padre con status processing y dispara generateClips', async () => {
-    jest.spyOn(repurposerService, 'generateClips').mockResolvedValue();
-
+  test('crea la fila padre con status queued y publica el job en la cola', async () => {
     mock.queueResult({ data: { id: 'artist-1' }, error: null }); // select artist
-    mock.queueResult({ data: [{ id: 'video-1', artist_id: 'artist-1', status: 'processing' }], error: null }); // insert video
+    mock.queueResult({ data: [{ id: 'video-1', artist_id: 'artist-1', status: 'queued' }], error: null }); // insert video
 
     const video = await repurposerService.createRepurposeVideo({
       artistId: 'artist-1',
-      sourceUrl: 'https://res.cloudinary.com/demo/video/upload/v1/podcast.mp4',
+      sourceUrl: 'https://cdn.example.com/repurposer/sources/artist-1/x.mp4',
       title: 'Mi podcast',
       durationSeconds: 3600,
     });
 
-    expect(video.status).toBe('processing');
-    expect(repurposerService.generateClips).toHaveBeenCalledWith('video-1');
+    expect(video.status).toBe('queued');
+    expect(queue.publishRepurposeJob).toHaveBeenCalledWith('video-1');
   });
 
   test('rechaza videos de más de 2 horas antes de tocar la base de datos', async () => {
