@@ -1,6 +1,10 @@
 [deploy]
 startCommand = "node src/app.js"
-healthcheckPath = "/"
+# Sin healthcheckPath explícito: Railway hace un chequeo simple de puerto en
+# vez de pedir "/". Se quitó porque el worker (otro servicio de Railway que
+# comparte este mismo Root Directory / railway.toml al no tener uno propio)
+# heredaba este valor y fallaba siempre, aunque su Settings UI lo tuviera
+# vacío -- el archivo de config le ganaba al campo vacío del panel.
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
