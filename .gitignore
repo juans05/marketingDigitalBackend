@@ -24,3 +24,9 @@ logs/
 
 # Local git worktrees (superpowers:using-git-worktrees)
 .worktrees/
+
+# Python (python-services)
+python-services/.venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
