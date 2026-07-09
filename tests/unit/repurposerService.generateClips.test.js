@@ -13,6 +13,7 @@ jest.mock('@supabase/supabase-js', () => ({ createClient: () => mock.client }));
 // pass-through spy (it still calls the real chainable implementation)
 // remains installed.
 const updateSpy = jest.spyOn(mock.client, 'update');
+const deleteSpy = jest.spyOn(mock.client, 'delete');
 
 jest.mock('../../src/services/aiService', () => ({
   detectSegments: jest.fn(),
@@ -35,6 +36,7 @@ describe('generateClips', () => {
       data: { id: 'artist-1', name: 'Juan', ai_genre: 'tech', ai_audience: null, ai_tone: null, active_platforms: ['tiktok'] },
       error: null,
     }); // select artist
+    mock.queueResult({ error: null }); // delete hijos previos (idempotencia)
 
     aiService.detectSegments.mockResolvedValueOnce([
       { start: 10, end: 40, title: 'Momento 1', reason: 'Hook fuerte' },
@@ -76,6 +78,7 @@ describe('generateClips', () => {
       data: { id: 'artist-1', name: 'Juan', ai_genre: null, ai_audience: null, ai_tone: null, active_platforms: [] },
       error: null,
     });
+    mock.queueResult({ error: null }); // delete hijos previos (idempotencia)
 
     aiService.detectSegments.mockResolvedValueOnce([
       { start: 10, end: 40, title: 'Falla', reason: 'x' },
@@ -121,6 +124,7 @@ describe('generateClips', () => {
       data: { id: 'artist-1', name: 'Juan', ai_genre: null, ai_audience: null, ai_tone: null, active_platforms: [] },
       error: null,
     });
+    mock.queueResult({ error: null }); // delete hijos previos (idempotencia)
     aiService.detectSegments.mockResolvedValueOnce([]);
     mock.queueResult({ error: null }); // update status failed
 
@@ -133,5 +137,16 @@ describe('generateClips', () => {
       status: 'failed',
       error_log: JSON.stringify({ step: 'detectSegments', message: 'No se detectaron capítulos en el video' }),
     });
+  });
+
+  test('borra los clips hijos previos antes de regenerar (idempotencia)', async () => {
+    mock.queueResult({ data: { id: 'parent-1', artist_id: 'artist-1', title: 'P', source_url: 'https://cdn/x.mp4', platforms: null }, error: null }); // select parent
+    mock.queueResult({ data: { id: 'artist-1', name: 'J', ai_genre: null, ai_audience: null, ai_tone: null, active_platforms: [] }, error: null }); // select artist
+    mock.queueResult({ error: null }); // delete hijos
+    aiService.detectSegments.mockResolvedValueOnce([]); // sin segmentos -> corta rápido
+    mock.queueResult({ error: null }); // update status failed
+
+    await generateClips('parent-1');
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
   });
 });

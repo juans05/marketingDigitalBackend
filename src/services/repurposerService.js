@@ -52,6 +52,10 @@ async function generateClips(parentVideoId) {
 
   const learningContext = await aiService.fetchArtistLearningContext(parent.artist_id);
 
+  // Idempotencia: si el job se re-entrega, borra los clips hijos previos para
+  // no duplicar en la galería.
+  await supabase.from('videos').delete().eq('parent_video_id', parentVideoId);
+
   let segments;
   try {
     segments = await aiService.detectSegments(parent.source_url, parent.title);
