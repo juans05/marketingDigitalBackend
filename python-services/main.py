@@ -367,18 +367,23 @@ async def scrape_all_platforms(req: MultiScrapeRequest):
 @app.post("/probe")
 def probe_video(payload: ProbeRequest):
     validate_source_url(payload.source_url)
+    print(f"⏱️  [Python] /probe recibido para: {payload.source_url}")
     try:
         out = subprocess.run(
             build_ffprobe_duration_command(payload.source_url),
             check=True, capture_output=True, text=True,
         )
-        return {"duration_seconds": float(out.stdout.strip())}
+        duration = float(out.stdout.strip())
+        print(f"⏱️  [Python] /probe duración = {duration}s")
+        return {"duration_seconds": duration}
     except Exception as e:
+        print(f"❌ [Python] /probe error: {e}")
         raise HTTPException(status_code=422, detail=f"No se pudo leer la duración: {str(e)}")
 
 @app.post("/cut")
 def cut_video(payload: CutRequest, background_tasks: BackgroundTasks):
     validate_source_url(payload.source_url)
+    print(f"✂️  [Python] /cut recibido: {len(payload.segments)} segmentos (artista {payload.artist_id})")
     import tempfile
     temp_dir = tempfile.mkdtemp(prefix="repurpose_")
     files_to_clean = []
@@ -390,6 +395,7 @@ def cut_video(payload: CutRequest, background_tasks: BackgroundTasks):
         command = build_ffmpeg_cut_command(payload.source_url, segment.start, segment.end, output_path)
 
         try:
+            print(f"✂️  [Python] cortando clip {idx + 1}/{len(payload.segments)}: '{segment.title}' [{segment.start}-{segment.end}s]")
             subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             upload_result = cloudinary.uploader.upload(
@@ -397,6 +403,7 @@ def cut_video(payload: CutRequest, background_tasks: BackgroundTasks):
                 resource_type="video",
                 folder=f"vidalis/{payload.artist_id}/clips"
             )
+            print(f"☁️  [Python] clip {idx + 1} subido a Cloudinary")
 
             results.append({
                 "title": segment.title,
@@ -406,6 +413,7 @@ def cut_video(payload: CutRequest, background_tasks: BackgroundTasks):
                 "duration": upload_result.get("duration")
             })
         except Exception as e:
+            print(f"❌ [Python] clip {idx + 1} falló: {e}")
             results.append({
                 "title": segment.title,
                 "start": segment.start,
@@ -414,6 +422,8 @@ def cut_video(payload: CutRequest, background_tasks: BackgroundTasks):
                 "error": str(e)
             })
 
+    ok = sum(1 for r in results if r.get("secure_url"))
+    print(f"✅ [Python] /cut terminado: {ok}/{len(payload.segments)} clips subidos")
     background_tasks.add_task(cleanup_files, files_to_clean)
     background_tasks.add_task(shutil.rmtree, temp_dir, ignore_errors=True)
 

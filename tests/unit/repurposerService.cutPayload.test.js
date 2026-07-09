@@ -10,6 +10,10 @@ jest.mock('../../src/services/aiService', () => ({
   detectSegments: jest.fn().mockResolvedValue([{ start: 1, end: 5, title: 'A', reason: 'r' }]),
   generateCopyWithClaude: jest.fn(), fetchArtistLearningContext: jest.fn().mockResolvedValue(null),
 }));
+jest.mock('../../src/services/repurposeProgress', () => ({
+  setStage: jest.fn(),
+  STAGES: { PROBING: 'probing', DETECTING: 'detecting', CUTTING: 'cutting', SCORING: 'scoring' },
+}));
 
 const axios = require('axios');
 const { generateClips } = require('../../src/services/repurposerService');

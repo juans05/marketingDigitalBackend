@@ -21,6 +21,12 @@ jest.mock('../../src/services/aiService', () => ({
   fetchArtistLearningContext: jest.fn().mockResolvedValue(null),
 }));
 
+// setStage escribe en Supabase (mismo mock) → mockeado para no desalinear el FIFO.
+jest.mock('../../src/services/repurposeProgress', () => ({
+  setStage: jest.fn(),
+  STAGES: { PROBING: 'probing', DETECTING: 'detecting', CUTTING: 'cutting', SCORING: 'scoring' },
+}));
+
 const aiService = require('../../src/services/aiService');
 const { generateClips } = require('../../src/services/repurposerService');
 

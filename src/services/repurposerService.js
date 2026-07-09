@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const aiService = require('./aiService');
 const axios = require('axios');
+const { setStage, STAGES } = require('./repurposeProgress');
 
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
@@ -33,6 +34,7 @@ async function generateClips(parentVideoId) {
     .eq('id', parentVideoId)
     .single();
   if (parentErr || !parent) throw new Error(`Video padre no encontrado: ${parentVideoId}`);
+  console.log(`🚀 [Repurposer] Iniciando generateClips para ${parentVideoId} ("${parent.title}")`);
 
   const { data: artist } = await supabase
     .from('artists')
@@ -59,8 +61,10 @@ async function generateClips(parentVideoId) {
   // Guard de duración: probar ≤2h antes de gastar Gemini (solo en modo Python).
   const probeUrl = process.env.CLIPPER_SERVICE_URL;
   if (probeUrl) {
+    await setStage(parentVideoId, STAGES.PROBING);
     try {
       const probe = await axios.post(`${probeUrl.replace(/\/+$/, '')}/probe`, { source_url: parent.source_url });
+      console.log(`⏱️ [Repurposer] ${parentVideoId}: duración ${probe.data?.duration_seconds}s`);
       const dur = probe.data?.duration_seconds;
       if (dur && dur > 7200) {
         await supabase.from('videos').update({
@@ -74,6 +78,8 @@ async function generateClips(parentVideoId) {
     }
   }
 
+  await setStage(parentVideoId, STAGES.DETECTING);
+  console.log(`🧠 [Repurposer] ${parentVideoId}: detectando capítulos con Gemini...`);
   let segments;
   try {
     segments = await aiService.detectSegments(parent.source_url, parent.title);
@@ -93,12 +99,15 @@ async function generateClips(parentVideoId) {
     return;
   }
 
+  console.log(`🎬 [Repurposer] ${parentVideoId}: ${segments.length} capítulos detectados`);
   let clipsCreated = 0;
   const clipperUrl = process.env.CLIPPER_SERVICE_URL;
 
   if (clipperUrl) {
     // Modo Python: Llamar al clipper-service
     try {
+      await setStage(parentVideoId, STAGES.CUTTING);
+      console.log(`✂️ [Repurposer] ${parentVideoId}: cortando ${segments.length} clips con ffmpeg...`);
       const response = await axios.post(`${clipperUrl.replace(/\/+$/, '')}/cut`, {
         source_url: parent.source_url,
         segments: segments.map(s => ({ start: s.start, end: s.end, title: s.title })),
@@ -106,6 +115,8 @@ async function generateClips(parentVideoId) {
       });
 
       const pythonClips = response.data.clips || [];
+      await setStage(parentVideoId, STAGES.SCORING);
+      console.log(`⭐ [Repurposer] ${parentVideoId}: ${pythonClips.length} clips cortados, puntuando con Claude...`);
 
       for (const pyClip of pythonClips) {
         if (pyClip.status === 'failed') {
@@ -185,8 +196,10 @@ async function generateClips(parentVideoId) {
     }
   }
 
+  const finalStatus = clipsCreated > 0 ? 'ready' : 'failed';
+  console.log(`✅ [Repurposer] ${parentVideoId}: terminado con ${clipsCreated} clips (status: ${finalStatus})`);
   await supabase.from('videos').update({
-    status: clipsCreated > 0 ? 'ready' : 'failed',
+    status: finalStatus,
     error_log: clipsCreated > 0 ? null : JSON.stringify({ step: 'generateClips', message: 'Ningún clip se generó correctamente' }),
   }).eq('id', parentVideoId);
 }
@@ -225,6 +238,7 @@ async function createRepurposeVideo({ artistId, sourceUrl, title, durationSecond
 
   const { publishRepurposeJob } = require('../lib/queue');
   await publishRepurposeJob(video.id);
+  console.log(`📤 [Repurposer] Job encolado en RabbitMQ: ${video.id} (artista ${artistId})`);
 
   return video;
 }

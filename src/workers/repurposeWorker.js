@@ -4,9 +4,12 @@ const { generateClips } = require('../services/repurposerService');
 async function handleMessage(msg, deps) {
   const { generateClips: run, channel } = deps;
   const { parentVideoId } = JSON.parse(msg.content.toString());
+  console.log(`📥 [Worker] Job recibido: ${parentVideoId}`);
+  const startedAt = Date.now();
   try {
     await run(parentVideoId);
     channel.ack(msg);
+    console.log(`✅ [Worker] Job ${parentVideoId} OK en ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
   } catch (err) {
     console.error(`❌ [Worker] Job ${parentVideoId} falló, va a la DLQ:`, err.message);
     channel.nack(msg, false, false); // requeue=false -> dead-letter
