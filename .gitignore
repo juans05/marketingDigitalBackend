@@ -30,3 +30,5 @@ python-services/.venv/
 **/__pycache__/
 *.pyc
 .pytest_cache/
+docs/METODOLOGIA-RAZONAMIENTO.md
+docs/superpowers/specs/2026-07-06-repurposer-design.md

@@ -1,7 +1,7 @@
 FROM node:20-slim
 
-# Install Python
-RUN apt-get update && apt-get install -y python3 python3-pip python3-venv && rm -rf /var/lib/apt/lists/*
+# Install Python & FFmpeg
+RUN apt-get update && apt-get install -y python3 python3-pip python3-venv ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -10,8 +10,8 @@ COPY package*.json ./
 RUN npm ci --production
 
 # Install Python dependencies
-COPY scraper/requirements.txt ./scraper/
-RUN python3 -m venv /app/venv && /app/venv/bin/pip install --no-cache-dir -r scraper/requirements.txt
+COPY python-services/requirements.txt ./python-services/
+RUN python3 -m venv /app/venv && /app/venv/bin/pip install --no-cache-dir -r python-services/requirements.txt
 RUN /app/venv/bin/playwright install chromium --with-deps
 
 # Copy all source

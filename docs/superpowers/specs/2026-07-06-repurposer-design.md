@@ -66,32 +66,53 @@ Body: { artistId, sourceUrl, title }
 - Dispara el pipeline de forma async (mismo patrón fire-and-forget que
   `registerVideo` usa hoy) y responde de inmediato con `{ videoId }`.
 
-### 3.2 Servicio nuevo: `src/services/repurposerService.js`
+### 3.2 Detección de capítulos: nueva función en `aiService.js`, no transcripción separada
 
-- `detectSegments(transcript, durationSeconds)` — prompt a Claude con la
-  transcripción + timestamps, devuelve `[{ start, end, title, reason }]`
-  (3–8 segmentos; el número exacto lo decide el modelo según el contenido, no
-  un valor fijo).
+**Corrección respecto a la primera versión de este documento:** se investigó
+`transcribeWithGroq()` ([aiService.js:485](src/services/aiService.js#L485)) y
+tiene dos problemas que la descartan para este caso: (a) pide
+`response_format: 'text'` — no hay timestamps por segmento; (b) corta el audio
+a 24MB, insuficiente para un podcast de 1-2h. En cambio,
+`buildVideoContentParts()` ([aiService.js:685](src/services/aiService.js#L685))
+ya sube videos grandes a Gemini vía File API "sin límite práctico" (usado hoy
+por `analyzeWithGemini`). Por eso la detección de capítulos se resuelve con
+**un solo llamado a Gemini que mira el video completo**, no con una
+transcripción previa + Claude.
+
+- **Nueva función exportada en `aiService.js`**: `detectSegments(mediaUrl,
+  title)` — reusa `buildVideoContentParts(mediaUrl, title)` (misma función que
+  ya usa `analyzeWithGemini`) para armar las `contentParts` (inline o File API
+  según tamaño), y les agrega un prompt pidiendo 3-8 capítulos con
+  `{start, end, title, reason}` (segundos, clips de 15-90s cada uno). Vive en
+  `aiService.js` (no en `repurposerService.js`) porque necesita las mismas
+  funciones internas de Gemini (`getGemini`, `buildVideoContentParts`) que ya
+  son privadas de ese módulo.
+
+### 3.3 Servicio nuevo: `src/services/repurposerService.js`
+
 - `buildClipUrl(sourceUrl, start, end)` — arma la URL de Cloudinary recortada
-  (`so_<start>,eo_<end>`), sin procesar video en el servidor.
+  (`so_<start>,eo_<end>`) usando el mismo patrón de parseo de URL que
+  `buildCloudinaryUrl()` ([vidalisService.js:1401](src/services/vidalisService.js#L1401)),
+  sin procesar video en el servidor.
 - `generateClips(parentVideoId)` — orquesta todo:
-  1. Lee la fila padre, transcribe (reusa la llamada Gemini existente).
-  2. `detectSegments(...)`.
+  1. Lee la fila padre.
+  2. `aiService.detectSegments(sourceUrl, title)`.
   3. Por cada segmento: `buildClipUrl(...)` → INSERT fila hija en `videos`
      (`parent_video_id`, `source_url` = URL recortada, `ai_clips_data` = `{start,
-     end, title, reason}`) → recorta la porción de `transcript` correspondiente
-     a `[start, end]` → `generateCopyWithClaude(geminiAnalysis, transcriptSlice,
-     segmentTitle, platforms, artistContext, learningContext)` → guarda
+     end, title, reason}`) → `aiService.generateCopyWithClaude(segment.reason,
+     null, segment.title, platforms, artistContext, learningContext)` (se pasa
+     la descripción del capítulo que ya dio Gemini como `geminiAnalysis`, y
+     `transcript: null` — no hace falta transcribir de nuevo) → guarda
      `copy.viral_score` en `viral_score_real` (el copy/hashtags que devuelve de
      paso quedan guardados en `ai_clips_data` como borrador, sin construir UI
      para editarlos todavía — ver sección 7).
   4. Si un segmento falla (score o URL), se salta y se continúa con los demás
      — no se cae el batch completo.
-  5. Al terminar, marca la fila padre `status: 'ready'` (o `'failed'` si la
-     transcripción/detección de segmentos falla por completo, con detalle en
-     `error_log`, columna ya existente).
+  5. Al terminar, marca la fila padre `status: 'ready'` (o `'failed'` si
+     `detectSegments` falla por completo, con detalle en `error_log`, columna
+     ya existente).
 
-### 3.3 Cambio mínimo en endpoint existente
+### 3.4 Cambio mínimo en endpoint existente
 
 `GET /vidalis/clips/:parentId` (ya existe, `vidalisController.getClips` →
 `vidalisService.getClipsByParent`): se modifica la respuesta para **ordenar
@@ -128,8 +149,10 @@ Tres estados dentro del mismo componente (no son 3 rutas separadas):
    El clip con `isBest: true` se muestra destacado **arriba y separado** de la
    grilla (borde violeta, badge "⭐ Mejor clip"), no solo con un badge de score
    igual que los demás. El resto en grilla de 3 columnas con thumbnail,
-   duración, score con color (verde ≥80, ámbar 50-79, gris <50), plataformas y
-   acciones (Preview, Publicar).
+   duración, score con color (`viral_score_real` es `DECIMAL(4,1)` en escala
+   **1-10**, no 0-100 — ver `migration_analytics_tracking.sql:27`; verde ≥8,
+   ámbar 5-7.9, gris <5, mostrado como "8.7" no "87"), plataformas y acciones
+   (Preview, Publicar).
 
 ### 4.3 Llamadas a API
 

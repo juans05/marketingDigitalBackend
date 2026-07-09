@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+requests
+cloudinary
+python-multipart
+scrapegraphai==1.8.0
+playwright
+python-dotenv
+
