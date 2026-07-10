@@ -9,9 +9,25 @@ const mockChannel = {
 const mockConn = { createChannel: jest.fn().mockResolvedValue(mockChannel), on: jest.fn() };
 jest.mock('amqplib', () => ({ connect: jest.fn().mockResolvedValue(mockConn) }));
 
-const { assertRepurposeTopology, publishRepurposeJob, REPURPOSE_QUEUE } = require('../../src/lib/queue');
+const { assertRepurposeTopology, publishRepurposeJob, REPURPOSE_QUEUE, redactAmqpUrl } = require('../../src/lib/queue');
 
 afterEach(() => jest.clearAllMocks());
+
+describe('redactAmqpUrl', () => {
+  test('oculta la contraseña pero conserva host, puerto y usuario', () => {
+    expect(redactAmqpUrl('amqp://miuser:secreto123@rabbitmq.railway.internal:5672'))
+      .toBe('amqp://miuser:***@rabbitmq.railway.internal:5672');
+  });
+
+  test('devuelve un mensaje claro si RABBITMQ_URL no está configurada', () => {
+    expect(redactAmqpUrl(undefined)).toBe('(RABBITMQ_URL no configurada)');
+    expect(redactAmqpUrl('')).toBe('(RABBITMQ_URL no configurada)');
+  });
+
+  test('devuelve un mensaje claro si el valor no es una URL válida', () => {
+    expect(redactAmqpUrl('esto-no-es-una-url')).toBe('(RABBITMQ_URL inválida)');
+  });
+});
 
 describe('queue topology', () => {
   test('declara la cola principal con dead-letter exchange', async () => {

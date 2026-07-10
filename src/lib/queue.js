@@ -7,6 +7,20 @@ const REPURPOSE_DLX = 'repurpose.dlx';
 let connPromise = null;
 let channelPromise = null;
 
+// RABBITMQ_URL trae usuario y contraseña embebidos (amqp://user:pass@host:port)
+// -- nunca se loguea completa. Esto muestra host/puerto/usuario, útil para
+// confirmar que apunta al broker correcto, sin exponer la contraseña.
+function redactAmqpUrl(url) {
+  if (!url) return '(RABBITMQ_URL no configurada)';
+  try {
+    const parsed = new URL(url);
+    const auth = parsed.username ? `${parsed.username}:***@` : '';
+    return `${parsed.protocol}//${auth}${parsed.hostname}${parsed.port ? `:${parsed.port}` : ''}`;
+  } catch {
+    return '(RABBITMQ_URL inválida)';
+  }
+}
+
 async function assertRepurposeTopology(channel) {
   await channel.assertExchange(REPURPOSE_DLX, 'fanout', { durable: true });
   await channel.assertQueue(REPURPOSE_DLQ, { durable: true });
@@ -16,6 +30,7 @@ async function assertRepurposeTopology(channel) {
 
 async function getChannel() {
   if (!channelPromise) {
+    console.log(`🐇 [Queue] Conectando a RabbitMQ: ${redactAmqpUrl(process.env.RABBITMQ_URL)}`);
     connPromise = amqp.connect(process.env.RABBITMQ_URL);
     channelPromise = connPromise.then(async (conn) => {
       conn.on('close', () => { connPromise = null; channelPromise = null; });
@@ -29,7 +44,6 @@ async function getChannel() {
 }
 
 async function publishRepurposeJob(parentVideoId) {
-  console.error('❌ [Repurposer] publicando en cola:', parentVideoId);
   const ch = await getChannel();
   ch.sendToQueue(
     REPURPOSE_QUEUE,
@@ -38,4 +52,4 @@ async function publishRepurposeJob(parentVideoId) {
   );
 }
 
-module.exports = { assertRepurposeTopology, publishRepurposeJob, getChannel, REPURPOSE_QUEUE, REPURPOSE_DLQ, REPURPOSE_DLX };
+module.exports = { assertRepurposeTopology, publishRepurposeJob, getChannel, redactAmqpUrl, REPURPOSE_QUEUE, REPURPOSE_DLQ, REPURPOSE_DLX };
