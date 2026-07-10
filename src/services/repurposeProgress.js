@@ -1,8 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
+const { resolveSupabaseServiceKey } = require('../lib/resolveSupabaseServiceKey');
 
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder'
+  resolveSupabaseServiceKey('repurposeProgress')
 );
 
 // Etapas del pipeline. Estos strings deben coincidir con el mapeo del frontend

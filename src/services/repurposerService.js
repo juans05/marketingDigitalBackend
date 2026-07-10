@@ -2,10 +2,11 @@ const { createClient } = require('@supabase/supabase-js');
 const aiService = require('./aiService');
 const axios = require('axios');
 const { setStage, STAGES } = require('./repurposeProgress');
+const { resolveSupabaseServiceKey } = require('../lib/resolveSupabaseServiceKey');
 
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder'
+  resolveSupabaseServiceKey('repurposerService')
 );
 
 function buildClipUrl(sourceUrl, startSeconds, endSeconds) {
