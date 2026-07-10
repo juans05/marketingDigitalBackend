@@ -237,44 +237,50 @@ function validateSourceUrl(sourceUrl) {
 }
 
 async function createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds }) {
-  if (!artistId || !sourceUrl) {
-    throw new Error('artistId y sourceUrl son requeridos');
+  try {
+    console.log(`📤 Metodo createRepurposeVideo con datos: artistId=${artistId}, sourceUrl=${sourceUrl}, title=${title}, durationSeconds=${durationSeconds}`);
+    if (!artistId || !sourceUrl) {
+      throw new Error('artistId y sourceUrl son requeridos');
+    }
+    validateSourceUrl(sourceUrl);
+    if (durationSeconds && durationSeconds > MAX_DURATION_SECONDS) {
+      throw new Error(`El video dura más de 2 horas (${Math.round(durationSeconds / 60)} min) — no soportado todavía`);
+    }
+
+    const { data: artist, error: artistErr } = await supabase
+      .from('artists')
+      .select('id')
+      .eq('id', artistId)
+      .single();
+    if (artistErr || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
+
+    const cleanSourceUrl = sourceUrl.replace(/\s+/g, '');
+
+    const { data, error } = await supabase
+      .from('videos')
+      .insert([{
+        artist_id: artistId,
+        title: title || 'Video sin título',
+        source_url: cleanSourceUrl,
+        status: 'queued',
+      }])
+      .select();
+    if (error) {
+      console.error('❌ [Repurposer] Error insertando video en Supabase:', JSON.stringify(error));
+      throw new Error(error.message || error.details || error.hint || 'Error guardando el video en la base de datos');
+    }
+
+    const video = data[0];
+
+    const { publishRepurposeJob } = require('../lib/queue');
+    await publishRepurposeJob(video.id);
+    console.log(`📤 [Repurposer] Job encolado en RabbitMQ: ${video.id} (artista ${artistId})`);
+
+    return video;
+  } catch (err) {
+    console.error('❌ [Repurposer] Error creando video:', err.message);
+    throw err;
   }
-  validateSourceUrl(sourceUrl);
-  if (durationSeconds && durationSeconds > MAX_DURATION_SECONDS) {
-    throw new Error(`El video dura más de 2 horas (${Math.round(durationSeconds / 60)} min) — no soportado todavía`);
-  }
-
-  const { data: artist, error: artistErr } = await supabase
-    .from('artists')
-    .select('id')
-    .eq('id', artistId)
-    .single();
-  if (artistErr || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
-
-  const cleanSourceUrl = sourceUrl.replace(/\s+/g, '');
-
-  const { data, error } = await supabase
-    .from('videos')
-    .insert([{
-      artist_id: artistId,
-      title: title || 'Video sin título',
-      source_url: cleanSourceUrl,
-      status: 'queued',
-    }])
-    .select();
-  if (error) {
-    console.error('❌ [Repurposer] Error insertando video en Supabase:', JSON.stringify(error));
-    throw new Error(error.message || error.details || error.hint || 'Error guardando el video en la base de datos');
-  }
-
-  const video = data[0];
-
-  const { publishRepurposeJob } = require('../lib/queue');
-  await publishRepurposeJob(video.id);
-  console.log(`📤 [Repurposer] Job encolado en RabbitMQ: ${video.id} (artista ${artistId})`);
-
-  return video;
 }
 
 module.exports = { buildClipUrl, generateClips, createRepurposeVideo, MAX_DURATION_SECONDS, validateSourceUrl };
