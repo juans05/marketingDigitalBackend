@@ -72,4 +72,22 @@ describe('createRepurposeVideo', () => {
     expect(errorSpy).toHaveBeenCalled(); // el detalle completo debe quedar logueado server-side
     errorSpy.mockRestore();
   });
+
+  test('si el insert funciona pero encolar en RabbitMQ falla, marca la fila failed (no la deja huérfana en queued)', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const updateSpy = jest.spyOn(mock.client, 'update');
+    mock.queueResult({ data: { id: 'artist-1' }, error: null }); // select artist
+    mock.queueResult({ data: [{ id: 'video-1', artist_id: 'artist-1', status: 'queued' }], error: null }); // insert video OK
+    mock.queueResult({ error: null }); // update a failed
+    queue.publishRepurposeJob.mockRejectedValueOnce(new Error('RabbitMQ no disponible'));
+
+    const err = await repurposerService.createRepurposeVideo({
+      artistId: 'artist-1',
+      sourceUrl: 'https://cdn.example.com/repurposer/sources/artist-1/x.mp4',
+    }).catch(e => e);
+
+    expect(err.message).toContain('RabbitMQ no disponible');
+    expect(updateSpy).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
+    errorSpy.mockRestore();
+  });
 });

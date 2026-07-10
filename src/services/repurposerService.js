@@ -237,52 +237,59 @@ function validateSourceUrl(sourceUrl) {
 }
 
 async function createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds }) {
+  console.log(`📤 [Repurposer] createRepurposeVideo: artistId=${artistId}, sourceUrl=${sourceUrl}, title=${title}, durationSeconds=${durationSeconds}`);
+
+  if (!artistId || !sourceUrl) {
+    throw new Error('artistId y sourceUrl son requeridos');
+  }
+  validateSourceUrl(sourceUrl);
+  if (durationSeconds && durationSeconds > MAX_DURATION_SECONDS) {
+    throw new Error(`El video dura más de 2 horas (${Math.round(durationSeconds / 60)} min) — no soportado todavía`);
+  }
+
+  const { data: artist, error: artistErr } = await supabase
+    .from('artists')
+    .select('id')
+    .eq('id', artistId)
+    .single();
+  if (artistErr || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
+
+  const cleanSourceUrl = sourceUrl.replace(/\s+/g, '');
+  const { data, error } = await supabase
+    .from('videos')
+    .insert([{
+      artist_id: artistId,
+      title: title || 'Video sin título',
+      source_url: cleanSourceUrl,
+      status: 'queued',
+    }])
+    .select();
+  if (error) {
+    console.error('❌ [Repurposer] Error insertando video en Supabase:', JSON.stringify(error));
+    throw new Error(error.message || error.details || error.hint || 'Error guardando el video en la base de datos');
+  }
+
+  const video = data[0];
+  console.log(`✅ [Repurposer] Video creado en Supabase: ${video.id}`);
+
+  // Se separa del insert a propósito: si el insert ya funcionó pero encolar
+  // falla (ej. RabbitMQ caído), la fila NO debe quedar huérfana en 'queued'
+  // para siempre -- se marca 'failed' con el motivo real, en vez de que el
+  // cliente reciba un error genérico sin saber que el video sí se guardó.
   try {
-    console.log(`📤 Metodo createRepurposeVideo con datos: artistId=${artistId}, sourceUrl=${sourceUrl}, title=${title}, durationSeconds=${durationSeconds}`);
-    if (!artistId || !sourceUrl) {
-      throw new Error('artistId y sourceUrl son requeridos');
-    }
-    validateSourceUrl(sourceUrl);
-    if (durationSeconds && durationSeconds > MAX_DURATION_SECONDS) {
-      throw new Error(`El video dura más de 2 horas (${Math.round(durationSeconds / 60)} min) — no soportado todavía`);
-    }
-
-    const { data: artist, error: artistErr } = await supabase
-      .from('artists')
-      .select('id')
-      .eq('id', artistId)
-      .single();
-    if (artistErr || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
-
-    const cleanSourceUrl = sourceUrl.replace(/\s+/g, '');
-    console.error('❌ [Repurposer] cleanSourceUrl', cleanSourceUrl);
-    const { data, error } = await supabase
-      .from('videos')
-      .insert([{
-        artist_id: artistId,
-        title: title || 'Video sin título',
-        source_url: cleanSourceUrl,
-        status: 'queued',
-      }])
-      .select();
-    console.error('❌ [Repurposer] data', data);
-    if (error) {
-      console.error('❌ [Repurposer] cleanSourceUrl', cleanSourceUrl);
-      console.error('❌ [Repurposer] Error insertando video en Supabase:', JSON.stringify(error));
-      throw new Error(error.message || error.details || error.hint || 'Error guardando el video en la base de datos');
-    }
-
-    const video = data[0];
-    console.error('❌ [Repurposer] video', video);
     const { publishRepurposeJob } = require('../lib/queue');
     await publishRepurposeJob(video.id);
     console.log(`📤 [Repurposer] Job encolado en RabbitMQ: ${video.id} (artista ${artistId})`);
-
-    return video;
-  } catch (err) {
-    console.error('❌ [Repurposer] Error creando video:', err.message);
-    throw err;
+  } catch (queueErr) {
+    console.error(`❌ [Repurposer] No se pudo encolar el job para ${video.id}:`, queueErr.message);
+    await supabase.from('videos').update({
+      status: 'failed',
+      error_log: JSON.stringify({ step: 'publishRepurposeJob', message: queueErr.message }),
+    }).eq('id', video.id);
+    throw new Error(`El video se guardó pero no se pudo encolar para procesar: ${queueErr.message}`);
   }
+
+  return video;
 }
 
 module.exports = { buildClipUrl, generateClips, createRepurposeVideo, MAX_DURATION_SECONDS, validateSourceUrl };
