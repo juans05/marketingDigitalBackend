@@ -255,7 +255,7 @@ async function createRepurposeVideo({ artistId, sourceUrl, title, durationSecond
     if (artistErr || !artist) throw new Error(`Artista no encontrado: ${artistId}`);
 
     const cleanSourceUrl = sourceUrl.replace(/\s+/g, '');
-
+    console.error('❌ [Repurposer] cleanSourceUrl', cleanSourceUrl);
     const { data, error } = await supabase
       .from('videos')
       .insert([{
@@ -265,13 +265,15 @@ async function createRepurposeVideo({ artistId, sourceUrl, title, durationSecond
         status: 'queued',
       }])
       .select();
+    console.error('❌ [Repurposer] data', data);
     if (error) {
+      console.error('❌ [Repurposer] cleanSourceUrl', cleanSourceUrl);
       console.error('❌ [Repurposer] Error insertando video en Supabase:', JSON.stringify(error));
       throw new Error(error.message || error.details || error.hint || 'Error guardando el video en la base de datos');
     }
 
     const video = data[0];
-
+    console.error('❌ [Repurposer] video', video);
     const { publishRepurposeJob } = require('../lib/queue');
     await publishRepurposeJob(video.id);
     console.log(`📤 [Repurposer] Job encolado en RabbitMQ: ${video.id} (artista ${artistId})`);

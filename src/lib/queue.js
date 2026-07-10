@@ -29,6 +29,7 @@ async function getChannel() {
 }
 
 async function publishRepurposeJob(parentVideoId) {
+  console.error('❌ [Repurposer] publicando en cola:', parentVideoId);
   const ch = await getChannel();
   ch.sendToQueue(
     REPURPOSE_QUEUE,
