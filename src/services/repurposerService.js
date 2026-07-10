@@ -150,7 +150,10 @@ async function generateClips(parentVideoId) {
             },
           }]);
 
-          if (insertErr) throw insertErr;
+          if (insertErr) {
+            console.error(`⚠️ [Repurposer] Error guardando segmento (${pyClip.title}):`, insertErr.message);
+            continue;
+          }
           clipsCreated++;
         } catch (err) {
           console.error(`⚠️ [Repurposer] Error guardando segmento (${pyClip.title}):`, err.message);
