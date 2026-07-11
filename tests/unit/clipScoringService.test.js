@@ -1,296 +1,183 @@
-const axios = require('axios');
+process.env.SUPABASE_URL = 'https://x.supabase.co';
+process.env.SUPABASE_ANON_KEY = 'anon';
 
-// Mock axios
-jest.mock('axios');
+const { createSupabaseMock } = require('../helpers/supabaseMock');
+const mock = createSupabaseMock();
+jest.mock('@supabase/supabase-js', () => ({ createClient: () => mock.client }));
 
-const { scoreClipsWithVidalis } = require('../../src/services/clipScoringService');
+jest.mock('../../src/services/aiService', () => ({
+  generateCopyWithClaude: jest.fn(),
+  fetchArtistLearningContext: jest.fn(),
+}));
+
+const aiService = require('../../src/services/aiService');
+const { scoreClipsWithClaude } = require('../../src/services/clipScoringService');
+
+const PARENT_VIDEO = { id: 'video-123', artist_id: 'artist-1', title: 'Podcast episodio 4', platforms: null };
+const ARTIST = { id: 'artist-1', name: 'DJ Test', ai_genre: 'reggaeton', ai_audience: 'jóvenes 18-25', ai_tone: 'divertido', active_platforms: ['tiktok', 'instagram'] };
+
+function queueScoringContext({ parent = PARENT_VIDEO, artist = ARTIST } = {}) {
+  mock.queueResult({ data: parent, error: null }); // videos select
+  mock.queueResult({ data: artist, error: null }); // artists select
+}
 
 describe('clipScoringService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Set up environment variables for tests
-    process.env.VIDALIS_API_URL = 'http://localhost:3001';
-    process.env.VIDALIS_API_KEY = 'test-api-key-123';
+    aiService.fetchArtistLearningContext.mockResolvedValue(null);
   });
 
-  afterEach(() => {
-    delete process.env.VIDALIS_API_KEY;
-  });
-
-  describe('scoreClipsWithVidalis', () => {
+  describe('scoreClipsWithClaude', () => {
     it('should throw error if clips array is empty', async () => {
       await expect(
-        scoreClipsWithVidalis([], 'test-video-id')
+        scoreClipsWithClaude([], 'video-123')
       ).rejects.toThrow('Clips array is required');
     });
 
     it('should throw error if clips is not an array', async () => {
       await expect(
-        scoreClipsWithVidalis(null, 'test-video-id')
+        scoreClipsWithClaude(null, 'video-123')
       ).rejects.toThrow('Clips array is required');
     });
 
-    it('should score clips successfully with Vidalis API response', async () => {
-      const mockVidalisResponse = {
-        viralScore: 0.85,
-        breakdown: {
-          visualHook: 0.9,
-          pacing: 0.8,
-          emotionalImpact: 0.85
-        },
-        platforms: ['tiktok', 'instagram']
-      };
-
-      axios.post.mockResolvedValueOnce({ data: mockVidalisResponse });
-
-      const clips = [
-        {
-          momentId: 'moment-1',
-          path: '/path/to/clip1.mp4',
-          duration: 30,
-          tags: ['funny', 'trending'],
-          validation: {
-            confidence: 0.9,
-            hasVisualHook: true
-          }
-        }
-      ];
-
-      const result = await scoreClipsWithVidalis(clips, 'video-123');
-
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(1);
-      expect(result[0]).toHaveProperty('momentId', 'moment-1');
-      expect(result[0]).toHaveProperty('score');
-      expect(result[0].score).toHaveProperty('viralScore', 0.85);
-      expect(result[0].score).toHaveProperty('scoreBreakdown');
-      expect(result[0].score.scoreBreakdown).toEqual(mockVidalisResponse.breakdown);
-      expect(result[0].score).toHaveProperty('recommendedPlatforms');
-      expect(result[0].score.recommendedPlatforms).toEqual(['tiktok', 'instagram']);
-      expect(result[0].score).toHaveProperty('scoredAt');
-      expect(typeof result[0].score.scoredAt).toBe('string');
-    });
-
-    it('should handle API failure gracefully with default score', async () => {
-      axios.post.mockRejectedValueOnce(new Error('Vidalis API error'));
-
-      const clips = [
-        {
-          momentId: 'moment-1',
-          path: '/path/to/clip1.mp4',
-          duration: 30,
-          tags: ['funny'],
-          validation: {
-            confidence: 0.8
-          }
-        }
-      ];
-
-      const result = await scoreClipsWithVidalis(clips, 'video-123');
-
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(1);
-      expect(result[0]).toHaveProperty('score');
-      expect(result[0].score).toHaveProperty('viralScore', 0);
-      expect(result[0].score).toHaveProperty('scoreBreakdown', {});
-      expect(result[0].score).toHaveProperty('recommendedPlatforms', ['tiktok']);
-      expect(result[0].score).toHaveProperty('scoredAt');
-      expect(result[0].score).toHaveProperty('error');
-      expect(result[0].score.error).toBe('Vidalis API error');
-    });
-
-    it('should score multiple clips', async () => {
-      const mockResponse1 = {
-        viralScore: 0.85,
-        breakdown: { hook: 0.9 },
-        platforms: ['tiktok']
-      };
-      const mockResponse2 = {
-        viralScore: 0.65,
-        breakdown: { hook: 0.6 },
-        platforms: ['instagram']
-      };
-
-      axios.post
-        .mockResolvedValueOnce({ data: mockResponse1 })
-        .mockResolvedValueOnce({ data: mockResponse2 });
-
-      const clips = [
-        {
-          momentId: 'moment-1',
-          path: '/path/to/clip1.mp4',
-          duration: 30,
-          tags: ['funny'],
-          validation: { confidence: 0.9 }
-        },
-        {
-          momentId: 'moment-2',
-          path: '/path/to/clip2.mp4',
-          duration: 25,
-          tags: ['trending'],
-          validation: { confidence: 0.7 }
-        }
-      ];
-
-      const result = await scoreClipsWithVidalis(clips, 'video-123');
-
-      expect(result.length).toBe(2);
-      expect(result[0].score.viralScore).toBe(0.85);
-      expect(result[1].score.viralScore).toBe(0.65);
-
-      // Verify API was called twice
-      expect(axios.post).toHaveBeenCalledTimes(2);
-    });
-
-    it('should continue processing clips even if one fails', async () => {
-      const mockResponse = {
-        viralScore: 0.75,
-        breakdown: {},
-        platforms: ['tiktok']
-      };
-
-      axios.post
-        .mockResolvedValueOnce({ data: mockResponse })
-        .mockRejectedValueOnce(new Error('API timeout'))
-        .mockResolvedValueOnce({ data: mockResponse });
-
-      const clips = [
-        {
-          momentId: 'moment-1',
-          path: '/path/to/clip1.mp4',
-          duration: 30,
-          validation: { confidence: 0.9 }
-        },
-        {
-          momentId: 'moment-2',
-          path: '/path/to/clip2.mp4',
-          duration: 25,
-          validation: { confidence: 0.8 }
-        },
-        {
-          momentId: 'moment-3',
-          path: '/path/to/clip3.mp4',
-          duration: 20,
-          validation: { confidence: 0.7 }
-        }
-      ];
-
-      const result = await scoreClipsWithVidalis(clips, 'video-123');
-
-      expect(result.length).toBe(3);
-      expect(result[0].score.viralScore).toBe(0.75); // Success
-      expect(result[1].score.viralScore).toBe(0); // Failed
-      expect(result[1].score.error).toBe('API timeout');
-      expect(result[2].score.viralScore).toBe(0.75); // Success
-    });
-
-    it('should send correct payload to Vidalis API', async () => {
-      axios.post.mockResolvedValueOnce({ data: { viralScore: 0.8 } });
-
-      const clips = [
-        {
-          momentId: 'moment-1',
-          path: '/path/to/clip1.mp4',
-          duration: 30,
-          tags: ['funny', 'viral'],
-          validation: {
-            confidence: 0.85
-          }
-        }
-      ];
-
-      await scoreClipsWithVidalis(clips, 'video-123');
-
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://localhost:3001/vidalis/viral-score',
-        {
-          videoId: 'moment-1',
-          clipPath: '/path/to/clip1.mp4',
-          metadata: {
-            duration: 30,
-            validationScore: 0.85,
-            tags: ['funny', 'viral']
-          }
-        },
-        {
-          timeout: 60000,
-          headers: {
-            'Authorization': 'Bearer test-api-key-123'
-          }
-        }
-      );
-    });
-
-    it('should use fallback validation score when not present', async () => {
-      axios.post.mockResolvedValueOnce({ data: { viralScore: 0.7 } });
-
-      const clips = [
-        {
-          momentId: 'moment-1',
-          path: '/path/to/clip1.mp4',
-          duration: 30,
-          tags: []
-          // No validation property
-        }
-      ];
-
-      await scoreClipsWithVidalis(clips, 'video-123');
-
-      expect(axios.post).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          metadata: expect.objectContaining({
-            validationScore: 0.5, // Fallback value
-            tags: []
-          })
-        }),
-        expect.any(Object)
-      );
-    });
-
-    it('should use custom VIDALIS_API_URL from environment', async () => {
-      process.env.VIDALIS_API_URL = 'https://api.example.com:5000';
-      axios.post.mockResolvedValueOnce({ data: { viralScore: 0.6 } });
-
-      const clips = [
-        {
-          momentId: 'moment-1',
-          path: '/path/to/clip1.mp4',
-          duration: 30,
-          validation: { confidence: 0.8 }
-        }
-      ];
-
-      await scoreClipsWithVidalis(clips, 'video-123');
-
-      expect(axios.post).toHaveBeenCalledWith(
-        'https://api.example.com:5000/vidalis/viral-score',
-        expect.any(Object),
-        expect.any(Object)
-      );
-    });
-
-    it('should include timestamp in scoredAt field', async () => {
-      const beforeCall = new Date();
-
-      axios.post.mockResolvedValueOnce({
-        data: {
-          viralScore: 0.8,
-          breakdown: {},
-          platforms: ['tiktok']
-        }
+    it('should score clips using aiService.generateCopyWithClaude, not an HTTP call', async () => {
+      queueScoringContext();
+      aiService.generateCopyWithClaude.mockResolvedValueOnce({
+        viral_score: 8.5,
+        marketing_breakdown: { hook_score: 9, retention_score: 8 },
+        ai_copy_short: 'Mirá esto',
+        ai_copy_long: 'Mirá esto largo',
+        hashtags: '#viral #fyp',
       });
 
       const clips = [
         {
-          momentId: 'moment-1',
-          path: '/path/to/clip1.mp4',
+          index: 1,
+          momentId: 1,
+          path: '/tmp/clip1.mp4',
           duration: 30,
-          validation: { confidence: 0.8 }
-        }
+          reason: 'Momento con gancho fuerte',
+          tags: ['funny', 'trending'],
+          validation: { hasVisualHook: true, confidence: 0.9, suggestions: [] },
+        },
       ];
 
-      const result = await scoreClipsWithVidalis(clips, 'video-123');
+      const result = await scoreClipsWithClaude(clips, 'video-123');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].score.viralScore).toBe(8.5);
+      expect(result[0].score.scoreBreakdown).toEqual({ hook_score: 9, retention_score: 8 });
+      expect(result[0].score.recommendedPlatforms).toEqual(['tiktok', 'instagram']);
+      expect(result[0].score.adCopy).toEqual({ short: 'Mirá esto', long: 'Mirá esto largo', hashtags: '#viral #fyp' });
+      expect(result[0].score.scoredAt).toEqual(expect.any(String));
+
+      // Confirms this no longer hits an HTTP "Vidalis API" — it's a direct call
+      expect(aiService.generateCopyWithClaude).toHaveBeenCalledWith(
+        expect.stringContaining('Momento con gancho fuerte'),
+        null,
+        expect.any(String),
+        ['tiktok', 'instagram'],
+        expect.objectContaining({ nombre: 'DJ Test' }),
+        null
+      );
+    });
+
+    it('should handle Claude failure gracefully with a default score', async () => {
+      queueScoringContext();
+      aiService.generateCopyWithClaude.mockRejectedValueOnce(new Error('Claude API error'));
+
+      const clips = [
+        { index: 1, momentId: 1, path: '/tmp/clip1.mp4', duration: 30, reason: 'x', tags: [], validation: { confidence: 0.8 } },
+      ];
+
+      const result = await scoreClipsWithClaude(clips, 'video-123');
+
+      expect(result[0].score.viralScore).toBe(0);
+      expect(result[0].score.scoreBreakdown).toEqual({});
+      expect(result[0].score.error).toBe('Claude API error');
+    });
+
+    it('should score multiple clips in order', async () => {
+      queueScoringContext();
+      aiService.generateCopyWithClaude
+        .mockResolvedValueOnce({ viral_score: 8.5, marketing_breakdown: {}, ai_copy_short: '', ai_copy_long: '', hashtags: '' })
+        .mockResolvedValueOnce({ viral_score: 6.5, marketing_breakdown: {}, ai_copy_short: '', ai_copy_long: '', hashtags: '' });
+
+      const clips = [
+        { index: 1, momentId: 1, path: '/tmp/clip1.mp4', duration: 30, reason: 'a', tags: [], validation: { confidence: 0.9 } },
+        { index: 2, momentId: 2, path: '/tmp/clip2.mp4', duration: 25, reason: 'b', tags: [], validation: { confidence: 0.7 } },
+      ];
+
+      const result = await scoreClipsWithClaude(clips, 'video-123');
+
+      expect(result[0].score.viralScore).toBe(8.5);
+      expect(result[1].score.viralScore).toBe(6.5);
+      expect(aiService.generateCopyWithClaude).toHaveBeenCalledTimes(2);
+    });
+
+    it('should continue processing clips even if one fails', async () => {
+      queueScoringContext();
+      aiService.generateCopyWithClaude
+        .mockResolvedValueOnce({ viral_score: 7.5, marketing_breakdown: {}, ai_copy_short: '', ai_copy_long: '', hashtags: '' })
+        .mockRejectedValueOnce(new Error('timeout'))
+        .mockResolvedValueOnce({ viral_score: 7.5, marketing_breakdown: {}, ai_copy_short: '', ai_copy_long: '', hashtags: '' });
+
+      const clips = [
+        { index: 1, momentId: 1, path: '/tmp/clip1.mp4', duration: 30, reason: 'a', validation: { confidence: 0.9 } },
+        { index: 2, momentId: 2, path: '/tmp/clip2.mp4', duration: 25, reason: 'b', validation: { confidence: 0.8 } },
+        { index: 3, momentId: 3, path: '/tmp/clip3.mp4', duration: 20, reason: 'c', validation: { confidence: 0.7 } },
+      ];
+
+      const result = await scoreClipsWithClaude(clips, 'video-123');
+
+      expect(result).toHaveLength(3);
+      expect(result[0].score.viralScore).toBe(7.5);
+      expect(result[1].score.viralScore).toBe(0);
+      expect(result[1].score.error).toBe('timeout');
+      expect(result[2].score.viralScore).toBe(7.5);
+    });
+
+    it('should fall back to default platforms when neither video nor artist has any set', async () => {
+      queueScoringContext({
+        parent: { ...PARENT_VIDEO, platforms: null },
+        artist: { ...ARTIST, active_platforms: null },
+      });
+      aiService.generateCopyWithClaude.mockResolvedValueOnce({
+        viral_score: 5, marketing_breakdown: {}, ai_copy_short: '', ai_copy_long: '', hashtags: '',
+      });
+
+      const clips = [{ index: 1, momentId: 1, path: '/tmp/clip1.mp4', duration: 30, reason: 'a', validation: { confidence: 0.5 } }];
+
+      const result = await scoreClipsWithClaude(clips, 'video-123');
+
+      expect(result[0].score.recommendedPlatforms).toEqual(['tiktok', 'instagram', 'youtube']);
+    });
+
+    it('should pass null artistContext when the artist has no genre/audience/tone set', async () => {
+      queueScoringContext({ artist: { ...ARTIST, ai_genre: null, ai_audience: null, ai_tone: null } });
+      aiService.generateCopyWithClaude.mockResolvedValueOnce({
+        viral_score: 5, marketing_breakdown: {}, ai_copy_short: '', ai_copy_long: '', hashtags: '',
+      });
+
+      const clips = [{ index: 1, momentId: 1, path: '/tmp/clip1.mp4', duration: 30, reason: 'a', validation: { confidence: 0.5 } }];
+
+      await scoreClipsWithClaude(clips, 'video-123');
+
+      expect(aiService.generateCopyWithClaude).toHaveBeenCalledWith(
+        expect.any(String), null, expect.any(String), expect.any(Array), null, null
+      );
+    });
+
+    it('should include timestamp in scoredAt field', async () => {
+      queueScoringContext();
+      const beforeCall = new Date();
+      aiService.generateCopyWithClaude.mockResolvedValueOnce({
+        viral_score: 8, marketing_breakdown: {}, ai_copy_short: '', ai_copy_long: '', hashtags: '',
+      });
+
+      const clips = [{ index: 1, momentId: 1, path: '/tmp/clip1.mp4', duration: 30, reason: 'a', validation: { confidence: 0.8 } }];
+
+      const result = await scoreClipsWithClaude(clips, 'video-123');
       const afterCall = new Date();
 
       const scoredAtTime = new Date(result[0].score.scoredAt);

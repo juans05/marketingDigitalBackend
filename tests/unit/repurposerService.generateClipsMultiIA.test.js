@@ -19,7 +19,7 @@ jest.mock('../../src/services/clipValidationService', () => ({
   validateClipsWithGemini: jest.fn(),
 }));
 jest.mock('../../src/services/clipScoringService', () => ({
-  scoreClipsWithVidalis: jest.fn(),
+  scoreClipsWithClaude: jest.fn(),
 }));
 
 const transcriptionService = require('../../src/services/transcriptionService');
@@ -66,7 +66,7 @@ describe('generateClipsMultiIA', () => {
       { ...validatedClips[0], score: { viralScore: 85, scoreBreakdown: {}, recommendedPlatforms: ['tiktok'] } },
       { ...validatedClips[1], score: { viralScore: 75, scoreBreakdown: {}, recommendedPlatforms: ['instagram'] } }
     ];
-    clipScoringService.scoreClipsWithVidalis.mockResolvedValue(scoredClips);
+    clipScoringService.scoreClipsWithClaude.mockResolvedValue(scoredClips);
 
     // Queue DB responses (1 select for each update, then no error)
     for (let i = 0; i < 6; i++) {
@@ -81,7 +81,7 @@ describe('generateClipsMultiIA', () => {
     expect(momentDetectionService.detectMomentsWithClaude).toHaveBeenCalledWith(segments, '', videoId);
     expect(clipGenerationService.generateClips).toHaveBeenCalledWith(videoPath, moments, videoId);
     expect(clipValidationService.validateClipsWithGemini).toHaveBeenCalledWith(clips, videoId);
-    expect(clipScoringService.scoreClipsWithVidalis).toHaveBeenCalledWith(validatedClips, videoId);
+    expect(clipScoringService.scoreClipsWithClaude).toHaveBeenCalledWith(validatedClips, videoId);
 
     // Verify result is the final scored clips
     expect(result).toEqual(scoredClips);
@@ -132,7 +132,7 @@ describe('generateClipsMultiIA', () => {
     clipValidationService.validateClipsWithGemini.mockResolvedValue([
       { index: 1, path: '/tmp/clip.mp4', startTime: 0, endTime: 20, duration: 20, sizeBytes: 1000, validation: { hasVisualHook: true, confidence: 0.9, suggestions: [] } }
     ]);
-    clipScoringService.scoreClipsWithVidalis.mockResolvedValue([
+    clipScoringService.scoreClipsWithClaude.mockResolvedValue([
       { index: 1, path: '/tmp/clip.mp4', startTime: 0, endTime: 20, duration: 20, sizeBytes: 1000, validation: { hasVisualHook: true, confidence: 0.9, suggestions: [] }, score: { viralScore: 80 } }
     ]);
 

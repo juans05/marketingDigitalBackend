@@ -9,7 +9,7 @@ const { transcribeVideo } = require('./transcriptionService');
 const { detectMomentsWithClaude } = require('./momentDetectionService');
 const { generateClips: generateClipsFromMoments, cleanupClips } = require('./clipGenerationService');
 const { validateClipsWithGemini } = require('./clipValidationService');
-const { scoreClipsWithVidalis } = require('./clipScoringService');
+const { scoreClipsWithClaude } = require('./clipScoringService');
 
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
@@ -83,7 +83,7 @@ async function generateClipsMultiIA(videoPath, parentVideoId) {
     // Stage 5: Score clips
     await updateVideoClipsData(parentVideoId, { stage: 'scoring', totalClips: validatedClips.length });
     logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: scoring`);
-    const scoredClips = await scoreClipsWithVidalis(validatedClips, parentVideoId);
+    const scoredClips = await scoreClipsWithClaude(validatedClips, parentVideoId);
 
     // Completion
     await updateVideoClipsData(parentVideoId, {

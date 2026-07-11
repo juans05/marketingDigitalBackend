@@ -8,10 +8,8 @@ if (!process.env.GROQ_API_KEY && !process.env.WHISPER_MODEL_PATH) {
   console.warn('⚠️ Warning: Neither GROQ_API_KEY nor WHISPER_MODEL_PATH configured. Transcription will fail.');
 }
 
-// Vidalis scoring service configuration
-if (!process.env.VIDALIS_API_KEY) {
-  console.warn('⚠️ Warning: VIDALIS_API_KEY not configured. Clip scoring will fail.');
-}
+// Clip scoring (clipScoringService) reuses generateCopyWithClaude directly —
+// no separate API key needed, it rides on ANTHROPIC_API_KEY + Supabase.
 
 // Video processing configuration
 if (!process.env.FFMPEG_PATH) {
@@ -26,10 +24,6 @@ module.exports = {
   // Video processing
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
   clipsTempDir: process.env.CLIPS_TEMP_DIR || '/tmp/repurposer-clips',
-
-  // Vidalis scoring
-  vidalisApiUrl: process.env.VIDALIS_API_URL || 'http://localhost:3001',
-  vidalisApiKey: process.env.VIDALIS_API_KEY,
 
   // Logging
   repurposerLogLevel: process.env.REPURPOSER_LOG_LEVEL || 'info',

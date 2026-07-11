@@ -2,14 +2,17 @@
  * Error Handling Tests
  *
  * Verifies that error scenarios in the multi-IA pipeline are handled gracefully:
- * 1. Transcription fallback (Grok failure → Whisper)
+ * 1. Transcription fallback (Groq failure → Whisper)
  * 2. Gemini Vision timeout handling
- * 3. Vidalis scoring failure with default scores
+ *
+ * Clip scoring error scenarios live in clipScoringService.test.js — it calls
+ * aiService.generateCopyWithClaude directly (not an HTTP API), so it needs
+ * aiService + Supabase mocks that don't belong in this general-purpose file.
  */
 
 const axios = require('axios');
 
-// Mock axios for Vidalis tests
+// Mock axios (used by Gemini Vision tests below)
 jest.mock('axios');
 
 describe('Error Handling - Transcription Service', () => {
@@ -85,110 +88,6 @@ describe('Error Handling - Clip Validation Service', () => {
     expect(clipValidationService.validateClipsWithGemini).toBeDefined();
 
     console.log('✅ Validation service has error recovery mechanism');
-  });
-});
-
-describe('Error Handling - Clip Scoring Service', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('should handle Vidalis API failure with default scores', async () => {
-    const { scoreClipsWithVidalis } = require('../../src/services/clipScoringService');
-
-    // Mock Vidalis to return error
-    axios.post.mockRejectedValueOnce(new Error('Vidalis API timeout'));
-
-    const clips = [
-      {
-        index: 0,
-        path: '/path/to/clip.mp4',
-        momentId: 0,
-        duration: 45,
-        validation: { confidence: 0.85 },
-      },
-    ];
-
-    // Service should handle error and return clips with default score
-    // (viralScore: 0, scoredAt: timestamp)
-    try {
-      const result = await scoreClipsWithVidalis(clips, 'video-id');
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBe(1);
-
-      // Default score structure when Vidalis fails
-      expect(result[0].score).toBeDefined();
-      expect(result[0].score.viralScore).toBeDefined();
-      expect(result[0].score.scoredAt).toBeDefined();
-
-      console.log('✅ Scoring service handles Vidalis failure with defaults');
-    } catch (error) {
-      // If Vidalis is down, the service should still return something
-      console.log('⚠️ Scoring service encountered error (expected when Vidalis is offline)');
-    }
-  });
-
-  it('should reject empty clips array', async () => {
-    const { scoreClipsWithVidalis } = require('../../src/services/clipScoringService');
-
-    try {
-      await scoreClipsWithVidalis([], 'test-id');
-      fail('Should reject empty clips array');
-    } catch (error) {
-      expect(error.message).toContain('Clips array is required');
-    }
-
-    console.log('✅ Scoring service validates input');
-  });
-
-  it('should continue scoring other clips if one fails', async () => {
-    // Mock Vidalis to fail for first clip, succeed for second
-    axios.post
-      .mockRejectedValueOnce(new Error('Timeout'))
-      .mockResolvedValueOnce({
-        data: {
-          viralScore: 8.5,
-          breakdown: { hook: 9, retention: 8, shareability: 8 },
-          platforms: ['tiktok', 'reels'],
-        },
-      });
-
-    const { scoreClipsWithVidalis } = require('../../src/services/clipScoringService');
-
-    const clips = [
-      {
-        index: 0,
-        path: '/path/to/clip1.mp4',
-        momentId: 0,
-        duration: 45,
-        validation: { confidence: 0.85 },
-      },
-      {
-        index: 1,
-        path: '/path/to/clip2.mp4',
-        momentId: 1,
-        duration: 60,
-        validation: { confidence: 0.90 },
-      },
-    ];
-
-    try {
-      const result = await scoreClipsWithVidalis(clips, 'video-id');
-
-      expect(result.length).toBe(2);
-
-      // First clip should have default score (due to error)
-      expect(result[0].score).toBeDefined();
-      expect(result[0].score.error).toBeDefined(); // Contains error info
-
-      // Second clip should have actual Vidalis score
-      expect(result[1].score).toBeDefined();
-      expect(result[1].score.viralScore).toBe(8.5); // Actual score from mock
-
-      console.log('✅ Scoring service continues with other clips on individual failures');
-    } catch (error) {
-      console.log('⚠️ Scoring service error (may be expected if Vidalis unavailable)');
-    }
   });
 });
 

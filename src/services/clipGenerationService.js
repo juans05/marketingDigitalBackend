@@ -43,7 +43,7 @@ function validateFilePath(filePath, paramName) {
  * @param {string} videoPath - Path to the source video file
  * @param {Array} moments - Array of moments with {start, end, index, ...}
  * @param {string} videoId - Video ID for naming temp directory
- * @returns {Promise<Array>} Array of clip metadata: {index, path, momentId, startTime, endTime, duration, sizeBytes}
+ * @returns {Promise<Array>} Array of clip metadata: {index, path, momentId, startTime, endTime, duration, sizeBytes, reason, tags}
  * @throws {Error} If video doesn't exist or no clips are generated
  */
 async function generateClips(videoPath, moments, videoId) {
@@ -108,7 +108,9 @@ async function generateClips(videoPath, moments, videoId) {
         startTime: moment.start,
         endTime: moment.end,
         duration: moment.end - moment.start,
-        sizeBytes: stats.size
+        sizeBytes: stats.size,
+        reason: moment.reason || '',
+        tags: moment.tags || []
       });
 
       logDebug(`Clip ${clipIndex} generated: ${stats.size} bytes`);
