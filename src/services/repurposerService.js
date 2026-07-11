@@ -4,10 +4,118 @@ const axios = require('axios');
 const { setStage, STAGES } = require('./repurposeProgress');
 const { resolveSupabaseServiceKey } = require('../lib/resolveSupabaseServiceKey');
 
+// Import the 5 services from Tasks 1-5
+const { transcribeVideo } = require('./transcriptionService');
+const { detectMomentsWithClaude } = require('./momentDetectionService');
+const { generateClips: generateClipsFromMoments, cleanupClips } = require('./clipGenerationService');
+const { validateClipsWithGemini } = require('./clipValidationService');
+const { scoreClipsWithVidalis } = require('./clipScoringService');
+
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
   resolveSupabaseServiceKey('repurposerService')
 );
+
+function logDebug(msg) {
+  console.log(msg);
+}
+
+function logError(msg) {
+  console.error(msg);
+}
+
+/**
+ * Helper to update database with orchestrator progress
+ * @param {string} videoId - Video ID
+ * @param {Object} data - Data to merge into ai_clips_data
+ */
+async function updateVideoClipsData(videoId, data) {
+  try {
+    const { data: existingVideo } = await supabase
+      .from('videos')
+      .select('ai_clips_data')
+      .eq('id', videoId)
+      .single();
+
+    const currentData = existingVideo?.ai_clips_data || {};
+    const newData = { ...currentData, ...data, updated_at: new Date().toISOString() };
+
+    await supabase.from('videos').update({ ai_clips_data: newData }).eq('id', videoId);
+  } catch (error) {
+    logError(`⚠️ [Repurposer] Failed to update ai_clips_data for ${videoId}: ${error.message}`);
+    // Don't re-throw - DB update failure shouldn't halt orchestration
+  }
+}
+
+/**
+ * Orchestrates the 5-service multi-IA pipeline
+ * @param {string} videoPath - Path to the video file
+ * @param {string} parentVideoId - Parent video ID in database
+ * @returns {Promise<Array>} Array of scored clips
+ */
+async function generateClipsMultiIA(videoPath, parentVideoId) {
+  let clipsDir = null;
+
+  try {
+    logDebug(`🎯 [Repurposer] ${parentVideoId} → Starting multi-IA pipeline`);
+
+    // Stage 1: Transcribe
+    await updateVideoClipsData(parentVideoId, { stage: 'transcribing' });
+    logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: transcribing`);
+    const transcript = await transcribeVideo(videoPath, parentVideoId);
+
+    // Stage 2: Detect moments
+    await updateVideoClipsData(parentVideoId, { stage: 'analyzing' });
+    logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: analyzing`);
+    const moments = await detectMomentsWithClaude(transcript.text, '', parentVideoId);
+
+    // Stage 3: Generate clips
+    await updateVideoClipsData(parentVideoId, { stage: 'generating', totalClips: moments.length });
+    logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: generating`);
+    const clips = await generateClipsFromMoments(videoPath, moments, parentVideoId);
+    clipsDir = clips.length > 0 ? require('path').dirname(clips[0].path) : null;
+
+    // Stage 4: Validate clips
+    await updateVideoClipsData(parentVideoId, { stage: 'validating', totalClips: clips.length });
+    logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: validating`);
+    const validatedClips = await validateClipsWithGemini(clips, parentVideoId);
+
+    // Stage 5: Score clips
+    await updateVideoClipsData(parentVideoId, { stage: 'scoring', totalClips: validatedClips.length });
+    logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: scoring`);
+    const scoredClips = await scoreClipsWithVidalis(validatedClips, parentVideoId);
+
+    // Completion
+    await updateVideoClipsData(parentVideoId, {
+      stage: 'completed',
+      clipCount: scoredClips.length,
+      clips: scoredClips.map(c => ({
+        index: c.index,
+        startTime: c.startTime,
+        endTime: c.endTime,
+        duration: c.duration,
+        validation: c.validation,
+        score: c.score
+      })),
+      completedAt: new Date().toISOString(),
+    });
+
+    logDebug(`✅ [Repurposer] ${parentVideoId} completed`);
+    return scoredClips;
+  } catch (error) {
+    logError(`❌ [Repurposer] ${parentVideoId} failed: ${error.message}`);
+    await updateVideoClipsData(parentVideoId, {
+      stage: 'error',
+      errorMessage: error.message,
+      errorTime: new Date().toISOString(),
+    });
+    throw error;
+  } finally {
+    if (clipsDir) {
+      await cleanupClips(clipsDir);
+    }
+  }
+}
 
 function buildClipUrl(sourceUrl, startSeconds, endSeconds) {
   if (!sourceUrl || !sourceUrl.includes('cloudinary.com') || !sourceUrl.includes('/upload/')) {
@@ -208,6 +316,92 @@ async function generateClips(parentVideoId) {
   }).eq('id', parentVideoId);
 }
 
+/**
+ * Downloads a video from a URL to a temporary file
+ * @param {string} sourceUrl - URL of the video
+ * @returns {Promise<string>} Path to the downloaded video file
+ */
+async function downloadVideoToTemp(sourceUrl) {
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const { execFile } = require('child_process');
+  const { promisify } = require('util');
+  const execFileAsync = promisify(execFile);
+
+  const tempDir = os.tmpdir();
+  const fileName = `video_${Date.now()}.mp4`;
+  const tempPath = path.join(tempDir, fileName);
+
+  try {
+    // Use ffmpeg to download and save the video
+    // This is more reliable than axios for large files
+    await execFileAsync('ffmpeg', [
+      '-i', sourceUrl,
+      '-c', 'copy',
+      '-n',
+      tempPath
+    ], { timeout: 600000 }); // 10 minutes timeout for large videos
+
+    logDebug(`Video downloaded to ${tempPath}`);
+    return tempPath;
+  } catch (error) {
+    // Cleanup temp file if download failed
+    try {
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    } catch {}
+    logError(`Failed to download video from ${sourceUrl}: ${error.message}`);
+    throw new Error(`Failed to download video: ${error.message}`);
+  }
+}
+
+/**
+ * Wrapper for orchestrator - fetches video from Supabase and calls generateClipsMultiIA
+ * @param {string} parentVideoId - Video ID in database
+ * @returns {Promise<Array>} Scored clips
+ */
+async function generateClipsMultiIAFromDatabase(parentVideoId) {
+  const { data: parent, error: parentErr } = await supabase
+    .from('videos')
+    .select('id, source_url')
+    .eq('id', parentVideoId)
+    .single();
+
+  if (parentErr || !parent) {
+    throw new Error(`Video not found: ${parentVideoId}`);
+  }
+
+  if (!parent.source_url) {
+    throw new Error(`Video has no source URL: ${parentVideoId}`);
+  }
+
+  let tempVideoPath = null;
+
+  try {
+    // Download video to temp location
+    tempVideoPath = await downloadVideoToTemp(parent.source_url);
+
+    // Call the orchestrator
+    const scoredClips = await generateClipsMultiIA(tempVideoPath, parentVideoId);
+
+    return scoredClips;
+  } finally {
+    // Clean up temp video file
+    if (tempVideoPath) {
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(tempVideoPath)) {
+          fs.unlinkSync(tempVideoPath);
+        }
+      } catch (err) {
+        logError(`Failed to cleanup temp video ${tempVideoPath}: ${err.message}`);
+      }
+    }
+  }
+}
+
 const MAX_DURATION_SECONDS = 7200; // 2 horas
 
 // Anti-SSRF: sourceUrl lo manda el cliente y luego lo leen server-side tanto
@@ -292,4 +486,13 @@ async function createRepurposeVideo({ artistId, sourceUrl, title, durationSecond
   return video;
 }
 
-module.exports = { buildClipUrl, generateClips, createRepurposeVideo, MAX_DURATION_SECONDS, validateSourceUrl };
+module.exports = {
+  buildClipUrl,
+  generateClips,
+  generateClipsMultiIA,
+  generateClipsMultiIAFromDatabase,
+  createRepurposeVideo,
+  MAX_DURATION_SECONDS,
+  validateSourceUrl,
+  updateVideoClipsData,
+};

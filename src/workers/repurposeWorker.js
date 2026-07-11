@@ -1,6 +1,6 @@
 const http = require('http');
 const { getChannel, REPURPOSE_QUEUE } = require('../lib/queue');
-const { generateClips } = require('../services/repurposerService');
+const { generateClipsMultiIAFromDatabase } = require('../services/repurposerService');
 
 // El worker no sirve HTTP (solo consume RabbitMQ), pero Railway hace un check
 // de red sobre el puerto asignado a todo servicio aunque no tenga
@@ -16,7 +16,7 @@ function createHealthServer(port) {
 }
 
 async function handleMessage(msg, deps) {
-  const { generateClips: run, channel } = deps;
+  const { generateClipsMultiIAFromDatabase: run, channel } = deps;
   const { parentVideoId } = JSON.parse(msg.content.toString());
   console.log(`📥 [Worker] Job recibido: ${parentVideoId}`);
   const startedAt = Date.now();
@@ -36,7 +36,7 @@ async function startWorker() {
   await channel.prefetch(prefetch);
   console.log(`🐇 [Worker] Escuchando ${REPURPOSE_QUEUE} (prefetch=${prefetch})`);
   await channel.consume(REPURPOSE_QUEUE, (msg) => {
-    if (msg) handleMessage(msg, { generateClips, channel });
+    if (msg) handleMessage(msg, { generateClipsMultiIAFromDatabase, channel });
   });
 }
 
