@@ -23,9 +23,9 @@ let gemini = null;
 
 function getGemini() {
   if (!gemini) {
-    logDebug('🧪 [Gemini] Verificando API Key: ' + (process.env.GOOGLE_GENERATIVE_AI_API_KEY ? 'Presente' : '⚠️ FALTANTE'));
-    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) throw new Error('GOOGLE_GENERATIVE_AI_API_KEY no configurado');
-    gemini = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+    logDebug('🧪 [Gemini] Verificando API Key: ' + (process.env.GEMINI_API_KEY ? 'Presente' : '⚠️ FALTANTE'));
+    if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurado');
+    gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   }
   return gemini;
 }
