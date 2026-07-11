@@ -18,8 +18,8 @@ jest.mock('../../src/services/clipGenerationService', () => ({
 jest.mock('../../src/services/clipValidationService', () => ({
   validateClipsWithGemini: jest.fn(),
 }));
-jest.mock('../../src/services/clipScoringService', () => ({
-  scoreClipsWithClaude: jest.fn(),
+jest.mock('../../src/services/clipImpactScoringService', () => ({
+  scoreClipsWithImpactRubric: jest.fn(),
 }));
 jest.mock('../../src/services/clipPersistenceService', () => ({
   persistClipsToDatabase: jest.fn(),
@@ -29,7 +29,7 @@ const transcriptionService = require('../../src/services/transcriptionService');
 const momentDetectionService = require('../../src/services/momentDetectionService');
 const clipGenerationService = require('../../src/services/clipGenerationService');
 const clipValidationService = require('../../src/services/clipValidationService');
-const clipScoringService = require('../../src/services/clipScoringService');
+const clipImpactScoringService = require('../../src/services/clipImpactScoringService');
 const clipPersistenceService = require('../../src/services/clipPersistenceService');
 
 const { generateClipsMultiIA } = require('../../src/services/repurposerService');
@@ -81,7 +81,7 @@ describe('generateClipsMultiIA', () => {
       { ...validatedClips[0], score: { viralScore: 85, scoreBreakdown: {}, recommendedPlatforms: ['tiktok'] } },
       { ...validatedClips[1], score: { viralScore: 75, scoreBreakdown: {}, recommendedPlatforms: ['instagram'] } }
     ];
-    clipScoringService.scoreClipsWithClaude.mockResolvedValue(scoredClips);
+    clipImpactScoringService.scoreClipsWithImpactRubric.mockResolvedValue(scoredClips);
 
     clipPersistenceService.persistClipsToDatabase.mockResolvedValue(['row-1', 'row-2']);
 
@@ -89,14 +89,17 @@ describe('generateClipsMultiIA', () => {
     queueUpdateVideoClipsDataResults(7);
     mock.queueResult({ data: null, error: null }); // status: 'ready'
 
-    const result = await generateClipsMultiIA(videoPath, videoId, 'artist-1', 'Podcast ep 4');
+    const result = await generateClipsMultiIA(videoPath, videoId, 'artist-1', 'Podcast ep 4', 'tiktok', 'comedy');
 
     // Verify all services were called
     expect(transcriptionService.transcribeVideo).toHaveBeenCalledWith(videoPath, videoId);
     expect(momentDetectionService.detectMomentsWithClaude).toHaveBeenCalledWith(segments, '', videoId);
     expect(clipGenerationService.generateClips).toHaveBeenCalledWith(videoPath, moments, videoId);
     expect(clipValidationService.validateClipsWithGemini).toHaveBeenCalledWith(clips, videoId);
-    expect(clipScoringService.scoreClipsWithClaude).toHaveBeenCalledWith(validatedClips, videoId);
+    expect(clipImpactScoringService.scoreClipsWithImpactRubric).toHaveBeenCalledWith(
+      validatedClips,
+      { platform: 'tiktok', niche: 'comedy', parentVideoId: videoId }
+    );
     expect(clipPersistenceService.persistClipsToDatabase).toHaveBeenCalledWith(scoredClips, videoId, 'artist-1', 'Podcast ep 4');
 
     // Verify result is the final scored clips
@@ -149,7 +152,7 @@ describe('generateClipsMultiIA', () => {
     clipValidationService.validateClipsWithGemini.mockResolvedValue([
       { index: 1, path: '/tmp/clip.mp4', startTime: 0, endTime: 20, duration: 20, sizeBytes: 1000, validation: { hasVisualHook: true, confidence: 0.9, suggestions: [] } }
     ]);
-    clipScoringService.scoreClipsWithClaude.mockResolvedValue([
+    clipImpactScoringService.scoreClipsWithImpactRubric.mockResolvedValue([
       { index: 1, path: '/tmp/clip.mp4', startTime: 0, endTime: 20, duration: 20, sizeBytes: 1000, validation: { hasVisualHook: true, confidence: 0.9, suggestions: [] }, score: { viralScore: 80 } }
     ]);
     clipPersistenceService.persistClipsToDatabase.mockResolvedValue(['row-1']);

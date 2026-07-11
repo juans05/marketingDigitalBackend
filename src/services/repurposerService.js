@@ -9,7 +9,7 @@ const { transcribeVideo } = require('./transcriptionService');
 const { detectMomentsWithClaude } = require('./momentDetectionService');
 const { generateClips: generateClipsFromMoments, cleanupClips } = require('./clipGenerationService');
 const { validateClipsWithGemini } = require('./clipValidationService');
-const { scoreClipsWithClaude } = require('./clipScoringService');
+const { scoreClipsWithImpactRubric } = require('./clipImpactScoringService');
 const { persistClipsToDatabase } = require('./clipPersistenceService');
 
 const supabase = createClient(
@@ -56,7 +56,7 @@ async function updateVideoClipsData(videoId, data) {
  * @param {string} parentTitle - Source video title, used for clip title fallback
  * @returns {Promise<Array>} Array of scored clips
  */
-async function generateClipsMultiIA(videoPath, parentVideoId, artistId = null, parentTitle = '') {
+async function generateClipsMultiIA(videoPath, parentVideoId, artistId = null, parentTitle = '', platform = 'tiktok', niche = 'general') {
   let clipsDir = null;
 
   try {
@@ -83,10 +83,11 @@ async function generateClipsMultiIA(videoPath, parentVideoId, artistId = null, p
     logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: validating`);
     const validatedClips = await validateClipsWithGemini(clips, parentVideoId);
 
-    // Stage 5: Score clips
+    // Stage 5: Score clips (dedicated 7-criteria impact rubric, not the
+    // marketing-framework scoring used for normal videos)
     await updateVideoClipsData(parentVideoId, { stage: 'scoring', totalClips: validatedClips.length });
     logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: scoring`);
-    const scoredClips = await scoreClipsWithClaude(validatedClips, parentVideoId);
+    const scoredClips = await scoreClipsWithImpactRubric(validatedClips, { platform, niche, parentVideoId });
 
     // Stage 6: Persist clips to R2 + create child video rows (before cleanup
     // deletes the local clip files in the finally block below)
@@ -381,7 +382,7 @@ async function downloadVideoToTemp(sourceUrl) {
 async function generateClipsMultiIAFromDatabase(parentVideoId) {
   const { data: parent, error: parentErr } = await supabase
     .from('videos')
-    .select('id, source_url, artist_id, title')
+    .select('id, source_url, artist_id, title, ai_clips_data')
     .eq('id', parentVideoId)
     .single();
 
@@ -393,6 +394,9 @@ async function generateClipsMultiIAFromDatabase(parentVideoId) {
     throw new Error(`Video has no source URL: ${parentVideoId}`);
   }
 
+  const platform = parent.ai_clips_data?.platform || 'tiktok';
+  const niche = parent.ai_clips_data?.niche || 'general';
+
   let tempVideoPath = null;
 
   try {
@@ -400,7 +404,7 @@ async function generateClipsMultiIAFromDatabase(parentVideoId) {
     tempVideoPath = await downloadVideoToTemp(parent.source_url);
 
     // Call the orchestrator
-    const scoredClips = await generateClipsMultiIA(tempVideoPath, parentVideoId, parent.artist_id, parent.title);
+    const scoredClips = await generateClipsMultiIA(tempVideoPath, parentVideoId, parent.artist_id, parent.title, platform, niche);
 
     return scoredClips;
   } finally {
@@ -446,8 +450,8 @@ function validateSourceUrl(sourceUrl) {
   return sourceUrl;
 }
 
-async function createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds }) {
-  console.log(`📤 [Repurposer] createRepurposeVideo: artistId=${artistId}, sourceUrl=${sourceUrl}, title=${title}, durationSeconds=${durationSeconds}`);
+async function createRepurposeVideo({ artistId, sourceUrl, title, durationSeconds, platform, niche }) {
+  console.log(`📤 [Repurposer] createRepurposeVideo: artistId=${artistId}, sourceUrl=${sourceUrl}, title=${title}, durationSeconds=${durationSeconds}, platform=${platform}, niche=${niche}`);
 
   if (!artistId || !sourceUrl) {
     throw new Error('artistId y sourceUrl son requeridos');
@@ -472,6 +476,7 @@ async function createRepurposeVideo({ artistId, sourceUrl, title, durationSecond
       title: title || 'Video sin título',
       source_url: cleanSourceUrl,
       status: 'queued',
+      ai_clips_data: { platform: platform || 'tiktok', niche: niche || 'general' },
     }])
     .select();
   if (error) {
