@@ -93,3 +93,97 @@ describe('scoreClipForPlatform', () => {
     ).rejects.toThrow('No JSON found in Claude response');
   });
 });
+
+const { scoreClipsWithImpactRubric, persistClipScore, rescoreClip } = require('../../src/services/clipImpactScoringService');
+
+describe('scoreClipsWithImpactRubric', () => {
+  it('should throw if clips array is empty', async () => {
+    await expect(
+      scoreClipsWithImpactRubric([], { platform: 'tiktok', niche: 'x', parentVideoId: 'v1' })
+    ).rejects.toThrow('Clips array is required');
+  });
+
+  it('should score each clip and attach the result under .score', async () => {
+    getAnthropic.mockReturnValue({
+      messages: {
+        create: jest.fn().mockResolvedValue({
+          content: [{ type: 'text', text: JSON.stringify({ score: 7, score_breakdown: {}, hashtags_suggested: [] }) }],
+        }),
+      },
+    });
+
+    const clips = [{ index: 1, duration: 30 }, { index: 2, duration: 40 }];
+    const result = await scoreClipsWithImpactRubric(clips, { platform: 'tiktok', niche: 'comedy', parentVideoId: 'v1' });
+
+    expect(result).toHaveLength(2);
+    expect(result[0].score.score).toBe(7);
+    expect(result[1].score.score).toBe(7);
+  });
+
+  it('should continue scoring remaining clips if one fails', async () => {
+    getAnthropic.mockReturnValue({
+      messages: {
+        create: jest.fn()
+          .mockRejectedValueOnce(new Error('Claude timeout'))
+          .mockResolvedValueOnce({
+            content: [{ type: 'text', text: JSON.stringify({ score: 6, score_breakdown: {}, hashtags_suggested: [] }) }],
+          }),
+      },
+    });
+
+    const clips = [{ index: 1, duration: 30 }, { index: 2, duration: 40 }];
+    const result = await scoreClipsWithImpactRubric(clips, { platform: 'tiktok', niche: 'x', parentVideoId: 'v1' });
+
+    expect(result[0].score.score).toBe(0);
+    expect(result[0].score.error).toBe('Claude timeout');
+    expect(result[1].score.score).toBe(6);
+  });
+});
+
+describe('persistClipScore', () => {
+  it('should upsert clip_platform_scores and update videos.clip_impact_score', async () => {
+    const upsertSpy = jest.spyOn(mock.client, 'upsert');
+    const updateSpy = jest.spyOn(mock.client, 'update');
+    mock.queueResult({ data: null, error: null }); // upsert
+    mock.queueResult({ data: null, error: null }); // update videos
+
+    await persistClipScore('clip-1', 'tiktok', {
+      score: 8, score_breakdown: { hook: 2 }, main_strength: 'x', main_weakness: 'y',
+      improvement_suggestion: 'z', viral_likelihood: 'Alta', recommended_platform: 'tiktok',
+      hashtags_suggested: ['#a'], copy_short: 's', copy_long: 'l',
+    });
+
+    expect(upsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ clip_video_id: 'clip-1', platform: 'tiktok', score: 8 }),
+      { onConflict: 'clip_video_id,platform' }
+    );
+    expect(updateSpy).toHaveBeenCalledWith({ clip_impact_score: 8 });
+  });
+});
+
+describe('rescoreClip', () => {
+  it('should fetch the clip, re-score it for the new platform, and persist', async () => {
+    getAnthropic.mockReturnValue({
+      messages: {
+        create: jest.fn().mockResolvedValue({
+          content: [{ type: 'text', text: JSON.stringify({ score: 9, score_breakdown: {}, hashtags_suggested: [] }) }],
+        }),
+      },
+    });
+
+    mock.queueResult({ data: { id: 'clip-1', parent_video_id: 'video-1', ai_clips_data: { duration: 25 } }, error: null }); // select clip
+    mock.queueResult({ data: null, error: null }); // upsert
+    mock.queueResult({ data: null, error: null }); // update videos
+
+    const result = await rescoreClip('clip-1', 'instagram', 'comedy');
+
+    expect(result.score).toBe(9);
+    expect(result.platform).toBe('instagram');
+  });
+
+  it('should throw if the clip does not exist', async () => {
+    mock.queueResult({ data: null, error: { message: 'not found' } });
+
+    await expect(rescoreClip('missing-clip', 'tiktok', 'x')).rejects.toThrow('Clip not found: missing-clip');
+  });
+});

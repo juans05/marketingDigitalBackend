@@ -186,8 +186,103 @@ async function scoreClipForPlatform(clip, { platform, niche, parentVideoId }) {
   };
 }
 
+async function scoreClipsWithImpactRubric(clips, { platform, niche, parentVideoId }) {
+  if (!Array.isArray(clips) || clips.length === 0) {
+    throw new Error('Clips array is required');
+  }
+
+  const scoredClips = [];
+
+  for (let i = 0; i < clips.length; i++) {
+    const clip = clips[i];
+    try {
+      logDebug(`Scoring clip ${i + 1}/${clips.length} for platform ${platform}`);
+      const result = await scoreClipForPlatform(clip, { platform, niche, parentVideoId });
+      scoredClips.push({ ...clip, score: result });
+    } catch (error) {
+      logError(`Failed to score clip ${i + 1}: ${error.message}`);
+      scoredClips.push({
+        ...clip,
+        score: {
+          score: 0,
+          score_breakdown: {},
+          main_strength: '',
+          main_weakness: '',
+          improvement_suggestion: '',
+          viral_likelihood: '',
+          recommended_platform: platform,
+          hashtags_suggested: [],
+          copy_short: '',
+          copy_long: '',
+          error: error.message,
+        },
+      });
+    }
+  }
+
+  logDebug(`Scored ${scoredClips.length} clips`);
+  return scoredClips;
+}
+
+async function persistClipScore(clipVideoId, platform, result) {
+  const { error: upsertError } = await supabase
+    .from('clip_platform_scores')
+    .upsert({
+      clip_video_id: clipVideoId,
+      platform,
+      score: result.score,
+      score_breakdown: result.score_breakdown,
+      main_strength: result.main_strength,
+      main_weakness: result.main_weakness,
+      improvement_suggestion: result.improvement_suggestion,
+      viral_likelihood: result.viral_likelihood,
+      recommended_platform: result.recommended_platform,
+      hashtags_suggested: result.hashtags_suggested,
+      copy_short: result.copy_short,
+      copy_long: result.copy_long,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'clip_video_id,platform' });
+
+  if (upsertError) throw upsertError;
+
+  const { error: updateError } = await supabase
+    .from('videos')
+    .update({ clip_impact_score: result.score })
+    .eq('id', clipVideoId);
+
+  if (updateError) throw updateError;
+
+  logDebug(`Persisted score for clip ${clipVideoId} / ${platform}: ${result.score}`);
+}
+
+async function rescoreClip(clipVideoId, platform, niche) {
+  const { data: clipRow, error } = await supabase
+    .from('videos')
+    .select('id, parent_video_id, ai_clips_data')
+    .eq('id', clipVideoId)
+    .single();
+
+  if (error || !clipRow) {
+    throw new Error(`Clip not found: ${clipVideoId}`);
+  }
+
+  const clip = { duration: clipRow.ai_clips_data?.duration || 0 };
+
+  const result = await scoreClipForPlatform(clip, {
+    platform,
+    niche: niche || 'general',
+    parentVideoId: clipRow.parent_video_id,
+  });
+
+  await persistClipScore(clipVideoId, platform, result);
+
+  return { clipVideoId, platform, ...result };
+}
+
 module.exports = {
   buildRubricPrompt,
   scoreClipForPlatform,
-  // Task 2 adds: scoreClipsWithImpactRubric, persistClipScore, rescoreClip
+  scoreClipsWithImpactRubric,
+  persistClipScore,
+  rescoreClip,
 };
