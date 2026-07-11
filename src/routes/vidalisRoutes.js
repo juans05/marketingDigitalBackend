@@ -56,6 +56,7 @@ router.post('/publish-now/:videoId', authenticateToken, authorizeVideo, vidalisC
 router.post('/check-hashtags', authenticateToken, vidalisController.checkHashtags);
 router.post('/schedule/:videoId', authenticateToken, authorizeVideo, vidalisController.scheduleVideo);
 router.get('/clips/:parentId', authenticateToken, authorizeVideo, vidalisController.getClips);
+router.post('/clips/:videoId/rescore', authenticateToken, authorizeVideo, vidalisController.rescoreClip);
 
 // Webhook externo de n8n — protegido con secreto compartido (no JWT de usuario)
 router.post('/n8n-callback/:videoId', verifyWebhookSecret, vidalisController.n8nCallback);

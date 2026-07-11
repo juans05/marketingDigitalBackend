@@ -293,6 +293,21 @@ exports.createRepurposeVideo = async (req, res) => {
   }
 };
 
+exports.rescoreClip = async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const { platform, niche } = req.body;
+    if (!platform) {
+      return res.status(400).json({ error: 'platform es requerido' });
+    }
+    const { rescoreClip } = require('../services/clipImpactScoringService');
+    const result = await rescoreClip(videoId, platform, niche || 'general');
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.createRepurposePresign = async (req, res) => {
   try {
     const { artistId, filename, contentType } = req.body;
