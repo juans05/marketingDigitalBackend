@@ -10,19 +10,13 @@ const vidalisService = require('../../src/services/vidalisService');
 afterEach(() => jest.clearAllMocks());
 
 describe('fetchArtistGallery', () => {
-  test('excluye los clips hijos del Repurposer filtrando parent_video_id nulo', async () => {
+  it('should NOT filter by parent_video_id (clips should be included)', async () => {
     const isSpy = jest.spyOn(mock.client, 'is');
-    mock.queueResult({
-      data: [
-        { id: 'v1', artist_id: 'artist-1', parent_video_id: null },
-        { id: 'v2', artist_id: 'artist-1', parent_video_id: null },
-      ],
-      error: null,
-    });
+    mock.queueResult({ data: [{ id: 'v1' }, { id: 'clip-1', parent_video_id: 'v1' }], error: null });
 
-    const videos = await vidalisService.fetchArtistGallery('artist-1');
+    const result = await vidalisService.fetchArtistGallery('artist-1', {});
 
-    expect(isSpy).toHaveBeenCalledWith('parent_video_id', null);
-    expect(videos.map(v => v.id)).toEqual(['v1', 'v2']);
+    expect(isSpy).not.toHaveBeenCalledWith('parent_video_id', null);
+    expect(result).toHaveLength(2);
   });
 });

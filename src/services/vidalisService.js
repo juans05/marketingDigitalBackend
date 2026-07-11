@@ -758,7 +758,6 @@ exports.fetchArtistGallery = async (artistId, options = {}) => {
     .from('videos')
     .select('*')
     .eq('artist_id', artistId)
-    .is('parent_video_id', null)
     .order('created_at', { ascending: false })
     .range(from, to);
 
