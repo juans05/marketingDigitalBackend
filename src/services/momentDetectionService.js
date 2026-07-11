@@ -4,6 +4,7 @@
  */
 
 const { getAnthropic } = require('../lib/anthropic');
+const { extractJsonObject } = require('../lib/jsonExtract');
 const fs = require('fs');
 const path = require('path');
 
@@ -96,12 +97,13 @@ Transcripción:`;
     let parsedResponse;
 
     try {
-      // Extract JSON from response (may be wrapped in markdown code blocks)
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
+      // Extract JSON from response (may be wrapped in markdown code blocks
+      // or have trailing prose after it)
+      const jsonText = extractJsonObject(responseText);
+      if (!jsonText) {
         throw new Error('No JSON found in response');
       }
-      parsedResponse = JSON.parse(jsonMatch[0]);
+      parsedResponse = JSON.parse(jsonText);
     } catch (parseError) {
       logError(`❌ [MomentDetection] Parse error: ${parseError.message}`);
       throw new Error('Invalid Claude response format');

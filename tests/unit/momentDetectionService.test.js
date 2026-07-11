@@ -437,5 +437,61 @@ describe('momentDetectionService', () => {
       expect(moments).toHaveLength(1);
       expect(moments[0].tags).toEqual([]);
     });
+
+    test('should parse valid JSON even when Claude appends trailing prose after it', async () => {
+      // Reproduces a production failure: Claude's response contained a
+      // complete, valid JSON object, but text after it (which itself
+      // contained a brace, e.g. "{contexto}") made the old greedy regex
+      // /\{[\s\S]*\}/ capture past the JSON's real closing brace, since it
+      // matches from the first '{' to the LAST '}' in the whole string.
+      const validJson = JSON.stringify({
+        moments: [
+          {
+            index: 1,
+            start: 5,
+            end: 45,
+            reason: 'Good hook',
+            confidence: 0.9,
+            tags: ['hook']
+          }
+        ]
+      });
+      const mockResponse = {
+        content: [{
+          type: 'text',
+          text: `${validJson}\n\nEspero que este análisis de {contexto} te sea útil.`
+        }]
+      };
+
+      getAnthropic.mockReturnValue({
+        messages: {
+          create: jest.fn().mockResolvedValue(mockResponse)
+        }
+      });
+
+      const moments = await detectMomentsWithClaude('Sample transcript');
+
+      expect(moments).toHaveLength(1);
+      expect(moments[0].start).toBe(5);
+    });
+
+    test('should parse JSON wrapped in a markdown code fence', async () => {
+      const validJson = JSON.stringify({
+        moments: [
+          { index: 1, start: 5, end: 45, reason: 'Good hook', confidence: 0.9, tags: ['hook'] }
+        ]
+      });
+      const mockResponse = {
+        content: [{ type: 'text', text: '```json\n' + validJson + '\n```' }]
+      };
+
+      getAnthropic.mockReturnValue({
+        messages: { create: jest.fn().mockResolvedValue(mockResponse) }
+      });
+
+      const moments = await detectMomentsWithClaude('Sample transcript');
+
+      expect(moments).toHaveLength(1);
+    });
   });
 });
