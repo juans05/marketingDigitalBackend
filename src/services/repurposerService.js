@@ -10,6 +10,7 @@ const { detectMomentsWithClaude } = require('./momentDetectionService');
 const { generateClips: generateClipsFromMoments, cleanupClips } = require('./clipGenerationService');
 const { validateClipsWithGemini } = require('./clipValidationService');
 const { scoreClipsWithClaude } = require('./clipScoringService');
+const { persistClipsToDatabase } = require('./clipPersistenceService');
 
 const supabase = createClient(
   process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
@@ -48,12 +49,14 @@ async function updateVideoClipsData(videoId, data) {
 }
 
 /**
- * Orchestrates the 5-service multi-IA pipeline
+ * Orchestrates the 6-stage multi-IA pipeline
  * @param {string} videoPath - Path to the video file
  * @param {string} parentVideoId - Parent video ID in database
+ * @param {string|null} artistId - Owning artist, needed to persist clips as child video rows
+ * @param {string} parentTitle - Source video title, used for clip title fallback
  * @returns {Promise<Array>} Array of scored clips
  */
-async function generateClipsMultiIA(videoPath, parentVideoId) {
+async function generateClipsMultiIA(videoPath, parentVideoId, artistId = null, parentTitle = '') {
   let clipsDir = null;
 
   try {
@@ -85,10 +88,18 @@ async function generateClipsMultiIA(videoPath, parentVideoId) {
     logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: scoring`);
     const scoredClips = await scoreClipsWithClaude(validatedClips, parentVideoId);
 
-    // Completion
+    // Stage 6: Persist clips to R2 + create child video rows (before cleanup
+    // deletes the local clip files in the finally block below)
+    await updateVideoClipsData(parentVideoId, { stage: 'persisting', totalClips: scoredClips.length });
+    logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: persisting`);
+    const persistedClipIds = await persistClipsToDatabase(scoredClips, parentVideoId, artistId, parentTitle);
+
+    // Completion — sets top-level status too: the frontend's polling reads
+    // `videos.status`, not just `ai_clips_data.stage`, to know when to show results.
     await updateVideoClipsData(parentVideoId, {
       stage: 'completed',
       clipCount: scoredClips.length,
+      persistedClipIds,
       clips: scoredClips.map(c => ({
         index: c.index,
         startTime: c.startTime,
@@ -99,8 +110,9 @@ async function generateClipsMultiIA(videoPath, parentVideoId) {
       })),
       completedAt: new Date().toISOString(),
     });
+    await supabase.from('videos').update({ status: 'ready' }).eq('id', parentVideoId);
 
-    logDebug(`✅ [Repurposer] ${parentVideoId} completed`);
+    logDebug(`✅ [Repurposer] ${parentVideoId} completed with ${persistedClipIds.length} clips persisted`);
     return scoredClips;
   } catch (error) {
     logError(`❌ [Repurposer] ${parentVideoId} failed: ${error.message}`);
@@ -109,6 +121,10 @@ async function generateClipsMultiIA(videoPath, parentVideoId) {
       errorMessage: error.message,
       errorTime: new Date().toISOString(),
     });
+    await supabase.from('videos').update({
+      status: 'failed',
+      error_log: JSON.stringify({ step: 'generateClipsMultiIA', message: error.message }),
+    }).eq('id', parentVideoId);
     throw error;
   } finally {
     if (clipsDir) {
@@ -365,7 +381,7 @@ async function downloadVideoToTemp(sourceUrl) {
 async function generateClipsMultiIAFromDatabase(parentVideoId) {
   const { data: parent, error: parentErr } = await supabase
     .from('videos')
-    .select('id, source_url')
+    .select('id, source_url, artist_id, title')
     .eq('id', parentVideoId)
     .single();
 
@@ -384,7 +400,7 @@ async function generateClipsMultiIAFromDatabase(parentVideoId) {
     tempVideoPath = await downloadVideoToTemp(parent.source_url);
 
     // Call the orchestrator
-    const scoredClips = await generateClipsMultiIA(tempVideoPath, parentVideoId);
+    const scoredClips = await generateClipsMultiIA(tempVideoPath, parentVideoId, parent.artist_id, parent.title);
 
     return scoredClips;
   } finally {

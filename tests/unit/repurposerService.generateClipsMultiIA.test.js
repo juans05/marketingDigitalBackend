@@ -21,19 +21,34 @@ jest.mock('../../src/services/clipValidationService', () => ({
 jest.mock('../../src/services/clipScoringService', () => ({
   scoreClipsWithClaude: jest.fn(),
 }));
+jest.mock('../../src/services/clipPersistenceService', () => ({
+  persistClipsToDatabase: jest.fn(),
+}));
 
 const transcriptionService = require('../../src/services/transcriptionService');
 const momentDetectionService = require('../../src/services/momentDetectionService');
 const clipGenerationService = require('../../src/services/clipGenerationService');
 const clipValidationService = require('../../src/services/clipValidationService');
 const clipScoringService = require('../../src/services/clipScoringService');
+const clipPersistenceService = require('../../src/services/clipPersistenceService');
 
 const { generateClipsMultiIA } = require('../../src/services/repurposerService');
 
 afterEach(() => jest.clearAllMocks());
 
+// updateVideoClipsData() does select().single() + update() = 2 queued results.
+// A successful run reaches 7 stages (transcribing, analyzing, generating,
+// validating, scoring, persisting, completed) = 14, plus the final explicit
+// `status: 'ready'` update = 15 total.
+function queueUpdateVideoClipsDataResults(count) {
+  for (let i = 0; i < count; i++) {
+    mock.queueResult({ data: { ai_clips_data: {} }, error: null });
+    mock.queueResult({ data: null, error: null });
+  }
+}
+
 describe('generateClipsMultiIA', () => {
-  test('orchestrates all 5 services and updates DB at each stage', async () => {
+  test('orchestrates all 6 services and updates DB at each stage', async () => {
     const videoPath = '/tmp/video.mp4';
     const videoId = 'video-1';
 
@@ -68,13 +83,13 @@ describe('generateClipsMultiIA', () => {
     ];
     clipScoringService.scoreClipsWithClaude.mockResolvedValue(scoredClips);
 
-    // Queue DB responses (1 select for each update, then no error)
-    for (let i = 0; i < 6; i++) {
-      mock.queueResult({ data: { ai_clips_data: {} }, error: null });
-      mock.queueResult({ data: null, error: null });
-    }
+    clipPersistenceService.persistClipsToDatabase.mockResolvedValue(['row-1', 'row-2']);
 
-    const result = await generateClipsMultiIA(videoPath, videoId);
+    // 7 updateVideoClipsData stages (14) + final status:'ready' update (1)
+    queueUpdateVideoClipsDataResults(7);
+    mock.queueResult({ data: null, error: null }); // status: 'ready'
+
+    const result = await generateClipsMultiIA(videoPath, videoId, 'artist-1', 'Podcast ep 4');
 
     // Verify all services were called
     expect(transcriptionService.transcribeVideo).toHaveBeenCalledWith(videoPath, videoId);
@@ -82,6 +97,7 @@ describe('generateClipsMultiIA', () => {
     expect(clipGenerationService.generateClips).toHaveBeenCalledWith(videoPath, moments, videoId);
     expect(clipValidationService.validateClipsWithGemini).toHaveBeenCalledWith(clips, videoId);
     expect(clipScoringService.scoreClipsWithClaude).toHaveBeenCalledWith(validatedClips, videoId);
+    expect(clipPersistenceService.persistClipsToDatabase).toHaveBeenCalledWith(scoredClips, videoId, 'artist-1', 'Podcast ep 4');
 
     // Verify result is the final scored clips
     expect(result).toEqual(scoredClips);
@@ -104,11 +120,12 @@ describe('generateClipsMultiIA', () => {
       new Error('Claude API error')
     );
 
-    // Queue DB responses (1 select + 1 update for transcribing, 1 select + 1 update for error)
+    // transcribing + analyzing stages reached before the error (2 x 2 = 4),
+    // then the error-stage update (2) + final status:'failed' update (1)
+    queueUpdateVideoClipsDataResults(2);
     mock.queueResult({ data: { ai_clips_data: {} }, error: null });
     mock.queueResult({ data: null, error: null });
-    mock.queueResult({ data: { ai_clips_data: {} }, error: null });
-    mock.queueResult({ data: null, error: null });
+    mock.queueResult({ data: null, error: null }); // status: 'failed'
 
     await expect(generateClipsMultiIA(videoPath, videoId)).rejects.toThrow('Claude API error');
 
@@ -135,12 +152,10 @@ describe('generateClipsMultiIA', () => {
     clipScoringService.scoreClipsWithClaude.mockResolvedValue([
       { index: 1, path: '/tmp/clip.mp4', startTime: 0, endTime: 20, duration: 20, sizeBytes: 1000, validation: { hasVisualHook: true, confidence: 0.9, suggestions: [] }, score: { viralScore: 80 } }
     ]);
+    clipPersistenceService.persistClipsToDatabase.mockResolvedValue(['row-1']);
 
-    // Queue enough DB responses for all stages
-    for (let i = 0; i < 6; i++) {
-      mock.queueResult({ data: { ai_clips_data: {} }, error: null });
-      mock.queueResult({ data: null, error: null });
-    }
+    queueUpdateVideoClipsDataResults(7);
+    mock.queueResult({ data: null, error: null }); // status: 'ready'
 
     await generateClipsMultiIA(videoPath, videoId);
 
@@ -165,11 +180,12 @@ describe('generateClipsMultiIA', () => {
     ]);
     clipValidationService.validateClipsWithGemini.mockRejectedValue(new Error('Validation failed'));
 
-    // Queue DB responses
-    for (let i = 0; i < 4; i++) {
-      mock.queueResult({ data: { ai_clips_data: {} }, error: null });
-      mock.queueResult({ data: null, error: null });
-    }
+    // transcribing + analyzing + generating + validating stages reached (4 x 2 = 8),
+    // then error-stage update (2) + final status:'failed' update (1)
+    queueUpdateVideoClipsDataResults(4);
+    mock.queueResult({ data: { ai_clips_data: {} }, error: null });
+    mock.queueResult({ data: null, error: null });
+    mock.queueResult({ data: null, error: null }); // status: 'failed'
 
     try {
       await generateClipsMultiIA(videoPath, videoId);
@@ -188,11 +204,12 @@ describe('generateClipsMultiIA', () => {
       new Error('No valid moments detected')
     );
 
-    // Queue DB responses
+    // transcribing + analyzing stages reached (2 x 2 = 4), then error-stage
+    // update (2) + final status:'failed' update (1)
+    queueUpdateVideoClipsDataResults(2);
     mock.queueResult({ data: { ai_clips_data: {} }, error: null });
     mock.queueResult({ data: null, error: null });
-    mock.queueResult({ data: { ai_clips_data: {} }, error: null });
-    mock.queueResult({ data: null, error: null });
+    mock.queueResult({ data: null, error: null }); // status: 'failed'
 
     await expect(generateClipsMultiIA(videoPath, videoId)).rejects.toThrow('No valid moments detected');
   });
