@@ -11,9 +11,14 @@ const { getAnthropic } = require('../../src/lib/anthropic');
 
 afterEach(() => jest.clearAllMocks());
 
+const sampleSegments = [
+  { text: 'This is a sample transcript', start: 0, end: 3 },
+  { text: 'with interesting moments...', start: 3, end: 6 },
+];
+
 describe('momentDetectionService', () => {
   describe('detectMomentsWithClaude', () => {
-    test('should detect moments from transcript with mocked Claude response', async () => {
+    test('should detect moments from timestamped segments with mocked Claude response', async () => {
       const mockResponse = {
         content: [{
           type: 'text',
@@ -47,7 +52,7 @@ describe('momentDetectionService', () => {
       });
 
       const moments = await detectMomentsWithClaude(
-        'This is a sample transcript with interesting moments...',
+        sampleSegments,
         'Sample Video Title',
         'video-123'
       );
@@ -71,15 +76,40 @@ describe('momentDetectionService', () => {
       });
     });
 
-    test('should reject empty transcript', async () => {
+    test('should send Claude a timestamped transcript, not plain text', async () => {
+      // Regression test for the root cause of "No valid moments detected" in
+      // production: the prompt asked Claude for "timestamp de inicio en
+      // segundos" but gave it untimed prose with no way to determine it.
+      const mockResponse = {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            moments: [
+              { index: 1, start: 0, end: 20, reason: 'x', confidence: 0.8, tags: [] }
+            ]
+          })
+        }]
+      };
+
+      const createMock = jest.fn().mockResolvedValue(mockResponse);
+      getAnthropic.mockReturnValue({ messages: { create: createMock } });
+
+      await detectMomentsWithClaude(sampleSegments, '', 'video-123');
+
+      const sentPrompt = createMock.mock.calls[0][0].messages[0].content;
+      expect(sentPrompt).toContain('[0s-3s] This is a sample transcript');
+      expect(sentPrompt).toContain('[3s-6s] with interesting moments...');
+    });
+
+    test('should reject an empty segments array', async () => {
       await expect(
-        detectMomentsWithClaude('', 'Sample Video', 'video-123')
+        detectMomentsWithClaude([], 'Sample Video', 'video-123')
       ).rejects.toThrow('Transcript cannot be empty');
     });
 
-    test('should reject whitespace-only transcript', async () => {
+    test('should reject segments that are all whitespace-only text', async () => {
       await expect(
-        detectMomentsWithClaude('   \n\t  ', 'Sample Video', 'video-123')
+        detectMomentsWithClaude([{ text: '   ', start: 0, end: 1 }], 'Sample Video', 'video-123')
       ).rejects.toThrow('Transcript cannot be empty');
     });
 
@@ -124,7 +154,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Valid transcript text');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       // Only the valid moment should remain
       expect(moments).toHaveLength(1);
@@ -165,7 +195,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       expect(moments[0].confidence).toBe(1.0);
       expect(moments[1].confidence).toBe(0.0);
@@ -197,7 +227,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       expect(moments[0].reason.length).toBe(200);
     });
@@ -227,7 +257,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       expect(moments[0].tags).toHaveLength(5);
       expect(moments[0].tags).toEqual(['tag1', 'tag2', 'tag3', 'tag4', 'tag5']);
@@ -274,7 +304,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       expect(moments).toHaveLength(1);
       expect(moments[0].start).toBe(10);
@@ -306,7 +336,7 @@ describe('momentDetectionService', () => {
       });
 
       await expect(
-        detectMomentsWithClaude('Sample transcript')
+        detectMomentsWithClaude(sampleSegments)
       ).rejects.toThrow('No valid moments detected');
     });
 
@@ -323,7 +353,7 @@ describe('momentDetectionService', () => {
       });
 
       await expect(
-        detectMomentsWithClaude('Sample transcript')
+        detectMomentsWithClaude(sampleSegments)
       ).rejects.toThrow('Invalid Claude response format');
     });
 
@@ -368,7 +398,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       // Should be ordered by confidence: 0.95, 0.8, 0.6
       expect(moments[0].confidence).toBe(0.95);
@@ -401,7 +431,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       expect(moments).toHaveLength(1);
       expect(moments[0].reason).toBe('');
@@ -432,7 +462,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       expect(moments).toHaveLength(1);
       expect(moments[0].tags).toEqual([]);
@@ -469,7 +499,7 @@ describe('momentDetectionService', () => {
         }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       expect(moments).toHaveLength(1);
       expect(moments[0].start).toBe(5);
@@ -489,7 +519,7 @@ describe('momentDetectionService', () => {
         messages: { create: jest.fn().mockResolvedValue(mockResponse) }
       });
 
-      const moments = await detectMomentsWithClaude('Sample transcript');
+      const moments = await detectMomentsWithClaude(sampleSegments);
 
       expect(moments).toHaveLength(1);
     });

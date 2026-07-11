@@ -67,7 +67,7 @@ async function generateClipsMultiIA(videoPath, parentVideoId) {
     // Stage 2: Detect moments
     await updateVideoClipsData(parentVideoId, { stage: 'analyzing' });
     logDebug(`🎯 [Repurposer] ${parentVideoId} → stage: analyzing`);
-    const moments = await detectMomentsWithClaude(transcript.text, '', parentVideoId);
+    const moments = await detectMomentsWithClaude(transcript.segments, '', parentVideoId);
 
     // Stage 3: Generate clips
     await updateVideoClipsData(parentVideoId, { stage: 'generating', totalClips: moments.length });

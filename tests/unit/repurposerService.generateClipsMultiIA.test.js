@@ -38,9 +38,10 @@ describe('generateClipsMultiIA', () => {
     const videoId = 'video-1';
 
     // Mock responses from each service
+    const segments = [{ text: 'Full transcript text here...', start: 0, end: 5 }];
     transcriptionService.transcribeVideo.mockResolvedValue({
       text: 'Full transcript text here...',
-      segments: []
+      segments
     });
 
     const moments = [
@@ -77,7 +78,7 @@ describe('generateClipsMultiIA', () => {
 
     // Verify all services were called
     expect(transcriptionService.transcribeVideo).toHaveBeenCalledWith(videoPath, videoId);
-    expect(momentDetectionService.detectMomentsWithClaude).toHaveBeenCalledWith('Full transcript text here...', '', videoId);
+    expect(momentDetectionService.detectMomentsWithClaude).toHaveBeenCalledWith(segments, '', videoId);
     expect(clipGenerationService.generateClips).toHaveBeenCalledWith(videoPath, moments, videoId);
     expect(clipValidationService.validateClipsWithGemini).toHaveBeenCalledWith(clips, videoId);
     expect(clipScoringService.scoreClipsWithVidalis).toHaveBeenCalledWith(validatedClips, videoId);

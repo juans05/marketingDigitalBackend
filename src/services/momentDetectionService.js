@@ -33,30 +33,44 @@ function logError(message) {
 }
 
 /**
- * Detects narrative moments from a transcript using Claude Opus.
+ * Formats timestamped segments as a script Claude can ground timestamps in,
+ * e.g. "[0s-3s] Hola bienvenidos...". Plain concatenated text gives Claude
+ * no way to know what second any sentence occurs at — asking it for
+ * "timestamp de inicio en segundos" against untimed prose is an impossible
+ * task, which is why it was returning empty/unusable moments.
+ */
+function formatTranscriptWithTimestamps(segments) {
+  return segments
+    .map(s => `[${Math.round(s.start)}s-${Math.round(s.end)}s] ${s.text}`)
+    .join('\n');
+}
+
+/**
+ * Detects narrative moments from a timestamped transcript using Claude Opus.
  * Analyzes transcripts to find clips suitable as short-form content (15-90 seconds).
  *
- * @param {string} transcript - Full transcript text
+ * @param {Array<{text: string, start: number, end: number}>} segments - Timestamped transcript segments (from transcriptionService)
  * @param {string} videoTitle - Optional: video title for context
  * @param {string} videoId - Optional: video ID for tracking
  * @returns {Promise<Array>} Array of validated moments ordered by confidence (viral potential)
  * @throws {Error} If transcript is empty, Claude fails, or no valid moments detected
  */
-async function detectMomentsWithClaude(transcript = '', videoTitle = '', videoId = '') {
+async function detectMomentsWithClaude(segments = [], videoTitle = '', videoId = '') {
   // Validate input
-  if (!transcript || transcript.trim().length === 0) {
+  const hasContent = Array.isArray(segments) && segments.some(s => (s.text || '').trim().length > 0);
+  if (!hasContent) {
     throw new Error('Transcript cannot be empty');
   }
 
-  const transcriptTrimmed = transcript.trim();
+  const timestampedTranscript = formatTranscriptWithTimestamps(segments);
 
   try {
     // Build the prompt
-    let promptText = `Sos un editor experto en videos virales. Analiza la siguiente transcripción y detecta entre 3 y 8 momentos que funcionen como clips independientes de 15 a 90 segundos.
+    let promptText = `Sos un editor experto en videos virales. Analiza la siguiente transcripción (con marcas de tiempo reales, en segundos) y detecta entre 3 y 8 momentos que funcionen como clips independientes de 15 a 90 segundos.
 
 Para cada momento:
-- Identifica el timestamp de inicio (en segundos)
-- Identifica el timestamp de fin (en segundos, máximo 90s después del inicio)
+- Identifica el timestamp de inicio y fin EN BASE A LAS MARCAS DE TIEMPO REALES de la transcripción — no inventes tiempos, usá los que aparecen entre corchetes
+- La duración (fin - inicio) debe estar entre 15 y 90 segundos
 - Explica por qué es un buen gancho (frase con impacto, anécdota fuerte, plot twist, etc)
 - Asigna confianza (0.0 a 1.0)
 - Agrega tags relevantes (ej: "storytelling", "emotional", "hook", "punchline")
@@ -65,15 +79,15 @@ Ordena los momentos por potencial viral (mayor a menor).
 
 IMPORTANTE: Solo devuelve JSON válido, sin markdown ni explicaciones adicionales.
 
-Transcripción:`;
+Transcripción (formato "[inicio s-fin s] texto"):`;
 
     if (videoTitle) {
       promptText += `\n[Título: "${videoTitle}"]`;
     }
 
-    promptText += `\n${transcriptTrimmed}`;
+    promptText += `\n${timestampedTranscript}`;
 
-    logDebug(`🧠 [MomentDetection] Analizando transcript (${transcriptTrimmed.length} caracteres)${videoTitle ? ` - "${videoTitle}"` : ''}...`);
+    logDebug(`🧠 [MomentDetection] Analizando transcript (${timestampedTranscript.length} caracteres, ${segments.length} segmentos)${videoTitle ? ` - "${videoTitle}"` : ''}...`);
 
     // Call Claude Opus 4.6
     const client = getAnthropic();
