@@ -4,6 +4,7 @@ const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
 const axios = require('axios');
 const FormData = require('form-data');
+const { uploadFileToR2, deleteFromR2 } = require('../lib/r2');
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -39,13 +40,20 @@ async function extractAudioFromVideo(videoPath) {
   // Validate videoPath to prevent command injection
   validateFilePath(videoPath, 'videoPath');
 
-  // Extract audio using ffmpeg
-  const audioPath = path.join(path.dirname(videoPath), `audio_${Date.now()}.wav`);
+  // Extract audio as compressed mono mp3 — keeps upload to R2/Groq fast even
+  // for a 2h source video, and speech transcription doesn't need stereo/hi-fi.
+  const audioPath = path.join(path.dirname(videoPath), `audio_${Date.now()}.mp3`);
 
   try {
     // Use execFile with argv array to prevent shell injection
-    // No need to manually redirect stderr as execFile doesn't invoke shell
-    await execFileAsync('ffmpeg', ['-i', videoPath, '-q:a', '9', '-n', audioPath]);
+    await execFileAsync('ffmpeg', [
+      '-i', videoPath,
+      '-vn',
+      '-ac', '1',
+      '-ar', '16000',
+      '-b:a', '64k',
+      '-n', audioPath,
+    ]);
     logDebug(`Audio extracted: ${audioPath}`);
     return audioPath;
   } catch (error) {
@@ -54,38 +62,64 @@ async function extractAudioFromVideo(videoPath) {
   }
 }
 
-async function transcribeWithGrok(audioPath, options = {}) {
-  const grokApiKey = process.env.GROK_API_KEY;
-  if (!grokApiKey) {
-    logError('GROK_API_KEY not configured, fallback to Whisper');
+/**
+ * Transcribes audio using Groq's hosted Whisper API (whisper-large-v3).
+ *
+ * Groq's file-upload path caps at 25MB (free tier), which a 2h source video's
+ * audio track blows past even compressed. Uploading to R2 first and passing
+ * the `url` field instead of `file` has no such size limit.
+ */
+async function transcribeWithGroq(audioPath, videoId, options = {}) {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) {
+    logError('GROQ_API_KEY not configured, fallback to Whisper');
     return transcribeWithWhisper(audioPath, options);
   }
 
+  const r2Key = `repurposer/transcription-audio/${videoId}/${Date.now()}.mp3`;
+  let audioUrl = null;
+
   try {
-    // xAI's STT endpoint (api.x.ai/v1/stt) expects a multipart/form-data file
-    // upload, not a JSON body with base64 audio.
+    audioUrl = await uploadFileToR2(audioPath, r2Key, 'audio/mpeg');
+    logDebug(`Audio uploaded to R2: ${r2Key}`);
+
     const form = new FormData();
-    form.append('file', fs.createReadStream(audioPath));
+    form.append('url', audioUrl);
+    form.append('model', 'whisper-large-v3');
+    form.append('response_format', 'verbose_json');
+    form.append('timestamp_granularities[]', 'segment');
     if (options.language) {
       form.append('language', options.language);
     }
 
-    const response = await axios.post('https://api.x.ai/v1/stt', form, {
-      headers: {
-        ...form.getHeaders(),
-        'Authorization': `Bearer ${grokApiKey}`,
-      },
-      timeout: 300000, // 5 min timeout for large files
-    });
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/audio/transcriptions',
+      form,
+      {
+        headers: {
+          ...form.getHeaders(),
+          'Authorization': `Bearer ${groqApiKey}`,
+        },
+        timeout: 300000, // 5 min timeout for large files
+      }
+    );
 
-    logDebug(`Grok transcription succeeded`);
-    return {
-      text: response.data.text,
-      segments: response.data.words || [],
-    };
+    logDebug(`Groq transcription succeeded`);
+    const segments = (response.data.segments || []).map(s => ({
+      text: s.text,
+      start: s.start,
+      end: s.end,
+    }));
+    return { text: response.data.text, segments };
   } catch (error) {
-    logError(`Grok failed (${error.message}), falling back to Whisper`);
+    logError(`Groq failed (${error.message}), falling back to Whisper`);
     return transcribeWithWhisper(audioPath, options);
+  } finally {
+    if (audioUrl) {
+      try { await deleteFromR2(r2Key); } catch (err) {
+        logError(`Failed to clean up R2 audio object ${r2Key}: ${err.message}`);
+      }
+    }
   }
 }
 
@@ -115,7 +149,7 @@ async function transcribeWithWhisper(audioPath, options = {}) {
     };
   } catch (error) {
     logError(`Whisper transcription failed: ${error.message}`);
-    throw new Error(`Transcription unavailable: both Grok and Whisper failed`);
+    throw new Error(`Transcription unavailable: both Groq and Whisper failed`);
   }
 }
 
@@ -131,9 +165,8 @@ async function transcribeVideo(videoPath, videoId) {
     const audioPath = await extractAudioFromVideo(videoPath);
 
     // Transcribe
-    const transcript = await transcribeWithGrok(audioPath, {
+    const transcript = await transcribeWithGroq(audioPath, videoId, {
       language: 'es',
-      timestamps: true,
     });
 
     // Clean up audio file
@@ -152,6 +185,6 @@ async function transcribeVideo(videoPath, videoId) {
 module.exports = {
   transcribeVideo,
   extractAudioFromVideo,
-  transcribeWithGrok,
+  transcribeWithGroq,
   transcribeWithWhisper,
 };

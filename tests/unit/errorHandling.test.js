@@ -24,18 +24,18 @@ describe('Error Handling - Transcription Service', () => {
     process.env = originalEnv;
   });
 
-  it('should fallback to Whisper when Grok API fails', async () => {
+  it('should fallback to Whisper when Groq API fails', async () => {
     // This test verifies the fallback strategy in transcriptionService.js
-    // The service should gracefully degrade from Grok to Whisper
+    // The service should gracefully degrade from Groq to Whisper
 
-    const { transcribeWithGrok, transcribeWithWhisper } = require('../../src/services/transcriptionService');
+    const { transcribeWithGroq, transcribeWithWhisper } = require('../../src/services/transcriptionService');
 
-    // Mock Grok to fail
-    process.env.GROK_API_KEY = 'invalid-key-for-test';
+    // Mock Groq to fail
+    process.env.GROQ_API_KEY = 'invalid-key-for-test';
 
     // Note: Full test requires actual audio file and Whisper installation
     // This test verifies the error handling path exists
-    expect(transcribeWithGrok).toBeDefined();
+    expect(transcribeWithGroq).toBeDefined();
     expect(transcribeWithWhisper).toBeDefined();
 
     console.log('✅ Transcription service has fallback mechanisms');
@@ -43,7 +43,7 @@ describe('Error Handling - Transcription Service', () => {
 
   it('should handle missing API keys gracefully', async () => {
     // Clear API keys
-    delete process.env.GROK_API_KEY;
+    delete process.env.GROQ_API_KEY;
     delete process.env.WHISPER_MODEL_PATH;
 
     // The transcriptionService should still export functions (but fail at runtime without keys/Whisper)

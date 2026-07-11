@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 
 // Mock child_process exec and execFile functions
-const mockExecAsync = jest.fn();
 jest.mock('child_process', () => ({
   exec: jest.fn((cmd, callback) => {
     // Mock successful audio extraction for ffmpeg
@@ -59,21 +58,32 @@ jest.mock('util', () => {
   };
 });
 
-// Mock axios for Grok API calls
+// Mock axios for Groq API calls
 jest.mock('axios');
 const axios = require('axios');
 
-const { transcribeVideo, extractAudioFromVideo, transcribeWithWhisper, transcribeWithGrok } = require('../../src/services/transcriptionService');
+// Mock R2 upload/delete — transcribeWithGroq uploads the extracted audio to
+// R2 so it can pass Groq a `url` instead of the file directly (Groq's direct
+// file upload caps at 25MB, which a 2h video's audio track exceeds).
+jest.mock('../../src/lib/r2', () => ({
+  uploadFileToR2: jest.fn(),
+  deleteFromR2: jest.fn(),
+}));
+const { uploadFileToR2, deleteFromR2 } = require('../../src/lib/r2');
+
+const { transcribeVideo, extractAudioFromVideo, transcribeWithWhisper, transcribeWithGroq } = require('../../src/services/transcriptionService');
 
 describe('transcriptionService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // By default, Grok is not configured
-    delete process.env.GROK_API_KEY;
+    // By default, Groq is not configured
+    delete process.env.GROQ_API_KEY;
+    uploadFileToR2.mockResolvedValue('https://pub-test.r2.dev/repurposer/transcription-audio/test-id/123.mp3');
+    deleteFromR2.mockResolvedValue(undefined);
   });
 
-  describe('transcribeWithGrok', () => {
-    const mockAudioPath = path.join(__dirname, 'mock_audio.wav');
+  describe('transcribeWithGroq', () => {
+    const mockAudioPath = path.join(__dirname, 'mock_audio.mp3');
 
     beforeAll(() => {
       fs.writeFileSync(mockAudioPath, Buffer.from([0, 0, 0, 20]));
@@ -83,44 +93,70 @@ describe('transcriptionService', () => {
       try { fs.unlinkSync(mockAudioPath); } catch {}
     });
 
-    it('should call the real xAI STT endpoint with multipart/form-data, not a JSON body', async () => {
-      process.env.GROK_API_KEY = 'test-key';
+    it('should upload the audio to R2 and call Groq with a url field, not a file upload', async () => {
+      process.env.GROQ_API_KEY = 'test-key';
       axios.post.mockResolvedValueOnce({
-        data: { text: 'hola mundo', language: 'es', duration: 12.3, words: [] },
+        data: { text: 'hola mundo', language: 'es', duration: 12.3, segments: [] },
       });
 
-      await transcribeWithGrok(mockAudioPath, { language: 'es' });
+      await transcribeWithGroq(mockAudioPath, 'test-id', { language: 'es' });
+
+      expect(uploadFileToR2).toHaveBeenCalledWith(mockAudioPath, expect.stringContaining('test-id'), 'audio/mpeg');
 
       expect(axios.post).toHaveBeenCalledTimes(1);
       const [url, body, config] = axios.post.mock.calls[0];
 
-      // Root cause of the original bug: wrong domain/path (api.grok.com/v1/speech/transcribe
-      // doesn't exist). The real xAI STT endpoint is api.x.ai/v1/stt.
-      expect(url).toBe('https://api.x.ai/v1/stt');
-
-      // Real endpoint expects multipart/form-data (a file field), not a base64 JSON payload.
+      // Root cause of the original bug: this used to hit api.grok.com (xAI),
+      // a completely different provider than the GROQ_API_KEY that's actually
+      // configured. The real endpoint is Groq's OpenAI-compatible route.
+      expect(url).toBe('https://api.groq.com/openai/v1/audio/transcriptions');
       expect(body).toBeInstanceOf(require('form-data'));
       expect(config.headers).toHaveProperty('Authorization', 'Bearer test-key');
     });
 
-    it('should map the xAI STT response ({text, words}) into {text, segments}', async () => {
-      process.env.GROK_API_KEY = 'test-key';
+    it('should clean up the R2 audio object after transcription', async () => {
+      process.env.GROQ_API_KEY = 'test-key';
+      axios.post.mockResolvedValueOnce({
+        data: { text: 'hola mundo', segments: [] },
+      });
+
+      await transcribeWithGroq(mockAudioPath, 'test-id', { language: 'es' });
+
+      expect(deleteFromR2).toHaveBeenCalledTimes(1);
+      expect(deleteFromR2).toHaveBeenCalledWith(expect.stringContaining('test-id'));
+    });
+
+    it('should map the Groq verbose_json response into {text, segments}', async () => {
+      process.env.GROQ_API_KEY = 'test-key';
       axios.post.mockResolvedValueOnce({
         data: {
           text: 'hola mundo',
           language: 'es',
           duration: 1.5,
-          words: [{ text: 'hola', start: 0, end: 0.5 }, { text: 'mundo', start: 0.6, end: 1.2 }],
+          segments: [
+            { id: 0, seek: 0, text: 'hola', start: 0, end: 0.5 },
+            { id: 1, seek: 0, text: 'mundo', start: 0.6, end: 1.2 },
+          ],
         },
       });
 
-      const result = await transcribeWithGrok(mockAudioPath, { language: 'es' });
+      const result = await transcribeWithGroq(mockAudioPath, 'test-id', { language: 'es' });
 
       expect(result.text).toBe('hola mundo');
       expect(result.segments).toEqual([
         { text: 'hola', start: 0, end: 0.5 },
         { text: 'mundo', start: 0.6, end: 1.2 },
       ]);
+    });
+
+    it('should fall back to Whisper if GROQ_API_KEY is not configured', async () => {
+      delete process.env.GROQ_API_KEY;
+
+      const result = await transcribeWithGroq(mockAudioPath, 'test-id', { language: 'es' });
+
+      expect(axios.post).not.toHaveBeenCalled();
+      expect(uploadFileToR2).not.toHaveBeenCalled();
+      expect(result.text).toBe('This is a test transcription');
     });
   });
 

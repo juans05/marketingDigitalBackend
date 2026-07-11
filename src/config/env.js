@@ -4,8 +4,8 @@
  */
 
 // Transcription service configuration
-if (!process.env.GROK_API_KEY && !process.env.WHISPER_MODEL_PATH) {
-  console.warn('⚠️ Warning: Neither GROK_API_KEY nor WHISPER_MODEL_PATH configured. Transcription will fail.');
+if (!process.env.GROQ_API_KEY && !process.env.WHISPER_MODEL_PATH) {
+  console.warn('⚠️ Warning: Neither GROQ_API_KEY nor WHISPER_MODEL_PATH configured. Transcription will fail.');
 }
 
 // Vidalis scoring service configuration
@@ -20,8 +20,7 @@ if (!process.env.FFMPEG_PATH) {
 
 module.exports = {
   // Transcription configuration
-  grokApiKey: process.env.GROK_API_KEY,
-  grokApiUrl: process.env.GROK_API_URL || 'https://api.grok.com/v1',
+  groqApiKey: process.env.GROQ_API_KEY,
   whisperModelPath: process.env.WHISPER_MODEL_PATH || 'base',
 
   // Video processing

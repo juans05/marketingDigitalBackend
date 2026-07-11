@@ -1,5 +1,6 @@
 const crypto = require('crypto');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const fs = require('fs');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 function getClient() {
@@ -32,4 +33,29 @@ async function generatePresignedUploadUrl({ artistId, filename, contentType }) {
   return { uploadUrl, sourceUrl, key };
 }
 
-module.exports = { buildSourceKey, generatePresignedUploadUrl };
+/**
+ * Sube un archivo local directo a R2 desde el servidor (sin presigned URL —
+ * el worker ya tiene las credenciales, a diferencia del frontend).
+ * @returns {Promise<string>} URL pública del objeto subido
+ */
+async function uploadFileToR2(localPath, key, contentType) {
+  const body = fs.readFileSync(localPath);
+  const command = new PutObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  });
+  await getClient().send(command);
+  return `${process.env.R2_PUBLIC_URL.replace(/\/+$/, '')}/${key}`;
+}
+
+async function deleteFromR2(key) {
+  const command = new DeleteObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME,
+    Key: key,
+  });
+  await getClient().send(command);
+}
+
+module.exports = { buildSourceKey, generatePresignedUploadUrl, uploadFileToR2, deleteFromR2 };
