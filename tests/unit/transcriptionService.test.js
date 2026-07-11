@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// Mock child_process exec function
+// Mock child_process exec and execFile functions
 const mockExecAsync = jest.fn();
 jest.mock('child_process', () => ({
   exec: jest.fn((cmd, callback) => {
@@ -12,6 +12,23 @@ jest.mock('child_process', () => ({
     }
     // Mock successful Whisper transcription
     else if (cmd.includes('whisper')) {
+      const mockOutput = JSON.stringify({
+        text: 'This is a test transcription',
+        segments: [
+          { text: 'This is a test', start: 0, end: 2 },
+          { text: 'transcription', start: 2, end: 4 },
+        ],
+      });
+      callback(null, mockOutput);
+    }
+  }),
+  execFile: jest.fn((cmd, args, callback) => {
+    // Mock successful audio extraction for ffmpeg
+    if (cmd === 'ffmpeg') {
+      callback(null, '');
+    }
+    // Mock successful Whisper transcription
+    else if (cmd === 'whisper') {
       const mockOutput = JSON.stringify({
         text: 'This is a test transcription',
         segments: [
@@ -45,7 +62,7 @@ jest.mock('util', () => {
 // Mock axios for Grok API calls
 jest.mock('axios');
 
-const { transcribeVideo } = require('../../src/services/transcriptionService');
+const { transcribeVideo, extractAudioFromVideo, transcribeWithWhisper } = require('../../src/services/transcriptionService');
 
 describe('transcriptionService', () => {
   beforeEach(() => {
@@ -77,6 +94,32 @@ describe('transcriptionService', () => {
       await expect(
         transcribeVideo('/nonexistent/video.mp4', 'test-id')
       ).rejects.toThrow('Video file not found');
+    });
+  });
+
+  describe('Path validation for security', () => {
+    it('should reject videoPath starting with dash to prevent flag injection', async () => {
+      await expect(
+        extractAudioFromVideo('-i malicious.mp4')
+      ).rejects.toThrow("paths cannot start with '-'");
+    });
+
+    it('should reject audioPath starting with dash to prevent flag injection', async () => {
+      await expect(
+        transcribeWithWhisper('-i malicious.wav')
+      ).rejects.toThrow("paths cannot start with '-'");
+    });
+
+    it('should reject videoPath with shell metacharacters', async () => {
+      await expect(
+        extractAudioFromVideo('/path/to/video; rm -rf /')
+      ).rejects.toThrow('contains suspicious characters');
+    });
+
+    it('should reject audioPath with shell metacharacters', async () => {
+      await expect(
+        transcribeWithWhisper('/path/to/audio`whoami`.wav')
+      ).rejects.toThrow('contains suspicious characters');
     });
   });
 });

@@ -1,10 +1,30 @@
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
 const axios = require('axios');
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// Validate file paths to prevent command injection
+function validateFilePath(filePath, paramName) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error(`Invalid ${paramName}: must be a non-empty string`);
+  }
+
+  // Reject paths starting with '-' to prevent flag injection
+  if (filePath.startsWith('-')) {
+    throw new Error(`Invalid ${paramName}: paths cannot start with '-'`);
+  }
+
+  // Reject paths with suspicious shell metacharacters
+  if (/[;&|`$()]/.test(filePath)) {
+    throw new Error(`Invalid ${paramName}: contains suspicious characters`);
+  }
+
+  return filePath;
+}
 
 function logDebug(msg) {
   console.log(`🎙️ [Transcription] ${msg}`);
@@ -15,12 +35,16 @@ function logError(msg) {
 }
 
 async function extractAudioFromVideo(videoPath) {
+  // Validate videoPath to prevent command injection
+  validateFilePath(videoPath, 'videoPath');
+
   // Extract audio using ffmpeg
   const audioPath = path.join(path.dirname(videoPath), `audio_${Date.now()}.wav`);
-  const cmd = `ffmpeg -i "${videoPath}" -q:a 9 -n "${audioPath}" 2>/dev/null`;
 
   try {
-    await execAsync(cmd);
+    // Use execFile with argv array to prevent shell injection
+    // No need to manually redirect stderr as execFile doesn't invoke shell
+    await execFileAsync('ffmpeg', ['-i', videoPath, '-q:a', '9', '-n', audioPath]);
     logDebug(`Audio extracted: ${audioPath}`);
     return audioPath;
   } catch (error) {
@@ -70,12 +94,23 @@ async function transcribeWithGrok(audioPath, options = {}) {
 }
 
 async function transcribeWithWhisper(audioPath, options = {}) {
+  // Validate audioPath to prevent command injection
+  validateFilePath(audioPath, 'audioPath');
+
   // Fallback: use local Whisper model (assumed installed via `pip install openai-whisper`)
   const whisperModel = process.env.WHISPER_MODEL_PATH || 'base';
-  const cmd = `whisper "${audioPath}" --model ${whisperModel} --language es --output_format json`;
 
   try {
-    const { stdout } = await execAsync(cmd);
+    // Use execFile with argv array to prevent shell injection
+    const { stdout } = await execFileAsync('whisper', [
+      audioPath,
+      '--model',
+      whisperModel,
+      '--language',
+      'es',
+      '--output_format',
+      'json',
+    ]);
     const result = JSON.parse(stdout);
     logDebug(`Whisper transcription succeeded`);
     return {
