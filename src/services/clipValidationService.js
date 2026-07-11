@@ -4,7 +4,7 @@
  */
 
 const { getGemini } = require('../lib/gemini');
-const { extractJsonObject } = require('../lib/jsonExtract');
+const { extractJsonValue } = require('../lib/jsonExtract');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -191,7 +191,7 @@ Responde SOLO con JSON válido, sin markdown:
     // Parse JSON from response
     let parsedResponse;
     try {
-      const jsonText = extractJsonObject(responseText);
+      const jsonText = extractJsonValue(responseText);
       if (!jsonText) {
         throw new Error('No JSON found in Gemini response');
       }

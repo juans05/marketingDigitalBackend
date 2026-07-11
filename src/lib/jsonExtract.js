@@ -1,14 +1,27 @@
 /**
- * Extracts the first balanced top-level JSON object from text by tracking
- * brace depth (ignoring braces inside string literals). A regex matching
- * from the first '{' to the LAST '}' in the text breaks as soon as an LLM
- * adds any trailing prose containing its own brace (even just "{algo}" in
- * a sentence) — it silently captures past the JSON's real closing brace,
- * which JSON.parse then rejects as "Unexpected non-whitespace character
- * after JSON".
+ * Extracts the first balanced top-level JSON value (object OR array) from
+ * text by tracking bracket depth (ignoring brackets inside string literals).
+ * A regex matching from the first '{' to the LAST '}' in the text breaks as
+ * soon as an LLM adds any trailing prose containing its own brace (even
+ * just "{algo}" in a sentence) — it silently captures past the JSON's real
+ * closing brace, which JSON.parse then rejects as "Unexpected
+ * non-whitespace character after JSON".
+ *
+ * Starting from either '{' or '[' (whichever appears first) matters because
+ * LLMs don't reliably wrap a requested list in the object shape you asked
+ * for — asked for {"moments": [...]}, Claude has returned a bare top-level
+ * [...] instead. Tracking depth across both bracket kinds together (rather
+ * than only the opening kind) correctly handles the object-containing-array
+ * case too, since JSON nesting is always properly matched.
  */
-function extractJsonObject(text) {
-  const start = text.indexOf('{');
+function extractJsonValue(text) {
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{' || text[i] === '[') {
+      start = i;
+      break;
+    }
+  }
   if (start === -1) return null;
 
   let depth = 0;
@@ -35,9 +48,9 @@ function extractJsonObject(text) {
 
     if (inString) continue;
 
-    if (char === '{') {
+    if (char === '{' || char === '[') {
       depth++;
-    } else if (char === '}') {
+    } else if (char === '}' || char === ']') {
       depth--;
       if (depth === 0) {
         return text.slice(start, i + 1);
@@ -45,7 +58,7 @@ function extractJsonObject(text) {
     }
   }
 
-  return null; // unbalanced — no matching closing brace found
+  return null; // unbalanced — no matching closing bracket found
 }
 
-module.exports = { extractJsonObject };
+module.exports = { extractJsonValue };

@@ -523,5 +523,62 @@ describe('momentDetectionService', () => {
 
       expect(moments).toHaveLength(1);
     });
+
+    test('should accept a bare top-level array with hook/title fields (real production deviation)', async () => {
+      // Reproduces exactly what Claude returned in production: a top-level
+      // array (not wrapped in {"moments": [...]}), using "hook"/"title"
+      // instead of the requested "reason" field.
+      const claudeArrayResponse = [
+        {
+          start: 1158,
+          end: 1228,
+          duration: 70,
+          title: 'El pez globo: la clave del envenenamiento',
+          hook: 'El descubrimiento revela la toxina del asesinato.',
+          confidence: 0.95,
+          tags: ['plot_twist', 'hook']
+        },
+        {
+          start: 2155,
+          end: 2178,
+          title: 'La confesión',
+          hook: 'La motivación emocional devastadora.',
+          confidence: 0.92,
+          tags: ['emotional']
+        }
+      ];
+      const mockResponse = {
+        content: [{ type: 'text', text: '```json\n' + JSON.stringify(claudeArrayResponse) + '\n```' }]
+      };
+
+      getAnthropic.mockReturnValue({
+        messages: { create: jest.fn().mockResolvedValue(mockResponse) }
+      });
+
+      const moments = await detectMomentsWithClaude(sampleSegments);
+
+      expect(moments).toHaveLength(2);
+      expect(moments[0].start).toBe(1158);
+      expect(moments[0].end).toBe(1228);
+      // reason falls back to "hook" since Claude didn't use the requested field name
+      expect(moments[0].reason).toBe('El descubrimiento revela la toxina del asesinato.');
+    });
+
+    test('should fall back to "title" for reason when neither reason nor hook is present', async () => {
+      const mockResponse = {
+        content: [{
+          type: 'text',
+          text: JSON.stringify([{ start: 10, end: 60, title: 'Solo título', confidence: 0.8, tags: [] }])
+        }]
+      };
+
+      getAnthropic.mockReturnValue({
+        messages: { create: jest.fn().mockResolvedValue(mockResponse) }
+      });
+
+      const moments = await detectMomentsWithClaude(sampleSegments);
+
+      expect(moments[0].reason).toBe('Solo título');
+    });
   });
 });

@@ -4,7 +4,7 @@
  */
 
 const { getAnthropic } = require('../lib/anthropic');
-const { extractJsonObject } = require('../lib/jsonExtract');
+const { extractJsonValue } = require('../lib/jsonExtract');
 const fs = require('fs');
 const path = require('path');
 
@@ -77,7 +77,20 @@ Para cada momento:
 
 Ordena los momentos por potencial viral (mayor a menor).
 
-IMPORTANTE: Solo devuelve JSON válido, sin markdown ni explicaciones adicionales.
+IMPORTANTE: Devolvé EXACTAMENTE este formato JSON — un objeto con una clave "moments" (no un array suelto en la raíz), y estos nombres de campo exactos (no "hook", no "title", no "duration"):
+{
+  "moments": [
+    {
+      "start": <segundos, número>,
+      "end": <segundos, número>,
+      "reason": "<por qué funciona como gancho>",
+      "confidence": <0.0-1.0>,
+      "tags": ["tag1", "tag2"]
+    }
+  ]
+}
+
+Sin markdown, sin explicaciones adicionales — solo el JSON.
 
 Transcripción (formato "[inicio s-fin s] texto"):`;
 
@@ -115,7 +128,7 @@ Transcripción (formato "[inicio s-fin s] texto"):`;
     try {
       // Extract JSON from response (may be wrapped in markdown code blocks
       // or have trailing prose after it)
-      const jsonText = extractJsonObject(responseText);
+      const jsonText = extractJsonValue(responseText);
       if (!jsonText) {
         throw new Error('No JSON found in response');
       }
@@ -125,13 +138,19 @@ Transcripción (formato "[inicio s-fin s] texto"):`;
       throw new Error('Invalid Claude response format');
     }
 
-    // Extract moments array
-    const rawMoments = Array.isArray(parsedResponse.moments)
-      ? parsedResponse.moments
-      : [];
+    // Extract moments array. Despite the prompt asking for {"moments": [...]},
+    // Claude sometimes returns a bare top-level array instead — accept both.
+    const rawMoments = Array.isArray(parsedResponse)
+      ? parsedResponse
+      : Array.isArray(parsedResponse.moments)
+        ? parsedResponse.moments
+        : [];
 
     if (rawMoments.length === 0) {
-      logError(`❌ [MomentDetection] Claude devolvió 0 momentos. Claves de la respuesta parseada: [${Object.keys(parsedResponse).join(', ')}]`);
+      const shape = Array.isArray(parsedResponse)
+        ? 'array vacío'
+        : `objeto con claves [${Object.keys(parsedResponse).join(', ')}]`;
+      logError(`❌ [MomentDetection] Claude devolvió 0 momentos. Respuesta parseada: ${shape}`);
       throw new Error('No valid moments detected (Claude returned an empty moments array)');
     }
 
@@ -169,8 +188,9 @@ Transcripción (formato "[inicio s-fin s] texto"):`;
         let confidence = parseFloat(moment.confidence) || 0.5;
         confidence = Math.max(0.0, Math.min(1.0, confidence));
 
-        // Validate and truncate reason
-        let reason = (moment.reason || '').toString().slice(0, 200);
+        // Validate and truncate reason — fall back to hook/title in case
+        // Claude used those field names instead of the requested "reason"
+        let reason = (moment.reason || moment.hook || moment.title || '').toString().slice(0, 200);
 
         // Validate and limit tags
         let tags = [];
