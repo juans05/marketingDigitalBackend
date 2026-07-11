@@ -69,7 +69,7 @@ describe('Error Handling - Clip Validation Service', () => {
       await validateClipsWithGemini([], 'test-id');
       fail('Should reject empty clips array');
     } catch (error) {
-      expect(error.message).toContain('Clips array is required');
+      expect(error.message).toContain('Clips array cannot be empty');
     }
 
     console.log('✅ Clip validation service validates input');
@@ -80,8 +80,9 @@ describe('Error Handling - Clip Validation Service', () => {
     // { hasVisualHook: false, confidence: 0.5, suggestions: [] }
     // This allows the pipeline to continue
 
-    const { analyzeClipFramesWithGemini } = require('../../src/services/clipValidationService');
-    expect(analyzeClipFramesWithGemini).toBeDefined();
+    const clipValidationService = require('../../src/services/clipValidationService');
+    expect(clipValidationService).toBeDefined();
+    expect(clipValidationService.validateClipsWithGemini).toBeDefined();
 
     console.log('✅ Validation service has error recovery mechanism');
   });
@@ -248,7 +249,7 @@ describe('Error Handling - Clip Generation Service', () => {
       await generateClips(tempFile, [], 'test-id');
       fail('Should reject empty moments');
     } catch (error) {
-      expect(error.message).toContain('Moments array is required');
+      expect(error.message).toContain('Moments array cannot be empty');
     } finally {
       if (fs.existsSync(tempFile)) {
         fs.unlinkSync(tempFile);
