@@ -68,10 +68,19 @@ describe('clipPersistenceService', () => {
         expect.objectContaining({
           parent_video_id: 'video-1',
           artist_id: 'artist-1',
-          title: 'Momento con gancho fuerte',
+          // The punchy ad-copy caption is preferred as title over the raw
+          // "reason" (an analytical explanation, not meant to read as a title).
+          title: 'corto',
           source_url: 'https://pub-test.r2.dev/repurposer/clips/video-1/1_123.mp4',
           status: 'ready',
+          // Top-level columns — the main gallery (fetchArtistGallery) reads
+          // these, not the nested ai_clips_data copy.
+          viral_score: 8.4,
           viral_score_real: 8.4,
+          ai_copy_short: 'corto',
+          ai_copy_long: 'largo',
+          hashtags: '#viral',
+          marketing_breakdown: { hook_score: 9 },
           ai_clips_data: expect.objectContaining({
             start: 10,
             end: 60,
@@ -84,6 +93,26 @@ describe('clipPersistenceService', () => {
         }),
       ]);
       expect(ids).toEqual(['clip-row-1']);
+    });
+
+    it('should fall back to the reason, truncated at a word boundary, when there is no ad copy', async () => {
+      mock.queueResult({ data: null, error: null }); // delete
+      mock.queueResult({ data: [{ id: 'clip-row-1' }], error: null }); // insert
+
+      const longReason = 'Momento desgarrador de una madre protegiendo a su hijo infectado mientras el barco desciende al caos total';
+      const clips = [{
+        index: 1, path: '/tmp/clip1.mp4', startTime: 0, endTime: 30, duration: 30,
+        reason: longReason, tags: [], validation: {}, score: { viralScore: 6 },
+      }];
+      const insertSpy = jest.spyOn(mock.client, 'insert');
+
+      await persistClipsToDatabase(clips, 'video-1', 'artist-1');
+
+      const insertedTitle = insertSpy.mock.calls[0][0][0].title;
+      expect(insertedTitle.length).toBeLessThanOrEqual(81); // 80 chars + ellipsis
+      expect(insertedTitle.endsWith('…')).toBe(true);
+      expect(insertedTitle.endsWith(' …')).toBe(false); // no trailing space before the ellipsis
+      expect(longReason.startsWith(insertedTitle.slice(0, -1))).toBe(true); // cut at a real word boundary
     });
 
     it('should fall back to a generic title when the clip has no reason', async () => {

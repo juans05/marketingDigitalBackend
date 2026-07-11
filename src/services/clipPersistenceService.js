@@ -28,6 +28,30 @@ function logError(message) {
 }
 
 /**
+ * Truncates at a word boundary instead of mid-word, and only when actually
+ * needed. `reason.slice(0, 80)` was producing titles like "...con frase" —
+ * cut off wherever 80 characters happened to land, sometimes mid-word.
+ */
+function truncateAtWord(text, maxLength) {
+  if (!text || text.length <= maxLength) return text;
+  const truncated = text.slice(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+  return (lastSpace > maxLength * 0.5 ? truncated.slice(0, lastSpace) : truncated).trim() + '…';
+}
+
+/**
+ * Prefers the short ad copy Claude wrote specifically as a punchy caption
+ * over the moment's "reason" (an analytical explanation of why it's a good
+ * clip, not meant to read as a title — e.g. "Momento desgarrador de una
+ * madre protegiendo a su hijo infectado/herido mientras el barco...").
+ */
+function buildClipTitle(clip, parentTitle, index) {
+  const candidate = clip.score?.adCopy?.short?.trim() || clip.reason?.trim();
+  if (!candidate) return `${parentTitle || 'Video'} — clip ${index}`;
+  return truncateAtWord(candidate, 80);
+}
+
+/**
  * Uploads each clip file to R2 and inserts a child `videos` row for it,
  * matching the shape the old Python-clipper flow already produces
  * (parent_video_id, artist_id, title, source_url, status, viral_score_real,
@@ -55,17 +79,23 @@ async function persistClipsToDatabase(scoredClips, parentVideoId, artistId, pare
       const sourceUrl = await uploadFileToR2(clip.path, r2Key, 'video/mp4');
       logDebug(`Clip ${clip.index} uploaded to R2: ${r2Key}`);
 
-      const title = clip.reason
-        ? clip.reason.slice(0, 80)
-        : `${parentTitle || 'Video'} — clip ${clip.index}`;
+      const title = buildClipTitle(clip, parentTitle, clip.index);
 
+      // Top-level ai_copy_short/ai_copy_long/hashtags/viral_score/marketing_breakdown
+      // mirror exactly what processVideoAI() sets for normal videos — the main
+      // gallery (fetchArtistGallery) reads those top-level columns, not ai_clips_data.
       const { data, error } = await supabase.from('videos').insert([{
         parent_video_id: parentVideoId,
         artist_id: artistId,
         title,
         source_url: sourceUrl,
         status: 'ready',
+        viral_score: clip.score?.viralScore ?? null,
         viral_score_real: clip.score?.viralScore ?? null,
+        ai_copy_short: clip.score?.adCopy?.short || null,
+        ai_copy_long: clip.score?.adCopy?.long || null,
+        hashtags: clip.score?.adCopy?.hashtags || null,
+        marketing_breakdown: clip.score?.scoreBreakdown || null,
         ai_clips_data: {
           start: clip.startTime,
           end: clip.endTime,

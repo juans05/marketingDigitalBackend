@@ -207,9 +207,13 @@ async function fetchArtistLearningContext(artistId) {
     let biasStdDev = 0;
     const platformBias = {};
     const allRealScores = calibrationPosts.map(p => p.viral_score_real);
+    // null (not a fabricated 5) when there's no real paired history — a fake
+    // "historical average" was getting told to Claude as fact ("el score real
+    // promedio de este artista es 5/10"), anchoring every score toward 5
+    // for artists who simply have no track record yet.
     const historicalAvg = allRealScores.length > 0
       ? parseFloat((allRealScores.reduce((a, b) => a + b, 0) / allRealScores.length).toFixed(1))
-      : 5;
+      : null;
 
     if (calibrationPosts.length > 0) {
       const errors = calibrationPosts.map(p => p.viral_score - p.viral_score_real);
