@@ -61,14 +61,67 @@ jest.mock('util', () => {
 
 // Mock axios for Grok API calls
 jest.mock('axios');
+const axios = require('axios');
 
-const { transcribeVideo, extractAudioFromVideo, transcribeWithWhisper } = require('../../src/services/transcriptionService');
+const { transcribeVideo, extractAudioFromVideo, transcribeWithWhisper, transcribeWithGrok } = require('../../src/services/transcriptionService');
 
 describe('transcriptionService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // By default, Grok is not configured
     delete process.env.GROK_API_KEY;
+  });
+
+  describe('transcribeWithGrok', () => {
+    const mockAudioPath = path.join(__dirname, 'mock_audio.wav');
+
+    beforeAll(() => {
+      fs.writeFileSync(mockAudioPath, Buffer.from([0, 0, 0, 20]));
+    });
+
+    afterAll(() => {
+      try { fs.unlinkSync(mockAudioPath); } catch {}
+    });
+
+    it('should call the real xAI STT endpoint with multipart/form-data, not a JSON body', async () => {
+      process.env.GROK_API_KEY = 'test-key';
+      axios.post.mockResolvedValueOnce({
+        data: { text: 'hola mundo', language: 'es', duration: 12.3, words: [] },
+      });
+
+      await transcribeWithGrok(mockAudioPath, { language: 'es' });
+
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      const [url, body, config] = axios.post.mock.calls[0];
+
+      // Root cause of the original bug: wrong domain/path (api.grok.com/v1/speech/transcribe
+      // doesn't exist). The real xAI STT endpoint is api.x.ai/v1/stt.
+      expect(url).toBe('https://api.x.ai/v1/stt');
+
+      // Real endpoint expects multipart/form-data (a file field), not a base64 JSON payload.
+      expect(body).toBeInstanceOf(require('form-data'));
+      expect(config.headers).toHaveProperty('Authorization', 'Bearer test-key');
+    });
+
+    it('should map the xAI STT response ({text, words}) into {text, segments}', async () => {
+      process.env.GROK_API_KEY = 'test-key';
+      axios.post.mockResolvedValueOnce({
+        data: {
+          text: 'hola mundo',
+          language: 'es',
+          duration: 1.5,
+          words: [{ text: 'hola', start: 0, end: 0.5 }, { text: 'mundo', start: 0.6, end: 1.2 }],
+        },
+      });
+
+      const result = await transcribeWithGrok(mockAudioPath, { language: 'es' });
+
+      expect(result.text).toBe('hola mundo');
+      expect(result.segments).toEqual([
+        { text: 'hola', start: 0, end: 0.5 },
+        { text: 'mundo', start: 0.6, end: 1.2 },
+      ]);
+    });
   });
 
   describe('transcribeVideo', () => {

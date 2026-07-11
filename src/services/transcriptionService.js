@@ -3,6 +3,7 @@ const path = require('path');
 const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
 const axios = require('axios');
+const FormData = require('form-data');
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -56,39 +57,34 @@ async function extractAudioFromVideo(videoPath) {
 async function transcribeWithGrok(audioPath, options = {}) {
   const grokApiKey = process.env.GROK_API_KEY;
   if (!grokApiKey) {
-    logDebug('GROK_API_KEY not configured, fallback to Whisper');
+    logError('GROK_API_KEY not configured, fallback to Whisper');
     return transcribeWithWhisper(audioPath, options);
   }
 
   try {
-    // Read audio file as base64
-    const audioBuffer = fs.readFileSync(audioPath);
-    const base64Audio = audioBuffer.toString('base64');
+    // xAI's STT endpoint (api.x.ai/v1/stt) expects a multipart/form-data file
+    // upload, not a JSON body with base64 audio.
+    const form = new FormData();
+    form.append('file', fs.createReadStream(audioPath));
+    if (options.language) {
+      form.append('language', options.language);
+    }
 
-    // Call Grok API
-    const response = await axios.post(
-      'https://api.grok.com/v1/speech/transcribe',
-      {
-        audio: base64Audio,
-        language: options.language || 'es',
-        include_timestamps: options.timestamps !== false,
+    const response = await axios.post('https://api.x.ai/v1/stt', form, {
+      headers: {
+        ...form.getHeaders(),
+        'Authorization': `Bearer ${grokApiKey}`,
       },
-      {
-        headers: {
-          'Authorization': `Bearer ${grokApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 300000, // 5 min timeout for large files
-      }
-    );
+      timeout: 300000, // 5 min timeout for large files
+    });
 
     logDebug(`Grok transcription succeeded`);
     return {
       text: response.data.text,
-      segments: response.data.segments || [],
+      segments: response.data.words || [],
     };
   } catch (error) {
-    logDebug(`Grok failed (${error.message}), falling back to Whisper`);
+    logError(`Grok failed (${error.message}), falling back to Whisper`);
     return transcribeWithWhisper(audioPath, options);
   }
 }
