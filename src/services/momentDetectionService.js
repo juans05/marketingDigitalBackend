@@ -108,6 +108,8 @@ Transcripción (formato "[inicio s-fin s] texto"):`;
     }
 
     const responseText = response.content[0].text;
+    logDebug(`🧠 [MomentDetection] Respuesta cruda de Claude (${responseText.length} caracteres): ${responseText.slice(0, 2000)}${responseText.length > 2000 ? '…(truncado)' : ''}`);
+
     let parsedResponse;
 
     try {
@@ -129,21 +131,29 @@ Transcripción (formato "[inicio s-fin s] texto"):`;
       : [];
 
     if (rawMoments.length === 0) {
-      throw new Error('No valid moments detected');
+      logError(`❌ [MomentDetection] Claude devolvió 0 momentos. Claves de la respuesta parseada: [${Object.keys(parsedResponse).join(', ')}]`);
+      throw new Error('No valid moments detected (Claude returned an empty moments array)');
     }
 
+    logDebug(`🧠 [MomentDetection] Claude devolvió ${rawMoments.length} momentos candidatos, validando...`);
+
     // Validate and transform moments
+    const rejections = [];
     const validMoments = rawMoments
       .map((moment, idx) => {
+        const label = `#${idx + 1} (start=${moment.start}, end=${moment.end})`;
+
         // Validate timestamps
         const start = moment.start;
         const end = moment.end;
 
         if (!Number.isFinite(start) || !Number.isFinite(end)) {
+          rejections.push(`${label}: start/end no son números finitos`);
           return null;
         }
 
         if (end <= start) {
+          rejections.push(`${label}: end <= start`);
           return null;
         }
 
@@ -151,6 +161,7 @@ Transcripción (formato "[inicio s-fin s] texto"):`;
 
         // Check duration constraints: 15-90 seconds
         if (duration < 15 || duration > 90) {
+          rejections.push(`${label}: duración ${duration}s fuera de rango 15-90s`);
           return null;
         }
 
@@ -181,7 +192,12 @@ Transcripción (formato "[inicio s-fin s] texto"):`;
       .filter(m => m !== null);
 
     if (validMoments.length === 0) {
-      throw new Error('No valid moments detected');
+      logError(`❌ [MomentDetection] Los ${rawMoments.length} momentos de Claude fallaron la validación:\n${rejections.join('\n')}`);
+      throw new Error('No valid moments detected (all candidates failed validation)');
+    }
+
+    if (rejections.length > 0) {
+      logDebug(`⚠️ [MomentDetection] ${rejections.length} de ${rawMoments.length} momentos descartados:\n${rejections.join('\n')}`);
     }
 
     // Sort by confidence (highest first) — this is the "viral potential"
@@ -193,7 +209,7 @@ Transcripción (formato "[inicio s-fin s] texto"):`;
   } catch (error) {
     if (error.message === 'Transcript cannot be empty' ||
         error.message === 'Invalid Claude response format' ||
-        error.message === 'No valid moments detected') {
+        error.message.startsWith('No valid moments detected')) {
       throw error;
     }
 
