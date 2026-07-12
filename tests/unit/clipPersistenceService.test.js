@@ -30,7 +30,7 @@ describe('clipPersistenceService', () => {
       mock.queueResult({ data: null, error: null }); // delete
       mock.queueResult({ data: [{ id: 'clip-row-1' }], error: null }); // insert
 
-      const clips = [{ index: 1, path: '/tmp/clip1.mp4', startTime: 0, endTime: 30, duration: 30, reason: 'x', tags: [], validation: {}, score: { viralScore: 8 } }];
+      const clips = [{ index: 1, path: '/tmp/clip1.mp4', startTime: 0, endTime: 30, duration: 30, reason: 'x', tags: [], validation: {}, score: { score: 8 } }];
 
       await persistClipsToDatabase(clips, 'video-1', 'artist-1');
 
@@ -51,10 +51,13 @@ describe('clipPersistenceService', () => {
           reason: 'Momento con gancho fuerte',
           tags: ['hook', 'storytelling'],
           validation: { hasVisualHook: true, confidence: 0.9 },
+          // Shape produced by clipImpactScoringService.scoreClipForPlatform.
           score: {
-            viralScore: 8.4,
-            scoreBreakdown: { hook_score: 9 },
-            adCopy: { short: 'corto', long: 'largo', hashtags: '#viral' },
+            score: 8.4,
+            score_breakdown: { hook: 2 },
+            copy_short: 'corto',
+            copy_long: 'largo',
+            hashtags_suggested: ['#viral', '#fyp'],
           },
         },
       ];
@@ -74,13 +77,16 @@ describe('clipPersistenceService', () => {
           source_url: 'https://pub-test.r2.dev/repurposer/clips/video-1/1_123.mp4',
           status: 'ready',
           // Top-level columns — the main gallery (fetchArtistGallery) reads
-          // these, not the nested ai_clips_data copy.
-          viral_score: 8.4,
-          viral_score_real: 8.4,
+          // these, not the nested ai_clips_data copy. viral_score/viral_score_real
+          // are intentionally not reused for clips (separate rubric, see
+          // clip_impact_score) — they stay null for clip rows.
+          viral_score: null,
+          viral_score_real: null,
+          clip_impact_score: 8.4,
           ai_copy_short: 'corto',
           ai_copy_long: 'largo',
-          hashtags: '#viral',
-          marketing_breakdown: { hook_score: 9 },
+          hashtags: '#viral #fyp',
+          marketing_breakdown: { hook: 2 },
           ai_clips_data: expect.objectContaining({
             start: 10,
             end: 60,
@@ -88,7 +94,7 @@ describe('clipPersistenceService', () => {
             tags: ['hook', 'storytelling'],
             ai_copy_short: 'corto',
             ai_copy_long: 'largo',
-            hashtags: '#viral',
+            hashtags: '#viral #fyp',
           }),
         }),
       ]);
@@ -102,7 +108,7 @@ describe('clipPersistenceService', () => {
       const longReason = 'Momento desgarrador de una madre protegiendo a su hijo infectado mientras el barco desciende al caos total';
       const clips = [{
         index: 1, path: '/tmp/clip1.mp4', startTime: 0, endTime: 30, duration: 30,
-        reason: longReason, tags: [], validation: {}, score: { viralScore: 6 },
+        reason: longReason, tags: [], validation: {}, score: { score: 6 },
       }];
       const insertSpy = jest.spyOn(mock.client, 'insert');
 
@@ -119,7 +125,7 @@ describe('clipPersistenceService', () => {
       mock.queueResult({ data: null, error: null }); // delete
       mock.queueResult({ data: [{ id: 'clip-row-1' }], error: null }); // insert
 
-      const clips = [{ index: 3, path: '/tmp/clip3.mp4', startTime: 0, endTime: 30, duration: 30, tags: [], validation: {}, score: { viralScore: 5 } }];
+      const clips = [{ index: 3, path: '/tmp/clip3.mp4', startTime: 0, endTime: 30, duration: 30, tags: [], validation: {}, score: { score: 5 } }];
       const insertSpy = jest.spyOn(mock.client, 'insert');
 
       await persistClipsToDatabase(clips, 'video-1', 'artist-1', 'Podcast ep 4');
@@ -138,8 +144,8 @@ describe('clipPersistenceService', () => {
         .mockResolvedValueOnce('https://pub-test.r2.dev/repurposer/clips/video-1/2_123.mp4');
 
       const clips = [
-        { index: 1, path: '/tmp/clip1.mp4', startTime: 0, endTime: 30, duration: 30, reason: 'a', validation: {}, score: { viralScore: 5 } },
-        { index: 2, path: '/tmp/clip2.mp4', startTime: 40, endTime: 70, duration: 30, reason: 'b', validation: {}, score: { viralScore: 6 } },
+        { index: 1, path: '/tmp/clip1.mp4', startTime: 0, endTime: 30, duration: 30, reason: 'a', validation: {}, score: { score: 5 } },
+        { index: 2, path: '/tmp/clip2.mp4', startTime: 40, endTime: 70, duration: 30, reason: 'b', validation: {}, score: { score: 6 } },
       ];
 
       const ids = await persistClipsToDatabase(clips, 'video-1', 'artist-1');
@@ -153,8 +159,8 @@ describe('clipPersistenceService', () => {
       mock.queueResult({ data: [{ id: 'clip-row-2' }], error: null }); // insert succeeds for clip 2
 
       const clips = [
-        { index: 1, path: '/tmp/clip1.mp4', startTime: 0, endTime: 30, duration: 30, reason: 'a', validation: {}, score: { viralScore: 5 } },
-        { index: 2, path: '/tmp/clip2.mp4', startTime: 40, endTime: 70, duration: 30, reason: 'b', validation: {}, score: { viralScore: 6 } },
+        { index: 1, path: '/tmp/clip1.mp4', startTime: 0, endTime: 30, duration: 30, reason: 'a', validation: {}, score: { score: 5 } },
+        { index: 2, path: '/tmp/clip2.mp4', startTime: 40, endTime: 70, duration: 30, reason: 'b', validation: {}, score: { score: 6 } },
       ];
 
       const ids = await persistClipsToDatabase(clips, 'video-1', 'artist-1');

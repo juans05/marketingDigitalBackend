@@ -46,9 +46,15 @@ function truncateAtWord(text, maxLength) {
  * madre protegiendo a su hijo infectado/herido mientras el barco...").
  */
 function buildClipTitle(clip, parentTitle, index) {
-  const candidate = clip.score?.adCopy?.short?.trim() || clip.reason?.trim();
+  const candidate = clip.score?.copy_short?.trim() || clip.reason?.trim();
   if (!candidate) return `${parentTitle || 'Video'} — clip ${index}`;
   return truncateAtWord(candidate, 80);
+}
+
+function joinHashtags(hashtagsSuggested) {
+  return Array.isArray(hashtagsSuggested) && hashtagsSuggested.length > 0
+    ? hashtagsSuggested.join(' ')
+    : null;
 }
 
 /**
@@ -81,21 +87,26 @@ async function persistClipsToDatabase(scoredClips, parentVideoId, artistId, pare
 
       const title = buildClipTitle(clip, parentTitle, clip.index);
 
-      // Top-level ai_copy_short/ai_copy_long/hashtags/viral_score/marketing_breakdown
-      // mirror exactly what processVideoAI() sets for normal videos — the main
-      // gallery (fetchArtistGallery) reads those top-level columns, not ai_clips_data.
+      // Top-level ai_copy_short/ai_copy_long/hashtags/marketing_breakdown mirror
+      // exactly what processVideoAI() sets for normal videos — the main gallery
+      // (fetchArtistGallery) reads those top-level columns, not ai_clips_data.
+      // clip_impact_score is the new rubric's dedicated column (see
+      // clipImpactScoringService); viral_score/viral_score_real are
+      // intentionally NOT reused for clips — they stay null on clip rows.
+      const hashtags = joinHashtags(clip.score?.hashtags_suggested);
       const { data, error } = await supabase.from('videos').insert([{
         parent_video_id: parentVideoId,
         artist_id: artistId,
         title,
         source_url: sourceUrl,
         status: 'ready',
-        viral_score: clip.score?.viralScore ?? null,
-        viral_score_real: clip.score?.viralScore ?? null,
-        ai_copy_short: clip.score?.adCopy?.short || null,
-        ai_copy_long: clip.score?.adCopy?.long || null,
-        hashtags: clip.score?.adCopy?.hashtags || null,
-        marketing_breakdown: clip.score?.scoreBreakdown || null,
+        viral_score: null,
+        viral_score_real: null,
+        clip_impact_score: clip.score?.score ?? null,
+        ai_copy_short: clip.score?.copy_short || null,
+        ai_copy_long: clip.score?.copy_long || null,
+        hashtags,
+        marketing_breakdown: clip.score?.score_breakdown || null,
         ai_clips_data: {
           start: clip.startTime,
           end: clip.endTime,
@@ -103,10 +114,10 @@ async function persistClipsToDatabase(scoredClips, parentVideoId, artistId, pare
           reason: clip.reason || '',
           tags: clip.tags || [],
           validation: clip.validation || null,
-          score_breakdown: clip.score?.scoreBreakdown || null,
-          ai_copy_short: clip.score?.adCopy?.short || '',
-          ai_copy_long: clip.score?.adCopy?.long || '',
-          hashtags: clip.score?.adCopy?.hashtags || '',
+          score_breakdown: clip.score?.score_breakdown || null,
+          ai_copy_short: clip.score?.copy_short || '',
+          ai_copy_long: clip.score?.copy_long || '',
+          hashtags: hashtags || '',
         },
       }]).select();
 
