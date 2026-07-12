@@ -24,7 +24,32 @@ function logError(message) {
   console.error(`❌ [ClipImpactScoring] ${message}`);
 }
 
-function buildRubricPrompt({ parentVideoId, durationSeconds, platform, niche }) {
+/**
+ * Real description of what the clip contains, built from moment detection's
+ * `reason` + Gemini's visual validation + tags. Without this, the rubric
+ * prompt below only tells Claude the clip's duration/platform/niche — no
+ * actual content signal to judge hook/retention/emotional impact against —
+ * so every clip converges on the same generic mid-range score (5-5.5).
+ */
+function buildClipContentSummary({ reason, validation, tags } = {}) {
+  const parts = [];
+  if (reason) {
+    parts.push(`Por qué se seleccionó este momento del video original: ${reason}`);
+  }
+  if (validation) {
+    const { hasVisualHook, confidence, suggestions } = validation;
+    parts.push(`Análisis visual (Gemini): gancho visual ${hasVisualHook ? 'presente' : 'débil o ausente'} (confianza ${confidence}).`);
+    if (suggestions?.length) {
+      parts.push(`Sugerencias de mejora visual: ${suggestions.join('; ')}`);
+    }
+  }
+  if (tags?.length) {
+    parts.push(`Tags detectados: ${tags.join(', ')}`);
+  }
+  return parts.join('\n') || 'Sin análisis de contenido adicional disponible.';
+}
+
+function buildRubricPrompt({ parentVideoId, durationSeconds, platform, niche, contentSummary }) {
   return `# EVALUADOR DE IMPACTO DE CLIPS - MODELO DE PUNTUACIÓN
 
 Eres un experto en viral content y estrategia de redes sociales.
@@ -35,6 +60,9 @@ Tu tarea: Analizar un clip extraído de video y asignarle un score de impacto (1
 - Duración del clip: ${durationSeconds}
 - Plataforma objetivo: ${platform}
 - Niche: ${niche}
+
+## CONTENIDO DEL CLIP
+${contentSummary}
 
 ---
 
@@ -143,6 +171,7 @@ async function scoreClipForPlatform(clip, { platform, niche, parentVideoId }) {
     durationSeconds: clip.duration,
     platform,
     niche: niche || 'general',
+    contentSummary: buildClipContentSummary(clip),
   });
 
   const client = getAnthropic();
@@ -266,7 +295,12 @@ async function rescoreClip(clipVideoId, platform, niche) {
     throw new Error(`Clip not found: ${clipVideoId}`);
   }
 
-  const clip = { duration: clipRow.ai_clips_data?.duration || 0 };
+  const clip = {
+    duration: clipRow.ai_clips_data?.duration || 0,
+    reason: clipRow.ai_clips_data?.reason || '',
+    tags: clipRow.ai_clips_data?.tags || [],
+    validation: clipRow.ai_clips_data?.validation || null,
+  };
 
   const result = await scoreClipForPlatform(clip, {
     platform,

@@ -39,7 +39,12 @@ describe('scoreClipForPlatform', () => {
     getAnthropic.mockReturnValue({ messages: { create: createMock } });
 
     const result = await scoreClipForPlatform(
-      { duration: 45 },
+      {
+        duration: 45,
+        reason: 'El presentador revela un giro inesperado sobre el caso',
+        tags: ['plot-twist', 'suspenso'],
+        validation: { hasVisualHook: true, confidence: 0.87, suggestions: ['Agregar texto overlay en el segundo 2'] },
+      },
       { platform: 'tiktok', niche: 'true crime', parentVideoId: 'video-1' }
     );
 
@@ -55,6 +60,26 @@ describe('scoreClipForPlatform', () => {
     expect(sentPrompt).toContain('Duración del clip: 45');
     expect(sentPrompt).toContain('Plataforma objetivo: tiktok');
     expect(sentPrompt).toContain('Niche: true crime');
+    // The rubric prompt must include real clip content, not just IDs/metadata —
+    // otherwise Claude has no signal to differentiate clips and defaults to a
+    // generic mid-range score for everything.
+    expect(sentPrompt).toContain('El presentador revela un giro inesperado sobre el caso');
+    expect(sentPrompt).toContain('gancho visual presente');
+    expect(sentPrompt).toContain('0.87');
+    expect(sentPrompt).toContain('Agregar texto overlay en el segundo 2');
+    expect(sentPrompt).toContain('plot-twist, suspenso');
+  });
+
+  it('should fall back to a generic content note when the clip has no reason/validation/tags', async () => {
+    const createMock = jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ score: 6, score_breakdown: {}, hashtags_suggested: [] }) }],
+    });
+    getAnthropic.mockReturnValue({ messages: { create: createMock } });
+
+    await scoreClipForPlatform({ duration: 20 }, { platform: 'tiktok', niche: 'x', parentVideoId: 'v1' });
+
+    const sentPrompt = createMock.mock.calls[0][0].messages[0].content;
+    expect(sentPrompt).toContain('Sin análisis de contenido adicional disponible');
   });
 
   it('should clamp an out-of-range score to 1-10', async () => {
@@ -163,15 +188,24 @@ describe('persistClipScore', () => {
 
 describe('rescoreClip', () => {
   it('should fetch the clip, re-score it for the new platform, and persist', async () => {
-    getAnthropic.mockReturnValue({
-      messages: {
-        create: jest.fn().mockResolvedValue({
-          content: [{ type: 'text', text: JSON.stringify({ score: 9, score_breakdown: {}, hashtags_suggested: [] }) }],
-        }),
-      },
+    const createMock = jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ score: 9, score_breakdown: {}, hashtags_suggested: [] }) }],
     });
+    getAnthropic.mockReturnValue({ messages: { create: createMock } });
 
-    mock.queueResult({ data: { id: 'clip-1', parent_video_id: 'video-1', ai_clips_data: { duration: 25 } }, error: null }); // select clip
+    mock.queueResult({
+      data: {
+        id: 'clip-1',
+        parent_video_id: 'video-1',
+        ai_clips_data: {
+          duration: 25,
+          reason: 'Momento con revelación shockeante',
+          tags: ['revelacion'],
+          validation: { hasVisualHook: true, confidence: 0.9, suggestions: [] },
+        },
+      },
+      error: null,
+    }); // select clip
     mock.queueResult({ data: null, error: null }); // upsert
     mock.queueResult({ data: null, error: null }); // update videos
 
@@ -179,6 +213,13 @@ describe('rescoreClip', () => {
 
     expect(result.score).toBe(9);
     expect(result.platform).toBe('instagram');
+
+    // rescoreClip must forward the clip's real content (reason/validation/tags)
+    // into the prompt, not just its duration — otherwise re-scoring for another
+    // platform suffers the same "no signal" defect as the initial scoring pass.
+    const sentPrompt = createMock.mock.calls[0][0].messages[0].content;
+    expect(sentPrompt).toContain('Momento con revelación shockeante');
+    expect(sentPrompt).toContain('gancho visual presente');
   });
 
   it('should throw if the clip does not exist', async () => {
