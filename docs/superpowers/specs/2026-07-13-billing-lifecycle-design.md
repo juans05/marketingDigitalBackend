@@ -48,7 +48,11 @@ Al gastar Sparks en cualquier acción: **primero `bonus_sparks_balance`, y cuand
 
 ## País, moneda e instrucciones de pago
 
-El formulario de registro pide elegir el **país** (dropdown, no geolocalización por IP — más confiable, sin dependencias nuevas, y da el dato exacto para facturar). Se guarda en `agencies.country`.
+El país se detecta automáticamente por **geolocalización de IP** al momento del registro, usando `geoip-lite` (base de datos MaxMind GeoLite2 empaquetada localmente — sin llamadas a APIs externas, sin costo por request, sin dependencia de un servicio de terceros que pueda caerse). El backend lee la IP real del request (respetando `X-Forwarded-For` si hay proxy/load balancer delante, patrón ya usado en el proyecto para rate limiting — ver `app.js`) y resuelve el país con `geoip.lookup(ip)`.
+
+El país detectado se **pre-carga en el formulario de registro como un campo editable** (no un dropdown en blanco) — si la IP no resuelve (red local, IP no encontrada en la base) o el usuario está con VPN y el país real es otro, puede corregirlo antes de confirmar el registro. Esto evita el caso de alguien de España registrándose desde una VPN de EE.UU. y quedando mal facturado sin poder corregirlo. Se guarda en `agencies.country`.
+
+Si la detección por IP falla completamente (IP no resuelta) y el usuario no corrige el campo, cae al bucket `DEFAULT` de instrucciones de pago (ver abajo) — nunca bloquea el registro por no poder geolocalizar.
 
 La moneda e instrucciones de pago **NO van hardcodeadas en el backend** — se editan desde el panel admin, sin deploy. Tabla nueva:
 
@@ -76,7 +80,7 @@ El banner de `pending_payment`/`grace_period`/`suspended` muestra las instruccio
 
 ## Flujo de registro
 
-El formulario de registro ahora pide elegir un plan (Mini/Creator/Pro/Agency) y el país antes de crear la cuenta.
+El formulario de registro ahora pide elegir un plan (Mini/Creator/Pro/Agency) antes de crear la cuenta. El país llega pre-cargado por geolocalización de IP (ver sección anterior), editable por el usuario.
 
 - **Elige Mini**: `plan_type='Mini'`, `payment_status='active'`, `plan_expires_at=NULL`, `plan_sparks_balance=100`, `bonus_sparks_balance=100` (bono de bienvenida), `next_sparks_recharge_at = now() + 30d`. Acceso inmediato completo.
 - **Elige un plan pago**: `plan_type=<elegido>`, `payment_status='pending_payment'`, `plan_expires_at=NULL`, `plan_sparks_balance=0`, `bonus_sparks_balance=100` (el bono de bienvenida se otorga siempre, elija lo que elija — así puede ver un poco de valor mientras espera, pero no puede usar nada real porque el middleware de acceso bloquea por `payment_status`, no por balance), `next_sparks_recharge_at=NULL`. Sin acceso a funciones hasta que el admin lo active — queda visible en el panel admin como "pendiente de activación" para que el dueño sepa a quién facturarle.
@@ -116,3 +120,4 @@ Middleware nuevo `requireActivePlan` (junto a `authenticateToken`/`authorizeAgen
 - Integration: `activate-plan` cubre tanto "activar pendiente" como "renovar vencido" con el mismo resultado final.
 - Integration: middleware `requireActivePlan` bloquea correctamente en `pending_payment`/`suspended` y deja pasar en `active`/`grace_period`.
 - Unit: resolución de instrucciones de pago — país con fila propia usa esa fila, país sin fila cae a `DEFAULT`.
+- Unit: geolocalización de IP — IP válida resuelve el país correcto, IP no resoluble (o loopback/local) cae a `null`/sin pre-carga sin romper el registro, respeta `X-Forwarded-For` cuando está presente.
