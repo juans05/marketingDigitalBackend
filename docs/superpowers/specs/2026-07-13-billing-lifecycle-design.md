@@ -46,9 +46,37 @@ Nuevos campos en `agencies` (además de los existentes `plan_type`, `sparks_bala
 
 Al gastar Sparks en cualquier acción: **primero `bonus_sparks_balance`, y cuando eso llega a 0, recién ahí se empieza a descontar de `plan_sparks_balance`.** Esto reemplaza la lógica actual de `deductSparks()`/RPC `deduct_sparks`, que hoy solo restan de una columna única — se extiende a un descuento atómico en dos pasos sobre las dos columnas nuevas.
 
+## País, moneda e instrucciones de pago
+
+El formulario de registro pide elegir el **país** (dropdown, no geolocalización por IP — más confiable, sin dependencias nuevas, y da el dato exacto para facturar). Se guarda en `agencies.country`.
+
+La moneda e instrucciones de pago **NO van hardcodeadas en el backend** — se editan desde el panel admin, sin deploy. Tabla nueva:
+
+```sql
+CREATE TABLE payment_instructions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code TEXT NOT NULL UNIQUE, -- 'ES', 'PE', 'DEFAULT' (fallback para cualquier país sin regla propia)
+  currency TEXT NOT NULL,            -- 'EUR', 'USD', etc.
+  instructions TEXT NOT NULL,        -- texto libre: cuenta, alias, CCI, Yape/Plin, PayPal/Wise, lo que corresponda
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Precargada con 3 filas iniciales (`ES`, `PE`, `DEFAULT`) con texto placeholder — el admin las completa/edita desde el panel apenas esté implementado, no hace falta pasar los datos reales ahora.
+
+**Endpoints nuevos** (mismo gate `account_type === 'admin'`):
+- `GET /api/vidalis/admin/payment-instructions` — lista las 3 (o más) filas.
+- `PUT /api/vidalis/admin/payment-instructions/:countryCode` — edita moneda/texto de una fila.
+
+**Resolución para un país sin fila propia**: se usa la fila `DEFAULT`. `agencies.country` guarda el código de país tal cual (ISO 2 letras, ej. `'AR'`, `'MX'`); la búsqueda de instrucciones hace `payment_instructions` por `country_code = agencies.country`, y si no hay match, cae a `DEFAULT`.
+
+El banner de `pending_payment`/`grace_period`/`suspended` muestra las instrucciones correspondientes al país guardado en la cuenta (resuelto como arriba).
+
+**Panel admin — sección nueva**: "Instrucciones de pago", tabla editable con las filas por país (agregar/editar moneda + texto), además de la tabla de clientes ya descrita.
+
 ## Flujo de registro
 
-El formulario de registro ahora pide elegir un plan (Mini/Creator/Pro/Agency) antes de crear la cuenta.
+El formulario de registro ahora pide elegir un plan (Mini/Creator/Pro/Agency) y el país antes de crear la cuenta.
 
 - **Elige Mini**: `plan_type='Mini'`, `payment_status='active'`, `plan_expires_at=NULL`, `plan_sparks_balance=100`, `bonus_sparks_balance=100` (bono de bienvenida), `next_sparks_recharge_at = now() + 30d`. Acceso inmediato completo.
 - **Elige un plan pago**: `plan_type=<elegido>`, `payment_status='pending_payment'`, `plan_expires_at=NULL`, `plan_sparks_balance=0`, `bonus_sparks_balance=100` (el bono de bienvenida se otorga siempre, elija lo que elija — así puede ver un poco de valor mientras espera, pero no puede usar nada real porque el middleware de acceso bloquea por `payment_status`, no por balance), `next_sparks_recharge_at=NULL`. Sin acceso a funciones hasta que el admin lo active — queda visible en el panel admin como "pendiente de activación" para que el dueño sepa a quién facturarle.
@@ -75,11 +103,11 @@ Middleware nuevo `requireActivePlan` (junto a `authenticateToken`/`authorizeAgen
 
 - **Selector de plan en el registro**: las 4 opciones (Mini/Creator/Pro/Agency), mismo copy que la página de precios.
 - **Banner de aviso**: en el dashboard, si `payment_status !== 'active'`, se muestra un banner:
-  - `pending_payment`: "Elegiste el plan X — completá el pago para activarlo" + datos de contacto.
-  - `grace_period`: "Tu plan vence hoy/mañana, renovalo para no perder acceso".
-  - `suspended`: "Tu cuenta está suspendida por falta de pago".
-  - Texto siempre estático/interpolado como texto plano de React (nunca `dangerouslySetInnerHTML`) — sin riesgo de inyección, ninguno de estos valores viene de input libre de otro usuario.
-- **Panel admin**: pantalla nueva, solo accesible con `account_type==='admin'`, con la tabla de clientes y las 3 acciones (activar/renovar, suspender, cargar Sparks).
+  - `pending_payment`: "Elegiste el plan X — completá el pago para activarlo" + las instrucciones de pago resueltas por país (`payment_instructions`, con fallback a `DEFAULT`).
+  - `grace_period`: "Tu plan vence hoy/mañana, renovalo para no perder acceso" + mismas instrucciones de pago.
+  - `suspended`: "Tu cuenta está suspendida por falta de pago" + mismas instrucciones de pago.
+  - Texto siempre renderizado como texto plano de React (nunca `dangerouslySetInnerHTML`), incluido el campo `instructions` editable por el admin — sin riesgo de inyección aunque ese campo sea texto libre.
+- **Panel admin**: pantalla nueva, solo accesible con `account_type==='admin'`, con dos secciones: la tabla de clientes (con las 3 acciones: activar/renovar, suspender, cargar Sparks) y la tabla editable de instrucciones de pago por país.
 
 ## Testing
 
@@ -87,3 +115,4 @@ Middleware nuevo `requireActivePlan` (junto a `authenticateToken`/`authorizeAgen
 - Unit: el job diario — vencimiento → grace → suspended en los pasos correctos, recarga mensual resetea (no acumula) `plan_sparks_balance`, corre incluso si la cuenta está suspendida.
 - Integration: `activate-plan` cubre tanto "activar pendiente" como "renovar vencido" con el mismo resultado final.
 - Integration: middleware `requireActivePlan` bloquea correctamente en `pending_payment`/`suspended` y deja pasar en `active`/`grace_period`.
+- Unit: resolución de instrucciones de pago — país con fila propia usa esa fila, país sin fila cae a `DEFAULT`.
