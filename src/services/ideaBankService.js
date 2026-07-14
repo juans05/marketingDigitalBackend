@@ -21,15 +21,17 @@ function getAnthropic() {
 // GENERATE 5 DAILY IDEAS
 // ============================================================
 async function generateDailyIdeas(artistId, count = 5) {
-  const [styleProfile, preferences, trends] = await Promise.all([
+  const [styleProfile, preferences, trends, recentHooks] = await Promise.all([
     getStyleProfile(artistId),
     getRecentPreferences(artistId, 50),
-    trendService.fetchAllTrends(artistId)
+    trendService.fetchAllTrends(artistId),
+    getRecentlyGeneratedHooks(artistId, 20)
   ]);
 
   const likedPatterns = preferences.filter(p => p.action === 'like').map(p => p.hook || '');
   const dislikedPatterns = preferences.filter(p => p.action === 'dislike').map(p => p.hook || '');
   const trendSummary = trends.slice(0, 8).map(t => `[${t.platform}] ${t.topic}`).join('\n');
+  const recentHooksSummary = recentHooks.slice(0, 15).join('\n') || 'Sin ideas previas';
 
   const prompt = `Eres un estratega de contenido viral para redes sociales. Genera exactamente ${count} ideas de contenido para un creador.
 
@@ -48,12 +50,16 @@ ${likedPatterns.slice(0, 5).join('\n') || 'Sin historial aún'}
 LO QUE NO LE GUSTA (ideas que descartó):
 ${dislikedPatterns.slice(0, 5).join('\n') || 'Sin historial aún'}
 
+IDEAS YA GENERADAS RECIENTEMENTE PARA ESTE CREADOR (no las repitas ni generes ángulos muy similares):
+${recentHooksSummary}
+
 REGLAS:
 1. Cada idea debe ser DIFERENTE en formato y ángulo
 2. Los hooks deben generar curiosidad instantánea
 3. Incluye variedad: educativo, entretenimiento, opinión, tutorial, storytime
 4. Adapta al tono del creador
 5. Si hay tendencias, úsalas como inspiración (no copies literalmente)
+6. No repitas ninguna de las ideas ya generadas listadas arriba
 
 Responde ÚNICAMENTE con un JSON array. Sin texto adicional antes o después:
 [
@@ -316,6 +322,17 @@ async function getStyleProfile(artistId) {
     .eq('artist_id', artistId)
     .single();
   return data;
+}
+
+async function getRecentlyGeneratedHooks(artistId, limit = 20) {
+  const { data } = await supabase
+    .from('idea_bank')
+    .select('hook')
+    .eq('artist_id', artistId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  return (data || []).map(r => r.hook).filter(Boolean);
 }
 
 async function getRecentPreferences(artistId, limit = 50) {
