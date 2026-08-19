@@ -861,6 +861,7 @@ exports.getAnalyticsInsights = async (req, res) => {
 
     const planType = (artist.plan_type || 'Mini').trim();
     const PLAN_CONFIG = {
+      'Starter': { videos: 3 },
       'Mini': { videos: 5 },
       'Artista': { videos: 20 },
       'Estrella': { videos: 60 },

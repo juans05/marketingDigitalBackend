@@ -67,6 +67,7 @@ const cloudinary = require('cloudinary').v2;
 const logger = require('./loggerService');
 
 const PLAN_CONFIG = {
+  'Starter': { videos: 3, platforms: ['instagram', 'tiktok'], calendar: false },
   'Mini': { videos: 5, platforms: ['instagram', 'tiktok'], calendar: false },
   'Artista': { videos: 20, platforms: ['instagram', 'facebook', 'tiktok'], calendar: true },
   'Estrella': { videos: 60, platforms: ['tiktok', 'instagram', 'facebook', 'youtube', 'linkedin'], calendar: true },

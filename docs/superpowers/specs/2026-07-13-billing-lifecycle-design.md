@@ -30,7 +30,7 @@ Nuevos campos en `agencies` (además de los existentes `plan_type`, `sparks_bala
 | `payment_status` | text | `'active'` \| `'pending_payment'` \| `'grace_period'` \| `'suspended'` |
 | `plan_expires_at` | timestamptz, nullable | Fecha de vencimiento. `NULL` para Mini (nunca vence). Se define siempre a `now() + 30 días` al activar/renovar un plan pago. |
 | `next_sparks_recharge_at` | timestamptz | Próxima recarga mensual de Sparks. Aplica a **todos** los planes, incluido Mini. |
-| `plan_sparks_balance` | numeric | Sparks del plan (100 Mini / 300 Creator / 800 Pro / 2500 Agency). Se **resetea** (no se acumula) en cada recarga mensual. |
+| `plan_sparks_balance` | numeric | Sparks del plan (60 Starter / 100 Mini / 300 Creator / 800 Pro / 2500 Agency). Se **resetea** (no se acumula) en cada recarga mensual. |
 | `bonus_sparks_balance` | numeric | Bono de bienvenida (100, una sola vez) + compras + cargas manuales del admin. **Se acumula**, nunca se resetea automáticamente. |
 
 `agencies.sparks_balance` (columna existente) pasa a ser una **columna generada** (`GENERATED ALWAYS AS (plan_sparks_balance + bonus_sparks_balance) STORED`, o mantenida por trigger si Supabase/Postgres lo requiere así) — todo el código que hoy lee `sparks_balance` sigue funcionando sin cambios; solo la lógica de deducción/recarga toca las dos columnas nuevas directamente.
@@ -78,6 +78,31 @@ El banner de `pending_payment`/`grace_period`/`suspended` muestra las instruccio
 
 **Panel admin — sección nueva**: "Instrucciones de pago", tabla editable con las filas por país (agregar/editar moneda + texto), además de la tabla de clientes ya descrita.
 
+## Plan Starter (prueba gratis + precio promocional)
+
+Tier nuevo por debajo de Mini: **3 videos/mes**, distribución a **2 redes sociales** (`instagram` + `tiktok`, mismo set que Mini — ver `PLAN_CONFIG` en `vidalisService.js`).
+
+- **Precio y trial**: **15 días gratis** al elegir el plan. Si al día 15 sigue activo, se cobra USD 5 (cubre el resto del primer mes). Desde el segundo ciclo de facturación, USD 15/mes (renovación regular). Tres tramos de precio en total: gratis (15 días) → USD 5 (una vez) → USD 15/mes en adelante.
+  - Esto requiere un estado adicional al modelo de `payment_status` de arriba: un plan con trial activo no es `active` (no pagó nada todavía) ni `pending_payment` (no bloquea funciones, el usuario ya tiene acceso completo durante el trial) — se necesita `trial_period` con `trial_ends_at = now() + 15 días`. El job diario (ver abajo) debe chequear `trial_period` igual que chequea vencimientos: si `trial_ends_at` ya pasó y no se registró el pago de USD 5, pasa a `pending_payment` (bloquea acceso hasta que el admin confirme el cobro).
+  - `plan_expires_at` para Starter se fija a `trial_ends_at + 30 días` recién cuando se confirma el pago de los USD 5 (no al elegir el plan) — desde ahí sigue el ciclo normal de 30 días como cualquier otro plan pago.
+- **Sparks del plan**: 60/mes. Cálculo: cada video sube con `registerVideo` (10 Sparks, incluye el procesamiento IA y la distribución a las plataformas activas) + un análisis de contenido `analyze_content` (10 Sparks) = 20 Sparks/video × 3 videos = 60 Sparks/mes. Los Sparks del plan se otorgan completos desde el día 1 del trial (no prorrateados), para que el usuario pueda probar la funcionalidad real durante los 15 días gratis.
+
+## Precios y promoción de lanzamiento
+
+No había precio base definido para Mini/Artista/Estrella/Agencia Pro en ningún repo — se usan los siguientes como **placeholder editable**, ajustar cuando haya precio real de negocio:
+
+| Plan | Precio base | Promo lanzamiento (-10%) | Anual (11×, 1 mes gratis) |
+|---|---|---|---|
+| Starter | 15 días gratis → USD 5 (una vez) → USD 15/mes después | *(ya es promo, no se le aplica el -10% adicional)* | USD 165/año (15×11, ~USD 13.75/mes efectivo) |
+| Mini | USD 19/mes | USD 17.10/mes | USD 188.10/año (17.10×11) |
+| Artista (Creator) | USD 39/mes | USD 35.10/mes | USD 386.10/año |
+| Estrella (Pro) | USD 79/mes | USD 71.10/mes | USD 782.10/año |
+| Agencia Pro | USD 199/mes | USD 179.10/mes | USD 1,970.10/año |
+
+El -10% de lanzamiento aplica solo a Mini/Artista/Estrella/Agencia Pro (Starter ya nace con precio promocional propio, no se acumulan los dos descuentos).
+
+**Toggle mensual/anual**: selector estilo switch (no checkbox plano) en la página de precios, junto a cada plan o global arriba de las tarjetas. Anual = 11 meses de precio por 12 (1 mes gratis), se cobra el total anual de una vez. El switch debe mostrar el ahorro ("2 meses gratis" no aplica acá, es 1 mes — usar copy "1 mes gratis" o "-8% extra"). Ver mockup en `docs/pricing-toggle-mock.html`.
+
 ## Flujo de registro
 
 El formulario de registro ahora pide elegir un plan (Mini/Creator/Pro/Agency) antes de crear la cuenta. El país llega pre-cargado por geolocalización de IP (ver sección anterior), editable por el usuario.
@@ -105,7 +130,7 @@ Middleware nuevo `requireActivePlan` (junto a `authenticateToken`/`authorizeAgen
 
 ## Frontend
 
-- **Selector de plan en el registro**: las 4 opciones (Mini/Creator/Pro/Agency), mismo copy que la página de precios.
+- **Selector de plan en el registro**: las 5 opciones (Starter/Mini/Creator/Pro/Agency), mismo copy que la página de precios.
 - **Banner de aviso**: en el dashboard, si `payment_status !== 'active'`, se muestra un banner:
   - `pending_payment`: "Elegiste el plan X — completá el pago para activarlo" + las instrucciones de pago resueltas por país (`payment_instructions`, con fallback a `DEFAULT`).
   - `grace_period`: "Tu plan vence hoy/mañana, renovalo para no perder acceso" + mismas instrucciones de pago.
